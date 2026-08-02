@@ -4,7 +4,7 @@
  * vuelve a comprobar igualmente, esto solo evita ofrecer lo imposible.
  */
 import { useState } from "react";
-import { Crown, MoreVertical } from "lucide-react";
+import { Crown, MoreVertical, X } from "lucide-react";
 import { PERMISSIONS, has, toBits, type Member } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
@@ -172,19 +172,23 @@ export function Members({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <aside data-pane="members" className="w-full overflow-y-auto border-l border-line bg-surface px-2 py-3">
-      <div className="mb-2 flex items-center justify-between px-2 md:hidden">
-        <h2 className="display font-bold">{t("members.title")}</h2>
+    <aside data-pane="members" className="flex w-full flex-col border-l border-line bg-surface">
+      {/* Cabecera de la misma altura que las otras dos: las tres líneas de la
+          parte de arriba tienen que quedar a la misma altura, no escalonadas. */}
+      <header className="flex h-[var(--header-h)] shrink-0 items-center justify-between gap-2 border-b border-line px-3">
+        <h2 className="display truncate text-[0.95rem] font-bold">{t("members.title")}</h2>
         <IconButton label={t("common.close")} onClick={onClose}>
-          ×
+          <X size={17} />
         </IconButton>
-      </div>
+      </header>
 
-      {grouped.map((group) => (
-        <div key={group.key} className={group.key === "offline" ? "opacity-60" : ""}>
-          {renderGroup(group.title, group.list, group.color)}
-        </div>
-      ))}
+      <div className="flex-1 overflow-y-auto px-2 py-3">
+        {grouped.map((group) => (
+          <div key={group.key} className={group.key === "offline" ? "opacity-60" : ""}>
+            {renderGroup(group.title, group.list, group.color)}
+          </div>
+        ))}
+      </div>
 
       <ProfileCard member={profile} onClose={() => setProfile(null)} color={profile ? colorOf(profile) : undefined} />
       {confirmElement}

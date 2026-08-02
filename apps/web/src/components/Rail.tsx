@@ -25,7 +25,7 @@ export function Rail({ onNavigate }: { onNavigate?: () => void }) {
     <nav
       data-pane="rail"
       aria-label={t("community.yours")}
-      className="flex w-[4.5rem] flex-col items-center gap-2 border-r border-line bg-sunken py-3"
+      className="flex w-[4.5rem] flex-col items-center gap-2 border-r border-line bg-sunken pt-1 pb-3"
     >
       <ul className="flex flex-1 flex-col items-center gap-2 overflow-y-auto">
         {communities.map((community) => (

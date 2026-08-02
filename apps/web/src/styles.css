@@ -84,6 +84,14 @@
   --w-rail: 4.5rem;
   --w-sidebar: 16rem;
   --w-members: 15rem;
+
+  /* Altura de la fila superior. Las cabeceras de los tres paneles la comparten
+     para que sus lineas queden alineadas en vez de escalonadas. */
+  --header-h: 3.5rem;
+
+  /* Y la de la fila de abajo: barra de usuario y caja de escritura arrancan a la
+     misma altura. La caja crece al escribir varias lineas, eso si. */
+  --footer-h: 4rem;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;

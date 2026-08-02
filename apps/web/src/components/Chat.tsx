@@ -88,7 +88,7 @@ export function Chat({
   if (channel.kind === "voice") {
     return (
       <main data-pane="main" className="flex min-w-0 flex-1 flex-col bg-bg">
-        <header className="flex items-center gap-2 border-b border-line bg-surface px-3 py-2.5">
+        <header className="flex h-[var(--header-h)] shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
           <button onClick={onOpenSidebar} className="md:hidden" aria-label={t("common.back")}>
             <CornerUpLeft size={18} />
           </button>
@@ -135,7 +135,7 @@ export function Chat({
         {t("skip.toMessages")}
       </a>
 
-      <header className="flex items-center gap-2 border-b border-line bg-surface px-3 py-2.5">
+      <header className="flex h-[var(--header-h)] shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
         <button onClick={onOpenSidebar} className="md:hidden" aria-label={t("common.back")}>
           <CornerUpLeft size={18} />
         </button>
@@ -560,7 +560,7 @@ function Composer({
   }
 
   return (
-    <div className="border-t border-line bg-surface px-3 py-3 sm:px-5">
+    <div className="flex min-h-[var(--footer-h)] flex-col justify-center border-t border-line bg-surface px-3 py-1.5 sm:px-5">
       {replyTo ? (
         <p className="mb-2 flex items-center gap-2 rounded-[10px] bg-raise px-3 py-1.5 text-xs text-muted">
           <CornerUpLeft size={13} />

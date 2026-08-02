@@ -97,7 +97,7 @@ export function Sidebar({
         trigger={({ onClick }) => (
           <button
             onClick={onClick}
-            className="flex w-full items-center justify-between gap-2 border-b border-line px-4 py-3 text-left transition-colors hover:bg-raise"
+            className="flex h-[var(--header-h)] w-full shrink-0 items-center justify-between gap-2 border-b border-line px-4 text-left transition-colors hover:bg-raise"
           >
             <span className="display truncate text-[0.95rem] font-bold">{data.community.name}</span>
             <ChevronDown size={16} className="shrink-0 text-muted" />
@@ -177,7 +177,7 @@ export function Sidebar({
 
       <VoiceBar />
 
-      <div className="flex items-center gap-2 border-t border-line bg-raise px-3 py-2.5">
+      <div className="flex h-[var(--footer-h)] shrink-0 items-center gap-2 border-t border-line bg-raise px-3">
         <Avatar name={user?.display_name ?? "?"} url={user?.avatar_url} id={user?.id} size={34} ring="online" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-semibold">{user?.display_name}</span>

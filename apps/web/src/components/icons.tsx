@@ -48,11 +48,16 @@ export function Gear(props: IconProps) {
   );
 }
 
-/** La línea del panel se desplaza hacia el borde: enseña qué va a hacer. */
-export function Panel({ side = "left", ...props }: IconProps & { side?: "left" | "right" }) {
+/**
+ * Panel lateral. Abierto, la banda va rellena; cerrado, vacía: el estado se ve
+ * por la forma y no solo por el color (§31). Al pasar el ratón, la línea se
+ * acerca al borde, que es justo lo que hará el panel al plegarse.
+ */
+export function Panel({ side = "left", open = false, ...props }: IconProps & { side?: "left" | "right"; open?: boolean }) {
   return (
     <Svg {...props} className={side === "right" ? "ai-flip" : ""}>
       <rect width={18} height={18} x={3} y={3} rx={2} ry={2} />
+      {open ? <rect className="ai-slide" x={4} y={4} width={4} height={16} rx={1} fill="currentColor" stroke="none" /> : null}
       <line className="ai-slide" x1={9} y1={3} x2={9} y2={21} />
     </Svg>
   );
