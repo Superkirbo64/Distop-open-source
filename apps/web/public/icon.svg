@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Distop">
+  <rect width="64" height="64" rx="16" fill="#4059e0" />
+  <!-- Tres nodos unidos: identidad propia, no una burbuja de chat genérica. -->
+  <g fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round">
+    <path d="M22 24 42 24" />
+    <path d="M22 24 32 42" />
+    <path d="M42 24 32 42" />
+  </g>
+  <g fill="#fff">
+    <circle cx="22" cy="24" r="6" />
+    <circle cx="42" cy="24" r="6" />
+    <circle cx="32" cy="42" r="6" />
+  </g>
+</svg>

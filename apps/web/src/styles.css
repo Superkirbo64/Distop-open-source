@@ -1,0 +1,597 @@
+@import "tailwindcss";
+
+/* ────────────────────────────────────────────────────────────────────────
+   Sistema de tokens (§10.2).
+   Claro y oscuro son dos paletas escritas a mano, no una aclarada de la otra.
+   Todo lo personalizable vive aquí: cambiar la identidad de la app es tocar
+   este bloque, no perseguir colores por los componentes.
+   ──────────────────────────────────────────────────────────────────────── */
+
+:root,
+:root[data-theme="light"] {
+  --bg: #f4f5f8;
+  --surface: #ffffff;
+  --raise: #eceef4;
+  --sunken: #e4e7ef;
+  --line: #dcdfe9;
+  --ink: #15161c;
+  --muted: #5f6373;
+  --accent: #4059e0;
+  --accent-soft: #e5e9ff;
+  --accent-ink: #ffffff;
+  --danger: #c02b3c;
+  --ok: #157a52;
+  --warn: #9a6300;
+  --shadow: 0 1px 2px rgb(16 18 27 / 0.06), 0 8px 24px -12px rgb(16 18 27 / 0.18);
+}
+
+:root[data-theme="dark"] {
+  --bg: #0d0e12;
+  --surface: #15171e;
+  --raise: #1c1f28;
+  --sunken: #0a0b0e;
+  --line: #272b36;
+  --ink: #e8eaf2;
+  --muted: #98a0b3;
+  --accent: #7b90ff;
+  --accent-soft: #1e2340;
+  --accent-ink: #0b0d16;
+  --danger: #ff7a86;
+  --ok: #4ecf9b;
+  --warn: #f0b45e;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -16px rgb(0 0 0 / 0.7);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raise: var(--raise);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-danger: var(--danger);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+
+  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-card: 14px;
+  --radius-field: 10px;
+}
+
+/* Escala, densidad y ritmo: personalización real, no decorativa (§31). */
+:root {
+  --ui-scale: 1;
+  --row-gap: 0.5rem;
+  color-scheme: light;
+
+  /* Curvas y tiempos en un solo sitio. Nada arranca y para de golpe: todo sale
+     rápido y se posa despacio, que es lo que hace que una interfaz no se sienta
+     seca. --ease-spring pasa un poco de largo y vuelve, para lo que "aparece". */
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.42, 0.64, 1);
+  --ease-both: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 0.16s;
+  --dur-2: 0.26s;
+  --dur-3: 0.42s;
+
+  /* Anchos de los paneles: variables porque son lo que se anima al plegarlos. */
+  --w-rail: 4.5rem;
+  --w-sidebar: 16rem;
+  --w-members: 15rem;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+@layer base {
+  html {
+    font-size: calc(100% * var(--ui-scale));
+  }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    overscroll-behavior: none;
+  }
+
+  h1,
+  h2,
+  h3,
+  .display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+
+  /* Foco visible siempre, en cualquier tema (§31). */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  /* Scrollbars que no rompen el tema oscuro. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--line);
+    border-radius: 99px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
+    background-clip: content-box;
+  }
+
+  dialog::backdrop {
+    background: rgb(4 5 9 / 0.55);
+    backdrop-filter: blur(3px);
+  }
+
+  /* Dos formas de pedir quietud: el sistema operativo y el interruptor de
+     Ajustes. Las dos apagan lo mismo, sin discutirle a nadie su decisión. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  :root[data-motion="off"] *,
+  :root[data-motion="off"] *::before,
+  :root[data-motion="off"] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  /* Fondo del área de conversación: decoración que no estorba a la lectura. */
+  :root[data-backdrop="soft"] [data-pane="main"] {
+    background-image:
+      radial-gradient(60rem 30rem at 12% -10%, color-mix(in oklab, var(--accent) 14%, transparent), transparent 70%),
+      radial-gradient(45rem 28rem at 100% 110%, color-mix(in oklab, var(--accent) 10%, transparent), transparent 70%);
+  }
+
+  :root[data-backdrop="dots"] [data-pane="main"] {
+    background-image: radial-gradient(var(--line) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+}
+
+/* ── Rejilla maestra (§25) ─────────────────────────────────────────────────
+   Deliberadamente SIN @layer: quién se ve y quién no en móvil no puede perder
+   contra una utilidad `flex` de Tailwind, y las capas ganan a la especificidad.
+   Áreas nombradas, no columnas mágicas. */
+
+.app-grid {
+  display: grid;
+  height: 100dvh;
+  grid-template-columns: var(--w-rail) var(--w-sidebar) 1fr var(--w-members);
+  grid-template-areas: "rail sidebar main members";
+  /* Plegar un panel es animar su columna: el chat gana el hueco deslizándose,
+     en vez de dar un salto cuando el panel desaparece de golpe. */
+  transition: grid-template-columns var(--dur-3) var(--ease-soft);
+}
+
+.app-grid > [data-pane] {
+  min-width: 0;
+}
+
+/* Plegar es cosa del escritorio: en móvil manda data-mobile, más abajo. */
+@media (min-width: 901px) {
+  .app-grid[data-sidebar="off"] {
+    --w-sidebar: 0rem;
+  }
+  .app-grid[data-members="off"] {
+    --w-members: 0rem;
+  }
+
+  /* Lo plegado no se tabula ni lo lee un lector de pantalla. El recorte se pone
+     solo aquí: fuera de este estado, cada panel manda en su propio scroll. */
+  .app-grid[data-sidebar="off"] > [data-pane="sidebar"],
+  .app-grid[data-members="off"] > [data-pane="members"] {
+    overflow: hidden;
+    visibility: hidden;
+    /* Con box-sizing: border-box, un ancho de 0 deja fuera el relleno y el borde:
+       sin esto quedaría una franja de 17px del panel "plegado". */
+    padding: 0;
+    border-width: 0;
+    transition: visibility 0s linear var(--dur-3);
+  }
+}
+
+/* En móvil no hay cuatro columnas: el mismo hueco "main" muestra un panel u
+   otro según data-mobile, sin duplicar componentes ni montar rutas nuevas. */
+@media (max-width: 900px) {
+  .app-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas: "main";
+  }
+  .app-grid > [data-pane] {
+    display: none;
+  }
+  .app-grid > [data-pane="main"] {
+    display: flex;
+    grid-area: main;
+    width: 100%;
+  }
+
+  .app-grid[data-mobile="nav"] {
+    grid-template-columns: auto 1fr;
+    grid-template-areas: "rail sidebar";
+  }
+  .app-grid[data-mobile="nav"] > [data-pane="rail"] {
+    display: flex;
+    grid-area: rail;
+  }
+  .app-grid[data-mobile="nav"] > [data-pane="sidebar"] {
+    display: flex;
+    grid-area: sidebar;
+    width: 100%;
+  }
+  .app-grid[data-mobile="nav"] > [data-pane="main"] {
+    display: none;
+  }
+
+  .app-grid[data-mobile="members"] > [data-pane="members"] {
+    display: block;
+    grid-area: main;
+    width: 100%;
+  }
+  .app-grid[data-mobile="members"] > [data-pane="main"] {
+    display: none;
+  }
+}
+
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem; /* 44px: objetivo táctil accesible */
+    padding: 0 0.95rem;
+    border-radius: var(--radius-field);
+    font-weight: 600;
+    font-size: 0.9rem;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition:
+      transform var(--dur-2) var(--ease-spring),
+      background-color var(--dur-2) var(--ease-soft),
+      border-color var(--dur-2) var(--ease-soft),
+      box-shadow var(--dur-2) var(--ease-soft),
+      filter var(--dur-2) var(--ease-soft);
+  }
+  .btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+  .btn:active:not(:disabled) {
+    transform: translateY(0) scale(0.985);
+    transition-duration: var(--dur-1);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+  .btn-primary:hover:not(:disabled) {
+    box-shadow: 0 6px 18px -8px var(--accent);
+    filter: brightness(1.06);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--line);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--raise);
+    border-color: var(--muted);
+  }
+
+  .btn-danger {
+    background: transparent;
+    color: var(--danger);
+    border-color: color-mix(in oklab, var(--danger) 45%, transparent);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--danger) 12%, transparent);
+  }
+
+  .field {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--surface);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-field);
+    font: inherit;
+    transition:
+      border-color var(--dur-2) var(--ease-soft),
+      box-shadow var(--dur-2) var(--ease-soft);
+  }
+  .field:hover {
+    border-color: var(--muted);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
+  }
+  .field::placeholder {
+    color: var(--muted);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow);
+  }
+
+  /* Botón de solo icono: la misma reacción en todos, sin repetir clases. */
+  .icon-btn {
+    transition:
+      background-color var(--dur-2) var(--ease-soft),
+      color var(--dur-2) var(--ease-soft),
+      transform var(--dur-2) var(--ease-spring);
+  }
+  .icon-btn:active {
+    transform: scale(0.92);
+    transition-duration: var(--dur-1);
+  }
+
+  /* Enlace de salto: primer tabulador de la página (§31). */
+  .skip-link {
+    position: absolute;
+    left: 0.5rem;
+    top: -3rem;
+    z-index: 100;
+    padding: 0.6rem 1rem;
+    background: var(--accent);
+    color: var(--accent-ink);
+    border-radius: var(--radius-field);
+    transition: top 0.15s ease;
+  }
+  .skip-link:focus {
+    top: 0.5rem;
+  }
+}
+
+@layer utilities {
+  .marker-active {
+    background: var(--accent);
+    border-radius: 0 4px 4px 0;
+    animation: marker-in 0.22s cubic-bezier(0.34, 1.3, 0.64, 1);
+  }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Movimiento (§10.2).
+   Cada animación responde a algo que acaba de pasar: un mensaje que llega,
+   un panel que se abre, alguien que empieza a hablar. Nada se mueve porque sí
+   —eso cansa en una aplicación donde se pasan horas— y todo desaparece cuando
+   el sistema pide movimiento reducido, gracias al bloque de @layer base.
+   ──────────────────────────────────────────────────────────────────────── */
+
+@keyframes marker-in {
+  from {
+    transform: translateY(-50%) scaleY(0.2);
+    opacity: 0;
+  }
+}
+
+@keyframes message-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes speaking-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* El último mensaje entra deslizándose; los del historial ya están puestos. */
+#message-log > div:last-child article {
+  animation: message-in var(--dur-3) var(--ease-soft);
+}
+
+dialog[open] {
+  animation: panel-in var(--dur-3) var(--ease-spring);
+}
+
+[role="menu"] {
+  animation: pop-in var(--dur-2) var(--ease-spring);
+  transform-origin: top right;
+}
+
+/* Latido en el punto de conexión mientras se reconecta: dice "sigo intentándolo". */
+.pulse-live {
+  animation: speaking-pulse 1.4s ease-in-out infinite;
+}
+
+/* Los canales se desplazan un pelo al pasar por encima: reaccionan sin saltar. */
+[data-pane="sidebar"] nav button {
+  transition:
+    transform var(--dur-2) var(--ease-spring),
+    background-color var(--dur-2) var(--ease-soft),
+    color var(--dur-2) var(--ease-soft);
+}
+[data-pane="sidebar"] nav button:hover {
+  transform: translateX(3px);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Iconos que reaccionan.
+   Coreografía portada de animate-ui (MIT, github.com/imskyleen/animate-ui):
+   allí cada icono es un componente de `motion`; aquí son estas reglas, que se
+   disparan con el :hover del control que los contiene. Ver components/icons.tsx.
+   ──────────────────────────────────────────────────────────────────────── */
+
+.ai * {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+  transition:
+    transform var(--dur-3) var(--ease-spring),
+    opacity var(--dur-2) var(--ease-soft);
+}
+
+.ai-flip {
+  transform: scaleX(-1);
+}
+
+/* Lo que se queda quieto mientras dure el hover: transición, no animación,
+   porque así vuelve solo y no da el tirón de reiniciar un @keyframes. */
+:is(button, a, label, summary, [role="menuitem"]):is(:hover, :focus-visible) {
+  .ai-slide {
+    transform: translateX(-2.5px);
+  }
+  .ai-lift {
+    transform: translateY(-1.5px);
+  }
+  .ai-launch {
+    transform: translate(3px, -3px);
+  }
+  .ai-tilt {
+    transform: rotate(-14deg);
+  }
+  .ai-quarter {
+    transform: rotate(90deg);
+  }
+}
+
+/* Un más girado 45° ya es una equis: el mismo trazo hace las dos cosas. */
+.ai-cross-open .ai-quarter {
+  transform: rotate(45deg);
+}
+:is(button, a):is(:hover, :focus-visible) .ai-cross-open .ai-quarter {
+  transform: rotate(135deg);
+}
+
+/* Lo que ocurre una vez y termina: engranaje, saltito y ondas. */
+:is(button, a, label, summary, [role="menuitem"]):is(:hover, :focus-visible) {
+  .ai-spin {
+    animation: ai-spin 1.1s var(--ease-both);
+  }
+  .ai-hop-1 {
+    animation: ai-hop 0.6s var(--ease-both) 0.1s;
+  }
+  .ai-hop-2 {
+    animation: ai-hop-far 0.6s var(--ease-both) 0.1s;
+  }
+  .ai-hop-3 {
+    animation: ai-hop 0.6s var(--ease-both);
+  }
+  .ai-hop-4 {
+    animation: ai-hop-far 0.6s var(--ease-both);
+  }
+  .ai-wave-1 {
+    animation: ai-wave 0.8s var(--ease-both);
+  }
+  .ai-wave-2 {
+    animation: ai-wave 0.8s var(--ease-both) 0.2s;
+  }
+}
+
+.ai-wave-1,
+.ai-wave-2 {
+  transform-origin: 11px 12px;
+}
+
+/* La barra del tachado se dibuja al aparecer: dice "acabas de silenciarte". */
+.ai-strike {
+  stroke-dasharray: 26;
+  animation: ai-draw var(--dur-3) var(--ease-soft);
+}
+
+@keyframes ai-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(180deg);
+  }
+}
+
+@keyframes ai-hop {
+  30% {
+    transform: translateY(2px);
+  }
+  65% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes ai-hop-far {
+  30% {
+    transform: translateY(4px);
+  }
+  65% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes ai-wave {
+  40% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@keyframes ai-draw {
+  from {
+    stroke-dashoffset: 26;
+  }
+}
+
+/* Las tarjetas de la sala de voz se levantan cuando alguien habla. */
+figure {
+  transition: transform 0.18s ease, border-color 0.15s ease, box-shadow 0.18s ease;
+}

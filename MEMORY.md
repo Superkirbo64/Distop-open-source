@@ -1,0 +1,328 @@
+# Memoria del proyecto — Distop
+
+Lo que no se deduce leyendo el código: qué se decidió, qué se descartó y por qué.
+Última actualización: **1 de agosto de 2026**.
+
+## Identidad
+
+- **Nombre: Distop.** Elegido por quien lidera el proyecto en esta sesión (escrito
+  "DIstop" en la respuesta; se aplicó `Distop`). Vive en `apps/web/src/brand.ts` y en
+  `packages/protocol` no aparece: renombrar es tocar ese archivo y el bloque de tokens
+  de `styles.css`, nada más.
+- **Dirección visual: claro y oscuro duales desde el día uno**, no un oscuro aclarado.
+  Dos paletas escritas a mano en `apps/web/src/styles.css`. Descartado el neobrutalismo
+  por cansar en sesiones largas de chat, y el "solo oscuro" por accesibilidad.
+- Alcance elegido: **app real + API de instancia**. La landing pública quedó fuera de
+  esta entrega, por decisión explícita.
+
+## Tipografías y licencias
+
+- **Bricolage Grotesque** (display) e **Inter** (cuerpo), ambas **OFL** — válidas para
+  uso comercial y para el sitio de un negocio.
+- **Gotcha pendiente:** hoy se cargan desde `fonts.googleapis.com`. Para un proyecto que
+  presume de privacidad (§8) eso es una petición a Google en cada carga. Antes de
+  producción hay que autoalojar los `.woff2` y quitar los `<link>` de `index.html`.
+
+## Decisiones técnicas y qué se descartó
+
+| Decisión | Por qué | Qué se descartó |
+|---|---|---|
+| **Node 24 con TypeScript nativo** en el servidor | Node 24 ejecuta `.ts` sin compilar y trae `node:sqlite`. Cero paso de build, cero dependencia de runtime extra | **Bun** (era el runtime del prototipo §36). Obligaba a instalar otro runtime; el equipo tenía Node 24 |
+| **`node:sqlite` + `ws`** como únicas piezas del servidor | Una sola dependencia de producción. Importa cuando la instancia corre en una Raspberry o un NAS | better-sqlite3 (compila binarios nativos), Fastify/Express (el router propio son 40 líneas) |
+| **React + Vite** para el cliente | Todo vive detrás de sesión: el SEO no aplica. Vite es además la pareja natural de Tauri para el futuro cliente de escritorio (§15) | **Next.js**: SSR no aporta nada aquí y complica el empaquetado en Tauri |
+| **Tokens propios + Tailwind v4 `@theme inline`** | El tema cambia en caliente porque las utilidades apuntan a variables CSS, no a valores fijos | **shadcn/ui**: arrastra Radix y su estética es reconocible; §25 pide identidad propia |
+| **`<dialog>` nativo, `matchMedia`, `<details>`** para accesibilidad | El navegador ya trae trampa de foco, Escape y fondo modal | Radix, Headless UI |
+| **scrypt de `node:crypto`** para contraseñas | Memory-hard y sin binarios que compilar en todas las plataformas objetivo | **Argon2id** que pide §22. Está aislado en `auth.ts` y el hash lleva prefijo de algoritmo, así que la migración es un archivo. Marcado con comentario `ponytail:` |
+| **Tokens opacos + HMAC en base** | Revocables de verdad (§22 lo exige) y un volcado de la base no entrega sesiones usables | **JWT**: no se revoca sin lista negra, que es justo la tabla que ya tenemos |
+| **Permisos en BigInt** | 33 permisos no caben en los 32 bits de las operaciones bitwise de JavaScript | Bitfield numérico (se rompe en silencio al llegar a 33) |
+| **UUIDv7 con contador monótono** | Sin contador, dos IDs del mismo milisegundo no ordenan y la paginación por id devuelve el historial desordenado. Lo detectó un test | UUIDv4 (el prototipo lo usaba), columna de orden aparte |
+| **Router propio de 30 líneas** | Tres rutas, y solo `/invite/:code` es profunda | react-router |
+| **Zustand sin TanStack Query** | El gateway empuja el estado; casi no hay peticiones que cachear | TanStack Query |
+| **Subida por cuerpo crudo** (`content-type` + `x-filename`) | Evita escribir un parser multipart entero para un caso de un archivo | multipart/form-data |
+
+## Cosas que se resolvieron y volverían a morder
+
+- **`node:sqlite` no acepta booleanos.** Todo va como `1`/`0`. Si aparece un
+  `TypeError` raro al insertar, es esto.
+- **El gateway manda `READY` en el mismo instante del upgrade.** Cualquier cliente
+  (incluidos los tests) tiene que estar escuchando *antes* de que resuelva el `open`,
+  o lo pierde. Los tests usan un buzón por eso.
+- **`server.close()` no cierra los sockets ya actualizados a WebSocket.** Sin
+  `server.closeAllConnections()` el proceso de test se queda colgado para siempre.
+- **En Windows, SQLite bloquea el directorio** hasta que se llama a `db.close()`:
+  el `rmSync` de limpieza falla si no.
+- **`exactOptionalPropertyTypes` obliga a `?: T | undefined`** explícito en las props de
+  React y a construir el `init` de `fetch` por difusión condicional. No es opcional
+  quitarlo: lo pide §30.
+- **Tailwind 4.0.0 rompía** con `@theme inline` ("Cannot convert undefined or null to
+  object"). Resuelto subiendo a 4.3.3. No bajar de ahí.
+- **Las capas de Tailwind ganan a la especificidad.** La rejilla `.app-grid` estaba en
+  `@layer components` y su `display: none` de móvil perdía contra la utilidad `.flex`
+  de los paneles (`utilities` va después de `components`), así que en 360 px el chat y
+  la navegación se pintaban apilados. Por eso el bloque `.app-grid` está **sin `@layer`**
+  en `styles.css`: lo no-capado gana a todo. No lo metas dentro de una capa.
+- **El color del avatar recorre el círculo de tonos completo, no una paleta de ocho.**
+  Con ocho, en cualquier comunidad pequeña ya salen dos personas del mismo color (pasó
+  en la primera verificación). La luminosidad y el croma son fijos, así que el contraste
+  del texto blanco es el mismo en todos los tonos.
+- **`accent-[var(--accent)]` de Tailwind daba un color raro** en `input[type=range]` y
+  en las casillas. Con `style={{ accentColor: "var(--accent)" }}` es inequívoco.
+
+## Errores de acceso y hosting (verificado el 1 de agosto de 2026)
+
+Salió de un fallo reportado desde la interfaz: un invitado veía **"Internal Server
+Error"**. Ese texto no era nuestro — es el `statusText` de una respuesta sin cuerpo de
+error tipado, que aparece cuando el proxy de Vite no encuentra la instancia. O sea: la
+instancia estaba apagada y el mensaje mandaba a depurar el sitio equivocado.
+
+Lo que se cambió a raíz de eso:
+
+- **El cliente distingue "la instancia contestó un error" de "no hubo instancia".** Si la
+  respuesta no trae error tipado, se etiqueta `INSTANCE_UNREACHABLE` y se dice en pantalla.
+  Los 14 sitios que repetían el mismo ternario ahora usan un único `useErrorText()`.
+- **El proxy de Vite responde 503 con error tipado y explica en el terminal** cómo
+  arrancar la instancia, en vez de un 500 mudo.
+- **El `.env` no lo leía nadie**, aunque el README mandara crearlo. Ahora el servidor
+  arranca con `--env-file-if-exists=../../.env` y Vite lee la raíz con `loadEnv`.
+- **`TRUST_PROXY` (nuevo, por defecto `false`).** Antes se confiaba siempre en
+  `X-Forwarded-For`, así que cualquiera falseaba su IP y saltaba los límites. Ahora es
+  explícito, con las dos caras documentadas: sin proxy es un agujero, y detrás de un
+  túnel sin activarlo toda la comunidad comparte una IP.
+- **Los límites por IP eran para un servicio público, no para una comunidad.** Cinco
+  altas por hora dejaban fuera a la sexta persona de una misma casa u oficina. Ahora son
+  configurables y de fábrica valen 30 altas / 60 invitados por hora.
+- **Filtrado de existencia al borrar comunidad ajena:** devolvía 403 (confirmando que el
+  identificador era real) donde el resto de la API devuelve 404. Corregido en `DELETE
+  /communities/:id` y en `/leave`.
+
+Comprobado con 28 casos de acceso (`acceso.sh`, en el scratchpad): credenciales, no
+enumeración de usuarios, cuerpo no-JSON, token ausente/inventado/revocado, rotación
+estricta del refresh, instancia con registro e invitados cerrados, límites por IP con
+valores diminutos, cabecera falseada, y recursos ajenos.
+
+**Hosting verificado sin Docker** (el demonio no estaba levantado en la máquina): modo
+producción real —un proceso, un puerto, API + gateway + cliente compilado—, negativa a
+arrancar sin `AUTH_SECRET`, el `HEALTHCHECK` del Dockerfile ejecutado tal cual,
+`docker compose config` válido con su exigencia de secreto, el `npm ci` de la imagen
+resuelto contra el lockfile, y **datos intactos tras reiniciar** (los mensajes siguen ahí,
+la contraseña sigue valiendo, y cambiar `AUTH_SECRET` invalida los tokens viejos). La
+suite completa de navegador pasa también contra esa instancia de producción, no solo
+contra el dev server. **Falta construir la imagen de verdad** cuando Docker Desktop esté
+en marcha.
+
+## Hospedar sin loguearse (decisión del 1 de agosto de 2026)
+
+Petición explícita de quien lidera el proyecto: **"no puedo hacer hosting sin loguearme
+primero, eso es un inconveniente que no quiero"**. Tenía razón — la primera pantalla de
+una instancia recién instalada era un muro de acceso a un sitio que es tuyo.
+
+Cómo quedó, y por qué así:
+
+- `GET /api/v1/info` publica `setup_required` (no hay ninguna persona todavía) y
+  `setup_requires_code`. El cliente enseña `views/Setup.tsx` en lugar de `Auth.tsx`.
+- `POST /api/v1/auth/bootstrap` crea a la dueña **sin contraseña** y devuelve sesión. El
+  formulario pide además el nombre de la comunidad y la crea en el mismo paso: de cero a
+  administrando en una pantalla.
+- **Desde el propio equipo no se pide código**; desde fuera sí, y va impreso en el
+  terminal al arrancar (`SETUP_CODE` para instalaciones desatendidas). Se decidió así
+  porque las dos alternativas puras son malas: pedir código siempre es justo la fricción
+  que se quería quitar, y no pedirlo nunca deja que el primer desconocido que encuentre
+  la URL se quede el nodo. La localidad se mira en el **socket**, nunca en una cabecera,
+  y con `TRUST_PROXY=true` nunca se considera local (delante hay un proxy).
+- La ventana se cierra sola: con una persona dentro, `bootstrap` devuelve 409.
+- `POST /users/me/upgrade` ya no mira `kind === "guest"` sino **si la cuenta tiene
+  contraseña**. Así sirve para dos casos: el invitado que se queda y la dueña que quiere
+  poder entrar desde otro equipo. Y a la dueña no se le niega por tener el registro
+  cerrado: cerrar el registro es para los de fuera.
+
+**Un invitado NO cuenta como dueño.** Primera versión de esto contaba `users` a secas, y
+salió mal en la práctica: bastaba con que alguien —el propio dueño probando— entrase como
+invitado para que la instancia quedara "reclamada" sin que nadie tuviera acceso de
+administración. Cerrojo sin llave, y sin más salida que borrar la base. Ahora se cuenta
+`countOwners()` = cuentas `kind = 'local'`, y el cliente enseña la puesta en marcha
+también cuando hay una sesión de invitado abierta (un invitado no puede crear
+comunidades, así que entrar como tal en una instancia sin reclamar es un callejón sin
+salida; y si no está reclamada, todavía no existe ninguna comunidad que perder).
+
+Cubierto por `bootstrap.test.ts` (5 casos, incluido el del invitado que pasa por delante)
+y verificado en navegador contra una base real con tres invitados dentro: la primera
+pantalla pasó de ser un login imposible a la puesta en marcha, **sin borrar nada**. Desde
+la LAN sin código devuelve 403.
+
+## Seguridad: lo que ya está cerrado
+
+- Escalada de privilegios: nadie concede un permiso que no tiene, ni edita un rol igual
+  o superior al suyo. Hay un test que lo comprueba.
+- Canales privados: la visibilidad se recalcula **por socket** antes de emitir, así que
+  un mensaje de canal privado no llega a quien no puede verlo. También hay test.
+- Adjuntos: el nombre del usuario nunca toca el disco (en disco vive un UUID), lista
+  blanca de tipos, y se sirven con `Content-Security-Policy: sandbox` y `nosniff`.
+  Los SVG se descargan, nunca se muestran en línea.
+- Errores: fuera de `HttpError` el mensaje real no sale al cliente (podría llevar rutas o SQL).
+
+## Pendiente y fuera de alcance
+
+**Pendiente cercano (sin empezar):**
+- Autoalojar las tipografías (ver arriba).
+- Archivo `LICENSE` con AGPL-3.0 y revisión de compatibilidad de dependencias (§24).
+- Reordenar canales y categorías arrastrando (la API ya acepta `position`).
+- Emojis y stickers personalizados; hoy solo hay seis reacciones rápidas fijas.
+- Rate limiting en memoria: si algún día hay varias instancias tras un balanceador, se muda a Redis.
+- Búsqueda con `LIKE`: sirve para un canal, no para un historial grande. FTS5 sin tocar la API.
+
+**Declarado fuera de alcance en esta entrega:** voz y vídeo, mensajes directos, bots y
+plugins, Minecraft, plataforma central, federación y la landing pública. La arquitectura
+los contempla; el código no los tiene.
+
+## Verificación hecha
+
+`npm test` → 8 comprobaciones en verde (API completa, invitaciones de un uso, escalada de
+privilegios, gateway con dos personas reales, canales privados, orden de UUIDv7).
+`npm run typecheck` limpio en cliente e instancia. Prueba en vivo con `curl`: health,
+info, cascarón SPA, ruta profunda, 404 tipado, subida y descarga de archivos con cabeceras
+endurecidas, y rechazo de tipo no permitido.
+
+**Verificado en navegador real** (Chromium 151 vía Playwright 1.62, dos contextos
+independientes contra la instancia con el cliente compilado): registro, creación de
+comunidad, envío y recepción de mensajes **en vivo entre dos navegadores**, invitación
+generada y aceptada por un invitado sin cuenta, historial visible al entrar, presencia
+con dos personas, cambio real de tema (fondo `rgb(13,14,18)` ↔ `rgb(244,245,248)`),
+acciones del mensaje al pasar el ratón de verdad, tildes correctas en pantalla, foco
+visible al primer tabulador y **cero errores de consola**. Anchos 1440, 768 y 360 px sin
+desbordamiento horizontal. 18 comprobaciones en verde.
+
+Lo que encontró esa verificación y ya está corregido: la conversación flotaba arriba con
+medio panel vacío (ahora se apoya abajo con `mt-auto`), los avatares salían todos del
+mismo color, el deslizador de tamaño de texto salía verde oliva, "1 miembros" sin
+singular, y el fallo de capas de Tailwind descrito arriba.
+
+**El guion de verificación no está en el repo** (vive en el scratchpad de la sesión). Si
+esta comprobación va a repetirse, conviene promoverlo a `apps/web/e2e/` con Playwright
+como devDependency — hoy los navegadores ya están descargados en la máquina.
+
+**Sigue sin comprobarse**: lector de pantalla real, Firefox y Safari, y el recorrido
+completo de administración (roles, auditoría, exportación) desde la interfaz.
+
+## Voz, compartir y vida en la interfaz (2 de agosto de 2026)
+
+Pedido con capturas de Discord como referencia (canal de voz con participantes
+colgando debajo, panel "Voz conectada", miembros agrupados por rol).
+
+- **Voz: malla WebRTC entre pares, sin SFU.** La instancia solo hace de
+  señalización (`voice.ts` en servidor y cliente); el audio va directo entre
+  navegadores. Esa decisión es la que permite que hospedar voz no cueste ancho
+  de banda de servidor y quepa en el PC de alguien. Techo práctico ~6 por canal:
+  el coste de una malla sube al cuadrado. Por encima toca SFU, y el protocolo no
+  cambia. Quién ofrece y quién responde se decide por comparación de ids, no por
+  orden de llegada, porque si los dos ofrecen a la vez la negociación se rompe.
+- **Los `<audio>` de cada par van al DOM** (contenedor oculto `#distop-voice-sinks`),
+  no sueltos en memoria: el navegador los trata mejor, se pueden inspeccionar y
+  es donde colgará el volumen por persona.
+- **Trampa de zustand v5 que costó un cuelgue:** un selector que devuelve `?? []`
+  fabrica un array nuevo en cada lectura, `useSyncExternalStore` lo ve como
+  estado nuevo y el render entra en bucle infinito (React #185, pantalla en
+  blanco). Hay una constante `EMPTY` en cada archivo que lo necesita. **No
+  escribas `useStore(s => s.algo[x] ?? [])` nunca.**
+- **Miembros agrupados por rol destacado** (`hoist`), no solo por conexión.
+- **Compartir el hosting:** `PUBLIC_URL` manda sobre `location.origin` al generar
+  invitaciones —un enlace a localhost no le sirve a nadie— y el diálogo de estado
+  trae el comando de túnel de Cloudflare ya escrito.
+- **Movimiento:** cada animación responde a un suceso (mensaje que llega, panel
+  que abre, alguien que habla). Nada se mueve solo, y todo se desactiva con
+  `prefers-reduced-motion`.
+
+Verificado con `voz.mjs`: dos Chromium reales con micrófono simulado llegan a
+`connection.connectionState === "connected"` en ambos lados, con pistas de audio
+vivas, estados de silencio propagados y limpieza al colgar. Cero errores de consola.
+
+**Pendiente de esta tanda:** selector de micrófono y medidor de prueba en Ajustes
+(aparece en las capturas de referencia), compartir pantalla y vídeo, mensajes
+directos, hilos, notificaciones y no leídos, y emojis personalizados.
+
+---
+
+## Acceso, iconos y personalización (2 de agosto de 2026)
+
+### Entrar sin cuenta ya no es una versión recortada
+
+Un invitado podía leer y escribir pero no crear su comunidad, y eso convertía el
+modo invitado en una demo. Ahora **invitado y cuenta pueden exactamente lo mismo**:
+la contraseña sirve para volver desde otro dispositivo, no para desbloquear nada.
+
+- Se cayó la comprobación `kind === "guest"` de `POST /communities` y la constante
+  `GUEST_PERMISSIONS` del protocolo, que ya no la usaba nadie: todo el mundo entra
+  con `DEFAULT_MEMBER_PERMISSIONS` y quien crea una comunidad la administra.
+- `App.tsx` ya no manda a los invitados a la pantalla de puesta en marcha; con
+  sesión abierta se entra directo. Poner contraseña desde Ajustes convierte la
+  cuenta en `local` y, de paso, reclama la instancia si estaba sin dueño.
+
+### El agujero que dejó a la instancia real sin acceso
+
+En la instancia de pruebas del proyecto había un usuario `kirbo` de tipo `local`
+**sin contraseña** (así se crea al poner en marcha, a propósito). Al perderse la
+sesión del navegador —basta con rotar `AUTH_SECRET`— el login le respondía
+"usuario o contraseña incorrectos" para siempre: no hay contraseña que teclear.
+
+Solución: `POST /api/v1/auth/recover`. Abre sesión en una cuenta **sin contraseña**
+si la petición viene del propio equipo (`isLocalRequest`) o trae el código impreso
+en el terminal. `/api/v1/info` incluye `recoverable` —solo en peticiones locales—
+con las cuentas sin contraseña **que tienen comunidad propia**, y el login pinta un
+botón por cada una con el nombre de su comunidad, porque en una instancia doméstica
+todas las cuentas se llaman parecido. No es un agujero nuevo: quien está sentado
+delante de la máquina ya puede leer `app.db` entero.
+
+### Iconos: animate-ui portado a CSS
+
+Los iconos que reaccionan salen de **animate-ui** (MIT, github.com/imskyleen/animate-ui):
+el engranaje que gira 180°, las ondas del altavoz que laten en cascada, la gente
+que da un saltito, la línea del panel que se acerca al borde. Allí cada icono es
+un componente de `motion` con contexto, `Slot` y hooks; aquí la geometría vive en
+`components/icons.tsx` y la coreografía en `@keyframes` de `styles.css`, disparada
+por el `:hover` del control que lo contiene. Motivo: `motion` son ~35 kB gzip para
+mover seis trazos. Si algún día se quieren los componentes tal cual se publican,
+se instala `motion` y se sustituye ese archivo; el resto del código solo ve
+`<Gear size={17} />`.
+
+Regla al añadir uno: lo que dura mientras el ratón esté encima va con `transition`
+(vuelve solo, sin tirón); lo que ocurre una vez va con `animation`.
+
+### Movimiento con tokens, no números sueltos
+
+`--ease-soft`, `--ease-spring`, `--ease-both` y `--dur-1/2/3` en `:root`. Todo sale
+rápido y se posa despacio; nada arranca y frena de golpe. Dos interruptores lo
+apagan: `prefers-reduced-motion` del sistema y `data-motion="off"` desde Ajustes.
+
+### Paneles retráctiles
+
+La rejilla pasó de `auto auto 1fr auto` a **variables** (`--w-rail`, `--w-sidebar`,
+`--w-members`) y transiciona `grid-template-columns`, así el chat gana el hueco
+deslizándose. `data-sidebar` / `data-members` en `.app-grid` lo gobiernan, con
+Ctrl+B y Ctrl+U, y la preferencia se recuerda en `localStorage`.
+
+Dos trampas resueltas:
+- Los paneles tenían ancho fijo (`w-64`, `w-60`). Con la columna a 0 se salían por
+  encima del chat: ahora son `w-full` y es la columna la que manda.
+- Con `box-sizing: border-box`, un ancho de 0 **no** se come el relleno ni el borde:
+  quedaba una franja de 17 px del panel "plegado". El estado plegado pone también
+  `padding: 0` y `border-width: 0`.
+- El `overflow: hidden` del plegado se aplica **solo** en ese estado; si se pone a
+  todos los paneles gana a `overflow-y-auto` de Tailwind (regla sin capa contra
+  utilidad en capa) y se queda sin scroll la lista de miembros.
+
+### Personalización, toda gratis
+
+Nueva pestaña de Apariencia: color de acento (ocho de partida más selector libre,
+con `--accent-ink` calculado por luminancia para que el texto encima contraste),
+radio de las esquinas, tipografía (cuatro pilas locales, ninguna descarga nada),
+fondo de la conversación (liso, degradado, puntos) y animaciones. Todo se guarda
+en `localStorage` y se aplica como variables CSS sobre `documentElement`, así que
+manda sobre los dos temas. Ninguna opción está reservada, ni marcada como "pro".
+
+Verificado con `interfaz.mjs` (Chromium real): el panel se pliega animándose y
+deja 0 px, Ctrl+B y Ctrl+U responden, el engranaje anima al pasar el ratón, acento,
+esquinas, fondo y tipografía se aplican al instante, y no hay desbordamiento
+horizontal a 1440, 768 ni 360. Y con `acceso.mjs`: quien hospeda vuelve a su
+comunidad sin contraseña y un invitado crea la suya y la administra.
+
+**Pendiente:** selector de micrófono y medidor en Ajustes, compartir pantalla y
+vídeo, mensajes directos, hilos, notificaciones y no leídos, emojis personalizados.

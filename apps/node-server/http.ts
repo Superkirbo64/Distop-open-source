@@ -1,0 +1,293 @@
+/**
+ * Capa HTTP: enrutado, validación, errores tipados, CORS y rate limiting (§22, §30).
+ */
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
+import type { ApiError } from "@distop/protocol";
+import { config, MAX_UPLOAD_BYTES } from "./config.ts";
+import type { AuthContext } from "./auth.ts";
+import { authenticate } from "./auth.ts";
+
+export class HttpError extends Error {
+  status: number;
+  code: string;
+  details: Record<string, unknown> | undefined;
+
+  constructor(status: number, code: string, message: string, details?: Record<string, unknown>) {
+    super(message);
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
+export const badRequest = (msg: string, details?: Record<string, unknown>) =>
+  new HttpError(400, "BAD_REQUEST", msg, details);
+export const unauthorized = (msg = "Necesitas iniciar sesión.") => new HttpError(401, "UNAUTHORIZED", msg);
+export const forbidden = (msg = "No tienes permiso para esto.") => new HttpError(403, "FORBIDDEN", msg);
+export const notFound = (msg = "No encontrado.") => new HttpError(404, "NOT_FOUND", msg);
+export const conflict = (msg: string) => new HttpError(409, "CONFLICT", msg);
+
+export interface Ctx {
+  req: IncomingMessage;
+  res: ServerResponse;
+  url: URL;
+  params: Record<string, string>;
+  requestId: string;
+  ip: string;
+  auth: AuthContext | null;
+}
+
+/**
+ * ¿La petición viene del mismo equipo que hospeda la instancia?
+ * Se mira el socket, nunca una cabecera: las cabeceras las escribe el cliente.
+ * Con un proxy delante el socket es el del proxy, así que ahí nunca es local.
+ */
+export function isLocalRequest(ctx: Ctx): boolean {
+  if (config.trustProxy) return false;
+  const address = ctx.req.socket.remoteAddress ?? "";
+  return address === "::1" || address === "127.0.0.1" || address.startsWith("::ffff:127.");
+}
+
+/** Igual que `ctx.auth` pero garantiza sesión: los handlers privados usan esto. */
+export function requireAuth(ctx: Ctx): AuthContext {
+  if (!ctx.auth) throw unauthorized();
+  return ctx.auth;
+}
+
+export type Handler = (ctx: Ctx) => unknown | Promise<unknown>;
+
+/** Devuélvelo desde un handler que ya escribió la respuesta él mismo. */
+export const HANDLED = Symbol("handled");
+
+interface Route {
+  method: string;
+  segments: string[];
+  handler: Handler;
+}
+
+const routes: Route[] = [];
+
+export function route(method: string, pattern: string, handler: Handler): void {
+  routes.push({ method, segments: pattern.split("/").filter(Boolean), handler });
+}
+
+function match(method: string, pathname: string): { handler: Handler; params: Record<string, string> } | null {
+  const parts = pathname.split("/").filter(Boolean);
+  for (const r of routes) {
+    if (r.method !== method || r.segments.length !== parts.length) continue;
+    const params: Record<string, string> = {};
+    let ok = true;
+    for (let i = 0; i < r.segments.length; i++) {
+      const seg = r.segments[i]!;
+      if (seg.startsWith(":")) params[seg.slice(1)] = decodeURIComponent(parts[i]!);
+      else if (seg !== parts[i]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return { handler: r.handler, params };
+  }
+  return null;
+}
+
+/* ── cuerpo de la petición ─────────────────────────────────────────── */
+
+const MAX_JSON_BYTES = 1024 * 1024;
+
+export async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buf = chunk as Buffer;
+    size += buf.length;
+    if (size > limit) throw new HttpError(413, "PAYLOAD_TOO_LARGE", `El cuerpo supera ${limit} bytes.`);
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function readJson(ctx: Ctx): Promise<Record<string, unknown>> {
+  const raw = await readBody(ctx.req, MAX_JSON_BYTES);
+  if (raw.length === 0) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw.toString("utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("no es objeto");
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw badRequest("El cuerpo debe ser un objeto JSON válido.");
+  }
+}
+
+/* ── validación (§30) ──────────────────────────────────────────────── */
+
+export const v = {
+  string(
+    body: Record<string, unknown>,
+    key: string,
+    opts: { min?: number; max?: number; pattern?: RegExp; trim?: boolean } = {},
+  ): string {
+    const raw = body[key];
+    if (typeof raw !== "string") throw badRequest(`El campo "${key}" debe ser texto.`, { field: key });
+    const value = opts.trim === false ? raw : raw.trim();
+    const min = opts.min ?? 1;
+    if (value.length < min) throw badRequest(`"${key}" necesita al menos ${min} caracteres.`, { field: key });
+    if (opts.max !== undefined && value.length > opts.max)
+      throw badRequest(`"${key}" admite como máximo ${opts.max} caracteres.`, { field: key });
+    if (opts.pattern && !opts.pattern.test(value))
+      throw badRequest(`"${key}" tiene un formato no admitido.`, { field: key });
+    return value;
+  },
+
+  optionalString(
+    body: Record<string, unknown>,
+    key: string,
+    opts: { max?: number; pattern?: RegExp } = {},
+  ): string | null | undefined {
+    if (!(key in body)) return undefined;
+    if (body[key] === null) return null;
+    return v.string(body, key, { ...opts, min: 0 });
+  },
+
+  bool(body: Record<string, unknown>, key: string, fallback: boolean): boolean {
+    const raw = body[key];
+    if (raw === undefined) return fallback;
+    if (typeof raw !== "boolean") throw badRequest(`"${key}" debe ser true o false.`, { field: key });
+    return raw;
+  },
+
+  int(body: Record<string, unknown>, key: string, opts: { min?: number; max?: number; fallback?: number } = {}): number {
+    const raw = body[key];
+    if (raw === undefined && opts.fallback !== undefined) return opts.fallback;
+    if (typeof raw !== "number" || !Number.isInteger(raw))
+      throw badRequest(`"${key}" debe ser un número entero.`, { field: key });
+    if (opts.min !== undefined && raw < opts.min) throw badRequest(`"${key}" mínimo ${opts.min}.`, { field: key });
+    if (opts.max !== undefined && raw > opts.max) throw badRequest(`"${key}" máximo ${opts.max}.`, { field: key });
+    return raw;
+  },
+
+  color(body: Record<string, unknown>, key: string): string | null | undefined {
+    const value = v.optionalString(body, key, { max: 7, pattern: /^#[0-9a-fA-F]{6}$/ });
+    return value === "" ? null : value;
+  },
+
+  oneOf<T extends string>(body: Record<string, unknown>, key: string, allowed: readonly T[], fallback?: T): T {
+    const raw = body[key];
+    if (raw === undefined && fallback !== undefined) return fallback;
+    if (typeof raw !== "string" || !allowed.includes(raw as T))
+      throw badRequest(`"${key}" debe ser uno de: ${allowed.join(", ")}.`, { field: key });
+    return raw as T;
+  },
+};
+
+/* ── rate limiting ─────────────────────────────────────────────────────
+   Ventana fija en memoria. ponytail: por proceso; si algún día hay varias
+   instancias detrás de un balanceador, esto se muda a Redis. */
+const buckets = new Map<string, { count: number; resetAt: number }>();
+
+export function rateLimit(key: string, limit: number, windowMs: number): void {
+  const now = Date.now();
+  const bucket = buckets.get(key);
+
+  if (!bucket || bucket.resetAt < now) {
+    buckets.set(key, { count: 1, resetAt: now + windowMs });
+    return;
+  }
+  bucket.count++;
+  if (bucket.count > limit) {
+    throw new HttpError(429, "RATE_LIMITED", "Demasiadas peticiones, espera un momento.", {
+      retry_after_s: Math.ceil((bucket.resetAt - now) / 1000),
+    });
+  }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of buckets) if (bucket.resetAt < now) buckets.delete(key);
+}, 60_000).unref();
+
+/* ── respuesta ─────────────────────────────────────────────────────── */
+
+function corsHeaders(origin: string | undefined): Record<string, string> {
+  const allowed = config.corsOrigins.includes("*")
+    ? origin ?? "*"
+    : origin && config.corsOrigins.includes(origin)
+      ? origin
+      : "";
+  if (!allowed) return {};
+  return {
+    "access-control-allow-origin": allowed,
+    "access-control-allow-credentials": "true",
+    "access-control-allow-headers": "authorization, content-type, x-filename",
+    "access-control-allow-methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    "access-control-max-age": "86400",
+    vary: "origin",
+  };
+}
+
+const SECURITY_HEADERS: Record<string, string> = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+  "x-frame-options": "DENY",
+  "cross-origin-resource-policy": "cross-origin",
+};
+
+export function send(ctx: Ctx, status: number, body: unknown, headers: Record<string, string> = {}): void {
+  const payload = body === undefined ? "" : JSON.stringify(body, (_k, value) => (typeof value === "bigint" ? value.toString() : value));
+  ctx.res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "x-request-id": ctx.requestId,
+    ...SECURITY_HEADERS,
+    ...corsHeaders(ctx.req.headers.origin),
+    ...headers,
+  });
+  ctx.res.end(payload);
+}
+
+function toApiError(err: unknown, requestId: string): ApiError {
+  const known = err instanceof HttpError;
+  if (!known) console.error(`[${requestId}]`, err);
+  return {
+    code: known ? err.code : "INTERNAL",
+    // Fuera de HttpError el mensaje real no sale: puede contener rutas o SQL (§30).
+    message: known ? err.message : "Error interno de la instancia.",
+    status: known ? err.status : 500,
+    ...(known && err.details ? { details: err.details } : {}),
+    requestId,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const requestId = randomUUID();
+  const host = req.headers.host ?? `localhost:${config.port}`;
+  const url = new URL(req.url ?? "/", `http://${host}`);
+  // Sin TRUST_PROXY, la cabecera se ignora: es texto que escribe el cliente.
+  const forwarded = config.trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim() : "";
+  const ip = forwarded || req.socket.remoteAddress || "?";
+
+  const ctx: Ctx = { req, res, url, params: {}, requestId, ip, auth: null };
+
+  try {
+    if (req.method === "OPTIONS") return send(ctx, 204, undefined);
+
+    rateLimit(`ip:${ip}`, 600, 60_000);
+
+    const header = req.headers.authorization;
+    ctx.auth = authenticate(header?.startsWith("Bearer ") ? header.slice(7) : null);
+
+    const found = match(req.method ?? "GET", url.pathname);
+    if (!found) throw notFound(`Ruta desconocida: ${req.method} ${url.pathname}`);
+
+    ctx.params = found.params;
+    const result = await found.handler(ctx);
+    if (result === HANDLED) return;
+    send(ctx, result === undefined ? 204 : 200, result);
+  } catch (err) {
+    const apiError = toApiError(err, requestId);
+    if (!res.headersSent) send(ctx, apiError.status, { error: apiError });
+    else res.end();
+  }
+}
+
+export { MAX_UPLOAD_BYTES };

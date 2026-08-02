@@ -1,0 +1,19 @@
+{
+  "name": "@distop/node-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=../../.env --watch server.ts",
+    "start": "node --env-file-if-exists=../../.env server.ts",
+    "test": "node --test \"*.test.ts\""
+  },
+  "dependencies": {
+    "@distop/protocol": "*",
+    "ws": "8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "@types/ws": "8.5.13"
+  }
+}

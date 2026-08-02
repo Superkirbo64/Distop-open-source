@@ -1,0 +1,22 @@
+{
+  "name": "distop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/*", "packages/*"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "dev": "concurrently -n server,web -c cyan,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm run dev --workspace @distop/node-server",
+    "dev:web": "npm run dev --workspace @distop/web",
+    "build": "npm run build --workspace @distop/web",
+    "start": "npm run start --workspace @distop/node-server",
+    "host": "npm run build && npm run start",
+    "test": "npm run test --workspace @distop/node-server",
+    "typecheck": "tsc -p apps/node-server --noEmit && tsc -p apps/web --noEmit"
+  },
+  "devDependencies": {
+    "concurrently": "9.1.2",
+    "typescript": "5.7.3"
+  }
+}
