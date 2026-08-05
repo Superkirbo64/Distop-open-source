@@ -202,6 +202,13 @@ export function meta(key: string, fallback: () => string): string {
   return value;
 }
 
+export function setMeta(key: string, value: string): void {
+  db.prepare("INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
+    key,
+    value,
+  );
+}
+
 export const INSTANCE_ID = meta("instance_id", uuidv7);
 
 /* ── helpers de escritura comunes ─────────────────────────────────────── */

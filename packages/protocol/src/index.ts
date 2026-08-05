@@ -224,12 +224,22 @@ export interface Invite {
    ni pagar servidores de medios; el techo práctico está en torno a 6 personas
    por canal, a partir de ahí toca un SFU (fase posterior). */
 
+/**
+ * Cada persona publica como mucho un vídeo a la vez: cámara o pantalla.
+ * Una sola pista por par mantiene la malla previsible (el coste sube al
+ * cuadrado con la gente, no también con las fuentes) y permite negociar el
+ * hueco de vídeo al conectar, sin renegociar cada vez que alguien enciende
+ * la cámara. `null` es "no manda vídeo".
+ */
+export type VideoSource = "camera" | "screen";
+
 export interface VoiceState {
   user_id: Snowflake;
   channel_id: Snowflake;
   community_id: Snowflake;
   muted: boolean;
   deafened: boolean;
+  video: VideoSource | null;
   joined_at: number;
 }
 
@@ -351,6 +361,7 @@ export type ClientCommand =
   | { t: "VOICE_JOIN"; d: { channel_id: Snowflake } }
   | { t: "VOICE_LEAVE"; d: { channel_id: Snowflake } }
   | { t: "VOICE_MUTE"; d: { channel_id: Snowflake; muted: boolean; deafened: boolean } }
+  | { t: "VOICE_VIDEO"; d: { channel_id: Snowflake; source: VideoSource | null } }
   | { t: "VOICE_SIGNAL"; d: { channel_id: Snowflake; to_user_id: Snowflake; payload: unknown } }
   | { t: "PING"; d?: undefined };
 

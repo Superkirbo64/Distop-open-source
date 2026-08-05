@@ -19,7 +19,7 @@ import {
 import { useStore } from "../store.ts";
 import { api, download } from "../lib/api.ts";
 import { formatDate } from "../i18n.ts";
-import { Button, ErrorNote, Field, Modal, Toggle, useConfirm, useLocale, useT, useErrorText } from "../components/ui.tsx";
+import { Button, ErrorNote, Field, ImageField, Modal, Toggle, useConfirm, useLocale, useT, useErrorText } from "../components/ui.tsx";
 
 /**
  * Referencia estable para "no hay nada".
@@ -128,11 +128,12 @@ function Overview({ community }: { community: Community }) {
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label={t("manage.icon")} hint={t("common.optional")}>
-          {(id) => (
-            <input id={id} className="field" value={form.icon_url} onChange={(e) => setForm({ ...form, icon_url: e.target.value })} inputMode="url" />
-          )}
-        </Field>
+        <ImageField
+          label={t("manage.icon")}
+          hint={t("manage.iconHint")}
+          value={form.icon_url}
+          onChange={(url) => setForm({ ...form, icon_url: url })}
+        />
         <Field label={t("manage.accent")}>
           {(id) => (
             <input
@@ -146,11 +147,13 @@ function Overview({ community }: { community: Community }) {
         </Field>
       </div>
 
-      <Field label={t("manage.banner")} hint={t("common.optional")}>
-        {(id) => (
-          <input id={id} className="field" value={form.banner_url} onChange={(e) => setForm({ ...form, banner_url: e.target.value })} inputMode="url" />
-        )}
-      </Field>
+      <ImageField
+        label={t("manage.banner")}
+        hint={t("common.optional")}
+        value={form.banner_url}
+        onChange={(url) => setForm({ ...form, banner_url: url })}
+        preview="wide"
+      />
 
       <Field label={t("manage.rules")} hint={t("common.optional")}>
         {(id) => (

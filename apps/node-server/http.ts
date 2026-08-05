@@ -7,6 +7,7 @@ import type { ApiError } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import type { AuthContext } from "./auth.ts";
 import { authenticate } from "./auth.ts";
+import { publicUrl } from "./tunnel.ts";
 
 export class HttpError extends Error {
   status: number;
@@ -45,6 +46,15 @@ export interface Ctx {
  */
 export function isLocalRequest(ctx: Ctx): boolean {
   if (config.trustProxy) return false;
+
+  /* Con la instancia publicada —un túnel abierto o PUBLIC_URL puesta— el socket
+     SIGUE siendo 127.0.0.1, porque quien se conecta de verdad es el agente del
+     túnel corriendo en esta misma máquina. Sin esta comprobación, "estoy sentado
+     delante del ordenador" pasaba a significar "tengo la URL", y con eso
+     /auth/recover entregaba una sesión de quien hospeda a cualquiera que la
+     pidiera. Publicada la instancia, nadie es local. */
+  if (publicUrl()) return false;
+
   const address = ctx.req.socket.remoteAddress ?? "";
   return address === "::1" || address === "127.0.0.1" || address.startsWith("::ffff:127.");
 }

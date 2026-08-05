@@ -1,0 +1,930 @@
+/*
+ * Sistema visual del sitio público. Arcade de 8 bits sobre estructura moderna:
+ * la retícula y el ritmo son de una web de 2026, la piel es de una recreativa.
+ *
+ * Reglas que no se rompen:
+ *   - La tipografía de píxeles NUNCA toca un párrafo. Titulares y etiquetas.
+ *   - Todo color de texto pasa AA sobre su fondo (§31).
+ *   - Todo movimiento muere con prefers-reduced-motion.
+ */
+
+/* ── Tokens ─────────────────────────────────────────────────────────────── */
+:root {
+  /* Fondos: negro violáceo de monitor apagado, no gris. */
+  --bg: #0b0a14;
+  --bg-deep: #050410;
+  --surface: #14122a;
+  --raise: #1d1a3c;
+  --line: #302c5c;
+  /* Los puntos del fondo necesitan más luz que el borde: sobre #0b0a14, con el
+     color de --line se veían como suciedad de la pantalla. */
+  --dot: #4a4490;
+
+  /* Tinta. --muted pasa AA sobre --bg y sobre --surface. */
+  --ink: #f3f1ff;
+  --muted: #a9a4d6;
+
+  /* Acento heredado de la app (#4059e0 / #7b90ff), subido de saturación.
+     --accent es para superficies; --accent-text para texto sobre fondo oscuro. */
+  --accent: #5b6cff;
+  --accent-text: #9aa6ff;
+  --accent-ink: #05040f;
+
+  /* Segundos de paleta recreativa. Se usan para clasificar, nunca solos (§31). */
+  --hot: #ff45a8;
+  --cyan: #2ce3d8;
+  --lime: #8dff62;
+  --gold: #ffd24a;
+
+  --font-display: "Press Start 2P", ui-monospace, monospace;
+  --font-label: "Silkscreen", ui-monospace, monospace;
+  --font-body: "Inter Variable", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Un solo escalón de sombra: sólida y desplazada, como un sprite recortado. */
+  --px: 4px;
+  --shadow-hard: var(--px) var(--px) 0 0 var(--line);
+  --shadow-hot: var(--px) var(--px) 0 0 var(--accent);
+
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-step: steps(4, end);
+  --dur-1: 0.14s;
+  --dur-2: 0.28s;
+
+  /* Medido en el navegador: con 7.5rem quedaban 240 px de nada entre secciones. */
+  --pad-block: clamp(3.25rem, 5vw, 4.75rem);
+
+  /* Cursor propio, dibujado aquí mismo (§24: ningún recurso ajeno sin licencia).
+     Los de Windows 98 son de Microsoft y no se pueden redistribuir. */
+  --cursor-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='38' viewBox='0 0 12 19' shape-rendering='crispEdges'%3E%3Cpath d='M0 0v16l4-4 3 6 2-1-3-6h5z' fill='%23f3f1ff' stroke='%23050410' stroke-width='1' stroke-linejoin='miter'/%3E%3C/svg%3E");
+  --cursor-hot: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='38' viewBox='0 0 12 19' shape-rendering='crispEdges'%3E%3Cpath d='M0 0v16l4-4 3 6 2-1-3-6h5z' fill='%23ffd24a' stroke='%23050410' stroke-width='1' stroke-linejoin='miter'/%3E%3C/svg%3E");
+}
+
+/* ── Base ───────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: grid;
+  grid-template-areas:
+    "header"
+    "main"
+    "footer";
+  grid-template-rows: auto 1fr auto;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: clamp(1rem, 0.95rem + 0.25vw, 1.0625rem);
+  line-height: 1.65;
+  overflow-x: hidden;
+  cursor: var(--cursor-arrow) 0 0, default;
+}
+
+/* La caja de la punta del cursor cambia de color sobre lo que se puede pulsar:
+   convención de interfaz de 8 bits, y no secuestra el puntero del sistema. */
+a,
+button,
+summary,
+[role="button"] {
+  cursor: var(--cursor-hot) 0 0, pointer;
+}
+
+input,
+textarea {
+  cursor: text;
+}
+
+img,
+svg,
+canvas {
+  display: block;
+  max-width: 100%;
+}
+
+a {
+  color: var(--accent-text);
+  text-underline-offset: 0.25em;
+}
+
+:focus-visible {
+  outline: 3px solid var(--gold);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* ── Tipografía ─────────────────────────────────────────────────────────── */
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 0;
+  /* Press Start 2P no tiene minúsculas estrechas: sin esto las palabras largas
+     se salen de la pantalla en 360 px. */
+  overflow-wrap: break-word;
+  hyphens: none;
+}
+
+/* Press Start 2P ocupa casi el doble de ancho por letra que una sans normal:
+   los tamaños que parecen razonables en el editor llenan la pantalla entera.
+   Medido en el navegador, no estimado. */
+h1 {
+  font-size: clamp(1.25rem, 0.8rem + 2.1vw, 2.5rem);
+  line-height: 1.22;
+}
+
+h2 {
+  font-size: clamp(1rem, 0.8rem + 1.15vw, 1.625rem);
+}
+
+h3 {
+  /* Tope de 1rem: a 1.125 el titular de card mas largo tocaba el borde. */
+  font-size: clamp(0.875rem, 0.8rem + 0.4vw, 1rem);
+  line-height: 1.45;
+}
+
+p {
+  margin: 0;
+}
+
+/* Etiqueta de sección: la pieza que más «recreativa» hace al sitio. */
+.eyebrow {
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin: 0;
+}
+
+.lead {
+  color: var(--muted);
+  font-size: clamp(1rem, 0.95rem + 0.4vw, 1.1875rem);
+  max-width: 58ch;
+}
+
+.mono {
+  font-family: var(--font-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.75rem;
+}
+
+/* ── Retícula de página ─────────────────────────────────────────────────── */
+/* Una sola rejilla para todo el sitio: la columna `main` centra el contenido y
+   la columna `full` deja que un bloque se vaya a sangre sin sacarlo del flujo. */
+.layout {
+  display: grid;
+  grid-template-columns:
+    [full-start] minmax(1.25rem, 1fr)
+    [main-start] min(76rem, 100% - 2.5rem) [main-end]
+    minmax(1.25rem, 1fr) [full-end];
+}
+
+.layout > * {
+  grid-column: main;
+}
+
+.layout > .bleed {
+  grid-column: full;
+}
+
+main {
+  grid-area: main;
+  /* `main` ocupa el 1fr de la rejilla del body, así que en una página corta se
+     estira. Sin esto, ese alto sobrante se reparte entre las filas automáticas
+     y los botones salen convertidos en cuadrados de 190 px. Visto en captura. */
+  align-content: start;
+}
+
+section {
+  padding-block: var(--pad-block);
+  position: relative;
+}
+
+.stack {
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+}
+
+.skip-link {
+  position: absolute;
+  inset-block-start: 0.5rem;
+  inset-inline-start: 0.5rem;
+  z-index: 100;
+  padding: 0.75rem 1rem;
+  background: var(--gold);
+  color: var(--accent-ink);
+  font-family: var(--font-label);
+  text-decoration: none;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus-visible {
+  transform: none;
+}
+
+/* ── Botones ────────────────────────────────────────────────────────────── */
+/* Sombra sólida desplazada: al pulsar, el botón «cae» sobre su sombra. */
+.btn {
+  --btn-bg: var(--surface);
+  --btn-ink: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+  padding: 0.85rem 1.4rem;
+  font-family: var(--font-label);
+  font-size: 0.9375rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--btn-ink);
+  background: var(--btn-bg);
+  border: 2px solid var(--line);
+  box-shadow: var(--shadow-hard);
+  transition:
+    transform var(--dur-1) var(--ease-soft),
+    box-shadow var(--dur-1) var(--ease-soft),
+    background-color var(--dur-1) linear;
+}
+
+.btn:hover {
+  --btn-bg: var(--raise);
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 0 var(--line);
+}
+
+.btn:active {
+  transform: translate(var(--px), var(--px));
+  box-shadow: 0 0 0 0 var(--line);
+}
+
+.btn--primary {
+  --btn-bg: var(--accent);
+  --btn-ink: var(--accent-ink);
+  border-color: var(--accent);
+  box-shadow: var(--px) var(--px) 0 0 var(--accent-text);
+}
+
+.btn--primary:hover {
+  --btn-bg: var(--accent-text);
+  box-shadow: 6px 6px 0 0 var(--accent-text);
+}
+
+.btn--primary:active {
+  box-shadow: 0 0 0 0 var(--accent-text);
+}
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+.card {
+  display: grid;
+  gap: 0.65rem;
+  align-content: start;
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  box-shadow: var(--shadow-hard);
+  transition:
+    transform var(--dur-2) var(--ease-soft),
+    box-shadow var(--dur-2) var(--ease-soft),
+    background-color var(--dur-2) linear;
+}
+
+.card:hover,
+.card:focus-within {
+  background: var(--raise);
+  transform: translate(-3px, -3px);
+  box-shadow: 7px 7px 0 0 var(--accent);
+}
+
+.card__tag {
+  font-family: var(--font-label);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  background: var(--cyan);
+  padding: 0.2rem 0.5rem;
+  justify-self: start;
+}
+
+.card p {
+  color: var(--muted);
+}
+
+.grid-cards {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 17.5rem), 1fr));
+}
+
+/* ── Bloque de código ───────────────────────────────────────────────────── */
+.code {
+  display: grid;
+  border: 2px solid var(--line);
+  background: var(--bg-deep);
+  box-shadow: var(--shadow-hard);
+  overflow: hidden;
+}
+
+.code__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  background: var(--raise);
+  border-bottom: 2px solid var(--line);
+  font-family: var(--font-label);
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.code__dot {
+  width: 8px;
+  height: 8px;
+  background: var(--hot);
+}
+
+.code pre {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: var(--lime);
+  tab-size: 2;
+}
+
+/* ── Cabecera ───────────────────────────────────────────────────────────── */
+.site-header {
+  grid-area: header;
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 50;
+  background: color-mix(in srgb, var(--bg-deep) 88%, transparent);
+  backdrop-filter: blur(10px);
+  border-bottom: 2px solid var(--line);
+}
+
+.site-header__inner {
+  grid-column: main;
+  display: grid;
+  grid-template-areas: "brand nav actions";
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 1rem;
+  /* 60 y no 48: con 48 la sombra sólida del botón primario se comía el borde
+     inferior de la cabecera, y los controles necesitan 44 px de alto (§31). */
+  block-size: 60px;
+}
+
+.brand {
+  grid-area: brand;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.brand__mark {
+  inline-size: 20px;
+  block-size: 20px;
+  flex: none;
+}
+
+.site-nav {
+  grid-area: nav;
+  justify-self: center;
+  display: flex;
+  gap: 1.5rem;
+}
+
+.site-nav a {
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: none;
+  padding-block: 0.5rem;
+  border-bottom: 2px solid transparent;
+  transition: color var(--dur-1) linear, border-color var(--dur-1) linear;
+}
+
+.site-nav a:hover,
+.site-nav a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+}
+
+.header-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.header-actions .btn {
+  padding: 0.5rem 0.9rem;
+  min-height: 44px;
+  font-size: 0.8125rem;
+  box-shadow: 3px 3px 0 0 var(--accent-text);
+}
+
+/* Menús desplegables (idioma y navegación de móvil): <details> nativo. El
+   navegador ya sabe abrirlo, cerrarlo con Escape y anunciarlo; una librería de
+   menús aquí sería código para repetir lo que ya funciona. */
+.menu {
+  position: relative;
+  font-family: var(--font-label);
+}
+
+.menu > summary {
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 2px solid var(--line);
+}
+
+.menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu[open] > summary,
+.menu > summary:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.menu__list {
+  position: absolute;
+  inset-inline-end: 0;
+  inset-block-start: calc(100% + 6px);
+  display: grid;
+  min-inline-size: 10rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  box-shadow: var(--shadow-hard);
+}
+
+.menu__list a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.menu__list a:hover,
+.menu__list a[aria-current="true"] {
+  background: var(--raise);
+  color: var(--ink);
+}
+
+/* La navegación en desplegable solo existe cuando la barra no cabe. */
+.navmenu {
+  display: none;
+}
+
+.navmenu > summary {
+  min-inline-size: 44px;
+  font-size: 1rem;
+}
+
+/* ── Pie ────────────────────────────────────────────────────────────────── */
+.site-footer {
+  grid-area: footer;
+  border-top: 2px solid var(--line);
+  background: var(--bg-deep);
+  padding-block: 3.5rem 1.5rem;
+}
+
+.site-footer__grid {
+  grid-column: main;
+  display: grid;
+  gap: 2.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+}
+
+.site-footer h2 {
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-block-end: 0.9rem;
+}
+
+.site-footer ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.site-footer li a {
+  color: var(--ink);
+  text-decoration: none;
+  font-size: 0.9375rem;
+}
+
+.site-footer li a:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+
+.site-footer__legal {
+  grid-column: main;
+  margin-block-start: 2.5rem;
+  padding-block-start: 1.25rem;
+  border-top: 2px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+/* ── Hero ───────────────────────────────────────────────────────────────── */
+.hero {
+  position: relative;
+  /* Menos aire abajo que en el resto de secciones: con --pad-block quedaba un
+     tercio de pantalla vacío entre el hero y lo siguiente. */
+  padding-block: clamp(3rem, 6vw, 5rem) clamp(3rem, 6vw, 5rem);
+  isolation: isolate;
+}
+
+.hero__grid {
+  display: grid;
+  grid-template-areas:
+    "copy"
+    "art";
+  gap: clamp(2.5rem, 5vw, 4rem);
+  align-items: center;
+}
+
+@media (min-width: 60rem) {
+  .hero__grid {
+    grid-template-areas: "copy art";
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  }
+}
+
+.hero__copy {
+  grid-area: copy;
+  display: grid;
+  gap: 1.5rem;
+  justify-items: start;
+}
+
+.hero__art {
+  grid-area: art;
+}
+
+.hero h1 span {
+  display: block;
+}
+
+.hero h1 .accent {
+  color: var(--accent-text);
+}
+
+/* Cursor de bloque parpadeando al final del titular: la firma del sitio. */
+.caret {
+  display: inline-block;
+  inline-size: 0.62em;
+  block-size: 0.86em;
+  margin-inline-start: 0.12em;
+  background: var(--gold);
+  vertical-align: baseline;
+  animation: blink 1.06s steps(1, end) infinite;
+}
+
+@keyframes blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+
+/* Lienzo del fondo de puntos: detrás de todo y sin capturar el ratón. */
+.dotfield {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  inline-size: 100%;
+  block-size: 100%;
+  pointer-events: none;
+}
+
+/* Líneas de barrido de monitor CRT. Muy tenues: decoran, no molestan a la lectura. */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.028) 0 1px,
+    transparent 1px 3px
+  );
+  mask-image: linear-gradient(to bottom, #000 0%, #000 62%, transparent 100%);
+}
+
+/* ── Marcador de «todo incluido» ────────────────────────────────────────── */
+.scoreboard {
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  margin-block-start: 0.5rem;
+}
+
+.score {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border-left: 4px solid var(--line);
+  transition: border-color var(--dur-1) linear, background-color var(--dur-1) linear;
+}
+
+.score:hover {
+  background: var(--raise);
+  border-left-color: var(--lime);
+}
+
+.score__name {
+  color: var(--ink);
+  font-size: 0.9375rem;
+}
+
+.score__value {
+  font-family: var(--font-label);
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lime);
+  white-space: nowrap;
+}
+
+/* ── Pasos numerados ────────────────────────────────────────────────────── */
+.steps {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  counter-reset: step;
+}
+
+.step {
+  counter-increment: step;
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+  padding: 1.5rem;
+  background: var(--surface);
+  border-top: 4px solid var(--accent);
+}
+
+.step::before {
+  content: "0" counter(step);
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--accent-text);
+}
+
+.step p {
+  color: var(--muted);
+}
+
+/* ── Aviso honesto ──────────────────────────────────────────────────────── */
+.notice {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1.4rem 1.6rem;
+  background: color-mix(in srgb, var(--gold) 9%, var(--surface));
+  border-left: 6px solid var(--gold);
+}
+
+.notice h3 {
+  font-family: var(--font-label);
+  font-size: 0.875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.notice p {
+  color: var(--ink);
+  max-width: 68ch;
+}
+
+/* ── Captura del producto ───────────────────────────────────────────────── */
+.shot {
+  border: 2px solid var(--line);
+  box-shadow: 8px 8px 0 0 var(--accent);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.shot img {
+  inline-size: 100%;
+  block-size: auto;
+}
+
+.shot--placeholder {
+  aspect-ratio: 16 / 10;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* ── Novedades ──────────────────────────────────────────────────────────── */
+.entry {
+  display: grid;
+  gap: 0.6rem;
+  padding-block: 1.75rem;
+  border-top: 2px solid var(--line);
+}
+
+.entry time {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  color: var(--cyan);
+}
+
+.entry p {
+  color: var(--muted);
+  max-width: 72ch;
+}
+
+/* ── Llamada final ──────────────────────────────────────────────────────── */
+.finale {
+  text-align: center;
+  display: grid;
+  justify-items: center;
+  gap: 1.5rem;
+  padding-block: var(--pad-block);
+  background:
+    radial-gradient(120% 120% at 50% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 62%),
+    var(--bg-deep);
+  border-block: 2px solid var(--line);
+}
+
+.finale .lead {
+  margin-inline: auto;
+  text-align: center;
+}
+
+/* ── Revelado al hacer scroll ───────────────────────────────────────────── */
+/* Estado inicial en CSS para que no haya parpadeo antes de que corra GSAP. Sin
+   JavaScript lo deshace el <noscript> del layout, y con movimiento reducido el
+   bloque del final. */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+}
+
+/* ── Intro ──────────────────────────────────────────────────────────────── */
+.intro {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  gap: 1rem;
+  background: var(--bg-deep);
+}
+
+.intro[hidden] {
+  display: none;
+}
+
+.intro__word {
+  display: flex;
+  gap: 0.08em;
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 8vw, 4rem);
+  color: var(--ink);
+}
+
+.intro__word span {
+  display: inline-block;
+}
+
+.intro__bar {
+  inline-size: min(240px, 60vw);
+  block-size: 10px;
+  border: 2px solid var(--line);
+  padding: 2px;
+}
+
+.intro__bar i {
+  display: block;
+  block-size: 100%;
+  inline-size: 0%;
+  background: var(--accent);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 59.99rem) {
+  .site-nav {
+    display: none;
+  }
+
+  .navmenu {
+    display: block;
+  }
+
+  .site-header__inner {
+    grid-template-areas: "brand actions";
+    grid-template-columns: auto 1fr;
+    block-size: 52px;
+  }
+
+  .header-actions {
+    justify-self: end;
+  }
+}
+
+/* Con menos de 416 px, el botón sobra: su destino está dentro del desplegable. */
+@media (max-width: 26rem) {
+  .header-actions .btn--primary {
+    display: none;
+  }
+}
+
+/* ── Movimiento reducido ────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

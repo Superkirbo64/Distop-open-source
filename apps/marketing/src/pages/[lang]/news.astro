@@ -1,0 +1,43 @@
+---
+import Base from "../../layouts/Base.astro";
+import { LOCALES, UI, type Locale } from "../../i18n/ui";
+import { NEWS } from "../../i18n/news";
+
+export function getStaticPaths() {
+  return LOCALES.map((lang) => ({ params: { lang } }));
+}
+
+const locale = Astro.params.lang as Locale;
+const t = UI[locale];
+const fmt = new Intl.DateTimeFormat(locale === "pt-br" ? "pt-BR" : locale, {
+  // Las fechas son ISO sin hora, o sea medianoche UTC: sin fijar la zona, en
+  // cualquier huso al oeste de Greenwich se imprime el dia anterior.
+  timeZone: "UTC",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+const entries = [...NEWS].sort((a, b) => b.date.localeCompare(a.date));
+---
+
+<Base locale={locale} path="news/" title={t.newsPage.title} description={t.newsPage.sub}>
+  <section>
+    <div class="stack">
+      <p class="eyebrow">{t.news.eyebrow}</p>
+      <h1>{t.newsPage.title}</h1>
+      <p class="lead">{t.newsPage.sub}</p>
+    </div>
+
+    <div style="margin-block-start:2rem">
+      {
+        entries.map((entry) => (
+          <article class="entry reveal">
+            <time datetime={entry.date}>{fmt.format(new Date(entry.date))}</time>
+            <h3>{entry.title[locale]}</h3>
+            <p>{entry.body[locale]}</p>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+</Base>

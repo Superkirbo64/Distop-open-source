@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* El corte real del cascarón es 900px (la rejilla .app-grid y useIsMobile), no
+   los 768px de `md:`. Entre 768 y 900 la interfaz ya era móvil pero los
+   controles eran los de escritorio: desaparecía el botón de volver y no había
+   forma de llegar a la barra de comunidades. En un móvil apaisado, callejón
+   sin salida. Esta variante mantiene los tres sitios en el mismo número. */
+@custom-variant wide (@media (min-width: 901px));
+
 /* ────────────────────────────────────────────────────────────────────────
    Sistema de tokens (§10.2).
    Claro y oscuro son dos paletas escritas a mano, no una aclarada de la otra.
@@ -358,6 +365,32 @@
   }
   .field::placeholder {
     color: var(--muted);
+  }
+
+  /* Un <select> sin tocar se dibuja con el estilo del sistema operativo: flecha
+     gris de Windows y lista azul, dentro de una interfaz que no es ni gris ni
+     azul. Se le quita la apariencia nativa y se pinta la flecha a mano. */
+  select.field {
+    appearance: none;
+    padding-right: 2.2rem;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position:
+      calc(100% - 1.05rem) calc(50% + 2px),
+      calc(100% - 0.75rem) calc(50% + 2px);
+    background-size:
+      5px 5px,
+      5px 5px;
+    background-repeat: no-repeat;
+    cursor: pointer;
+  }
+
+  /* La lista desplegada la dibuja el sistema, no el CSS de la página. Lo que sí
+     obedece es el color de cada opción y el esquema: sin esto, en tema oscuro
+     salía una lista blanca. */
+  select.field option {
+    background: var(--surface);
+    color: var(--ink);
   }
 
   .card {

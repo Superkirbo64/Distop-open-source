@@ -21,10 +21,11 @@ ni personalización de pago, ni límites artificiales. Los límites son los de t
 | Exportación completa de la comunidad en JSON | ✅ |
 | Tema claro y oscuro reales, escala de texto, densidad, español/portugués/inglés | ✅ |
 | PWA instalable con estado de conexión honesto | ✅ |
-| Voz y vídeo (WebRTC/SFU) | ⛔ fase 3 |
+| Voz por la instancia: funciona siempre, sin STUN, sin TURN y sin abrir puertos | ✅ |
+| Cámara y pantalla por la instancia, o directas entre navegadores si se prefiere | ✅ |
+| Servidor de medios (SFU) para salas de más de ~6 personas | ⛔ fase 3 |
 | Mensajes directos | ⛔ fase 3 |
 | Bots, plugins, webhooks | ⛔ fase 2 |
-| Integración con servidores de Minecraft | ⛔ fase 4 |
 | Plataforma central, descubrimiento global y federación | ⛔ fase 5 |
 
 Lo marcado con ⛔ **no está empezado**. La arquitectura lo contempla (el protocolo
@@ -36,8 +37,13 @@ pero decir que existe sería mentir.
 ```text
 apps/web/           Cliente React + Vite (SPA/PWA). Es también el frontend del futuro cliente Tauri.
 apps/node-server/   La instancia self-hosted: API v1 + gateway WebSocket + SQLite + archivos.
+apps/marketing/     Sitio público (Astro, estático, es/en/pt-BR). No habla con ninguna instancia.
 packages/protocol/  Contrato único cliente ↔ instancia: tipos, eventos, permisos, UUIDv7.
 ```
+
+El sitio público es **estático de verdad**: son HTML y CSS en una carpeta, sin API ni
+base de datos detrás, así que cabe en cualquier capa gratuita. Se levanta con
+`npm run site` y se compila con `npm run site:build` (queda en `apps/marketing/dist`).
 
 Una instancia aloja **varias comunidades**. La comunidad no está atada a la instancia:
 por eso existe la exportación, y por eso los IDs son globalmente únicos.
@@ -46,6 +52,35 @@ por eso existe la exportación, y por eso los IDs son globalmente únicos.
 
 - **Node 24 o superior** (ejecuta TypeScript de forma nativa y trae `node:sqlite`; el servidor no necesita compilarse).
 - Nada más. Sin Bun, sin Postgres, sin Redis, sin servicios externos.
+
+## Hospedar con un doble clic
+
+En Windows, **`Hospedar Distop.cmd`**. En cualquier sistema, `npm run host`.
+
+Las dos cosas hacen lo mismo ([scripts/host.mjs](scripts/host.mjs)): instalan dependencias si
+faltan, generan un `AUTH_SECRET` fijo en `.env` la primera vez (sin él, cada reinicio
+cerraría todas las sesiones), compilan el cliente si hace falta, arrancan la instancia y
+abren el navegador cuando el puerto responde de verdad. Si el puerto ya está ocupado lo
+dicen y no arrancan nada.
+
+Mientras la ventana esté abierta, tu comunidad está en línea. Al cerrarla se apaga: es
+un servicio en tu equipo, no en la nube de nadie.
+
+### Que se llegue desde fuera de tu casa
+
+```bash
+npm run host -- --tunnel          # o:  "Hospedar Distop.cmd" --tunnel
+```
+
+Levanta un túnel rápido de Cloudflare (no hace falta cuenta ni dominio), escribe la
+dirección resultante en `PUBLIC_URL` y la imprime al final para que la copies. Requiere
+[cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+instalado.
+
+Con la salvedad de siempre: **esa dirección es de usar y tirar**. Muere al cerrar la
+ventana y la próxima vez es otra distinta, así que un enlace repartido hoy no sirve
+mañana. Para una dirección fija hacen falta un túnel con nombre y un dominio propio
+(`cloudflared tunnel create`), o Tailscale Funnel, que es gratis y no pide dominio.
 
 ## Hospedar no exige crear una cuenta
 
@@ -106,6 +141,36 @@ Conviene decirlo antes de que alguien lo descubra desplegando:
   La interfaz lo dice con todas las letras en vez de mostrar un error genérico.
 - **Sin puertos abiertos hace falta un túnel** (Cloudflare Tunnel, Tailscale Funnel o
   similar). El asistente automático de §6 todavía no está construido.
+- **Voz y vídeo pasan por la instancia, como todo lo demás.** No hay conexión directa
+  entre navegadores que negociar, así que no hay nada que pueda fallar por culpa de un
+  router o de una red móvil: si se puede abrir la aplicación, se puede hablar y ver.
+
+  Lo que cuesta es **subida de quien hospeda**, una copia por cada persona que recibe:
+
+  | | Por persona | Cinco personas |
+  |---|---|---|
+  | Voz (Opus 32 kbit/s) | ~4 KB/s | ~640 kbit/s |
+  | Vídeo (VP8, techo 1,5 Mbit/s) | ~190 KB/s | ~6 Mbit/s |
+
+  La voz no se nota. El vídeo sí, y por eso **Ajustes → Voz y vídeo** deja pasarlo a
+  directo entre navegadores: no cuesta nada a quien hospeda y da más calidad, pero
+  solo llega si las dos redes se dejan hablar. Ahí mismo hay un botón que dice qué
+  caminos encuentra tu red, y se puede configurar un relevo TURN para cuando no haya
+  ninguno: **Metered** (0,5 GB al mes sin tarjeta, 20 GB si añades una), **Cloudflare
+  Realtime** (1 TB al mes, pide datos de facturación) o cualquier TURN propio. La clave
+  se queda en la instancia, nunca llega al navegador, y se valida al guardar.
+
+  No viene ningún relevo puesto de fábrica porque los TURN públicos sin cuenta que
+  circulan por los tutoriales —`openrelayproject` incluido— están caídos, y apuntar uno
+  muerto falla igual pero parece configurado.
+- **El transporte es TCP, así que se tiran paquetes a propósito.** Sobre un WebSocket,
+  dejar que se acumule cola no hace llegar la imagen: la hace llegar cada vez más tarde.
+  Cuando la cola crece, la instancia descarta en vez de esperar, y el codificador salta
+  fotogramas antes de encolarlos. Se prefiere una imagen que salta a una conversación
+  con retardo creciente.
+- **Voz y vídeo necesitan WebCodecs.** Chrome, Edge y Chrome para Android lo traen. En
+  Safari y iOS el soporte es más nuevo y desigual; si falta, la aplicación lo dice en vez
+  de quedarse muda sin explicación.
 - **`AUTH_SECRET` no es opcional en producción.** Sin él el proceso se niega a arrancar,
   porque cada reinicio invalidaría todas las sesiones. Cambiarlo cierra las sesiones
   abiertas a propósito: es la palanca para echar a todo el mundo si sospechas de una fuga.

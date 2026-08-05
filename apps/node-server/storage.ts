@@ -126,6 +126,23 @@ export function deleteAttachmentsOf(messageId: string): void {
   db.prepare("DELETE FROM attachments WHERE message_id = ?").run(messageId);
 }
 
+/**
+ * Todo lo que subió una persona, borrado del disco además de la base.
+ * Sin esto, "eliminar mi cuenta" dejaría sus fotos en el disco del anfitrión: la
+ * fila desaparece y el fichero se queda, servido por su URL para quien la tenga.
+ */
+export function deleteAttachmentsOwnedBy(userId: string): void {
+  const rows = db.prepare("SELECT id, path FROM attachments WHERE owner_id = ?").all(userId) as {
+    id: string;
+    path: string;
+  }[];
+  for (const row of rows) {
+    const full = resolve(ROOT, row.path);
+    if (full.startsWith(ROOT) && existsSync(full)) unlinkSync(full);
+  }
+  db.prepare("DELETE FROM attachments WHERE owner_id = ?").run(userId);
+}
+
 export function storageUsedMb(): number {
   let bytes = 0;
   const walk = (dir: string): void => {

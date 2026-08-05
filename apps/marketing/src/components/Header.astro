@@ -1,0 +1,75 @@
+---
+import Mark from "./Mark.astro";
+import { LOCALES, LOCALE_NAMES, HTML_LANG, UI, type Locale } from "../i18n/ui";
+
+/** `path` es la ruta sin idioma ("" para la portada, "install/" …). Sirve a la vez
+ *  para marcar el enlace activo y para que el selector de idioma lleve a la misma
+ *  página, no siempre a la portada. */
+type Props = { locale: Locale; path: string };
+const { locale, path } = Astro.props;
+const t = UI[locale];
+
+const links = [
+  { path: "", hash: "#features", label: t.nav.features },
+  { path: "install/", hash: "", label: t.nav.install },
+  { path: "hosting/", hash: "", label: t.nav.hosting },
+  { path: "news/", hash: "", label: t.nav.news },
+];
+---
+
+<header class="site-header layout">
+  <div class="site-header__inner">
+    <a class="brand" href={`/${locale}/`}>
+      <Mark class="brand__mark" />
+      Distop
+    </a>
+
+    <nav class="site-nav" aria-label="Distop">
+      {
+        links.map((l) => (
+          <a
+            href={`/${locale}/${l.path}${l.hash}`}
+            aria-current={l.path !== "" && l.path === path ? "page" : undefined}
+          >
+            {l.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="header-actions">
+      {/* En móvil la barra de enlaces no cabe. Mismo <details> que el idioma:
+          se abre y se cierra sin una línea de JavaScript. */}
+      <details class="menu navmenu">
+        <summary aria-label={t.nav.features}>☰</summary>
+        <div class="menu__list">
+          {
+            links.map((l) => (
+              <a href={`/${locale}/${l.path}${l.hash}`}>{l.label}</a>
+            ))
+          }
+        </div>
+      </details>
+
+      <details class="menu">
+        <summary>{LOCALE_NAMES[locale]}</summary>
+        <div class="menu__list" role="group" aria-label={t.footer.langLabel}>
+          {
+            LOCALES.map((l) => (
+              <a
+                href={`/${l}/${path}`}
+                lang={HTML_LANG[l]}
+                hreflang={HTML_LANG[l]}
+                aria-current={l === locale ? "true" : undefined}
+              >
+                {LOCALE_NAMES[l]}
+              </a>
+            ))
+          }
+        </div>
+      </details>
+
+      <a class="btn btn--primary" href={`/${locale}/install/`}>{t.nav.install}</a>
+    </div>
+  </div>
+</header>

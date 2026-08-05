@@ -29,6 +29,7 @@ export function Invite({ code, onEnter }: { code: string; onEnter: (communityId:
   const errorText = useErrorText();
   const user = useStore((s) => s.user);
   const authenticate = useStore((s) => s.authenticate);
+  const logout = useStore((s) => s.logout);
   const reloadCommunities = useStore((s) => s.reloadCommunities);
 
   const [preview, setPreview] = useState<InvitePreview | null>(null);
@@ -114,9 +115,18 @@ export function Invite({ code, onEnter }: { code: string; onEnter: (communityId:
           </p>
 
           {user ? (
-            <Button variant="primary" onClick={() => void join(false)} disabled={busy}>
-              {t("invite.accept")}
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button variant="primary" onClick={() => void join(false)} disabled={busy}>
+                {t("invite.accept")}
+              </Button>
+              {/* Sin esto, abrir tu propio enlace no tenía más salida que entrar
+                  como tú: no había forma de probar la invitación como lo haría
+                  otra persona, ni de aceptarla con otra identidad. */}
+              <Button onClick={() => void logout()} disabled={busy}>
+                {t("invite.asSomeoneElse")}
+              </Button>
+              <p className="text-center text-xs text-muted">{t("invite.asSomeoneElseHint", { name: user.display_name })}</p>
+            </div>
           ) : (
             <div className="flex flex-col gap-3">
               {preview.guest_mode_enabled ? (

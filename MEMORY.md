@@ -1,7 +1,7 @@
 # Memoria del proyecto — Distop
 
 Lo que no se deduce leyendo el código: qué se decidió, qué se descartó y por qué.
-Última actualización: **1 de agosto de 2026**.
+Última actualización: **2 de agosto de 2026**.
 
 ## Identidad
 
@@ -13,7 +13,8 @@ Lo que no se deduce leyendo el código: qué se decidió, qué se descartó y po
   Dos paletas escritas a mano en `apps/web/src/styles.css`. Descartado el neobrutalismo
   por cansar en sesiones largas de chat, y el "solo oscuro" por accesibilidad.
 - Alcance elegido: **app real + API de instancia**. La landing pública quedó fuera de
-  esta entrega, por decisión explícita.
+  esa entrega, por decisión explícita. **Ya no: existe `apps/marketing`** — ver la
+  sección «Sitio público» al final.
 
 ## Tipografías y licencias
 
@@ -326,3 +327,88 @@ comunidad sin contraseña y un invitado crea la suya y la administra.
 
 **Pendiente:** selector de micrófono y medidor en Ajustes, compartir pantalla y
 vídeo, mensajes directos, hilos, notificaciones y no leídos, emojis personalizados.
+
+---
+
+## Sitio público — `apps/marketing` (2 de agosto de 2026)
+
+Pedido con **inkgames.com** como referencia, estático, en Astro y sin demo previa.
+De Ink Games se copió la **estructura** (cabecera ligera, hero de tipografía enorme
+con un CTA, bloques a sangre alternando texto grande y producto) y nada más: es una
+web de gaming con monetización real y Distop vende justo lo contrario.
+
+### Decisiones de esta tanda
+
+| Decisión | Por qué | Qué se descartó |
+|---|---|---|
+| **Proyecto Astro aparte** (`apps/marketing`), no una ruta de `apps/web` | El cliente vive detrás de sesión y no tiene SEO; esto es lo contrario. Astro manda HTML puro y cabe en cualquier capa gratuita | Meterlo en la SPA (mataba el SEO), Next.js (no hay nada dinámico que servir) |
+| **Estética arcade de 8 bits**, oscuro comprometido | Elegida explícitamente sobre «terminal/CRT» y «escritorio 90s». Diferencia el sitio del clon-de-Discord oscuro | El dual claro/oscuro de la app: aquí se decidió una sola cara |
+| **Press Start 2P + Silkscreen para titulares y etiquetas, Inter para párrafos** | La tipografía de píxeles es ilegible en texto corrido. Se avisó antes de elegirla y se aplicó la separación | Poner píxeles en todo |
+| **Fuentes por Fontsource, autoalojadas** | Cierra para este sitio el pendiente de §8: cero peticiones a `fonts.googleapis.com`. Verificado: 13 `.woff2` en `dist/_astro` y ni una URL externa en el HTML | Los `<link>` de Google que todavía usa `apps/web` |
+| **Rutas `/es/`, `/en/`, `/pt-br/` con prefijo también en español** | Un archivo por página en vez de dos. `/` redirige a `/es/` | `prefixDefaultLocale: false`, que obliga a duplicar cada página |
+| **Slugs en inglés** (`install`, `hosting`, `news`, `privacy`) iguales en los tres idiomas | Traducir los slugs obliga a un enrutador por idioma para ganar nada | Slugs traducidos |
+| **`astro check` en el `typecheck` de la raíz** | Encontró un fallo real a los diez segundos (abajo) | Dejar el sitio sin comprobar |
+| **Campo de puntos en canvas propio** | Es la idea de `DotGrid` de ReactBits, que usa GSAP + `InertiaPlugin`. El muelle son tres líneas en el bucle, y GSAP ya estaba cargado para el scroll | `Beams`/`LightRays`/`Plasma` de ReactBits: WebGL con `ogl`, +30 kB y GPU al ralentí en una landing |
+| **Cursor de píxeles dibujado a mano** (SVG en data-URI, en `--cursor-arrow`) | Los cursores de Windows 98 son de Microsoft. `1j01/retrores` **no tiene licencia** y sale de las DLL del sistema; los packs de Cursor Foundry y similares son para escritorio, no para redistribuir en una web. §24 lo prohíbe | Descargar cualquier pack «gratis» de internet |
+| **Menú de móvil y selector de idioma con `<details>`** | El navegador ya sabe abrirlo, cerrarlo con Escape y anunciarlo | Una librería de menús |
+
+**Uiverse no se pudo consultar**: devuelve 403 a cualquier fetch y no tiene repositorio
+público (lo que aparece al buscar son forks ajenos). La comparación de FASE 3 fue
+ReactBits contra CSS nativo, no ReactBits contra Uiverse.
+
+### Cosas que se vieron mirando, no leyendo
+
+Todas salieron de capturas con `scripts/shot.mjs`, ninguna del código:
+
+- **Press Start 2P ocupa casi el doble de ancho por letra.** El `h1` con tope de 4rem
+  llenaba la pantalla entera: 64 px reales, 302 px de alto. Bajado a 2.5rem.
+- **`border-image` con el SVG de esquinas mordidas salía a rayas.** Con
+  `border: 4px` y `border-image-width: 2px` sobraban 2 px que pintaba el borde normal.
+  Sustituido por `border: 2px solid`: mismo aire de 8 bits, cero artefactos.
+- **`main` ocupa el `1fr` del body, así que en una página corta estira sus filas
+  automáticas** y los botones del bloque final salían convertidos en cuadrados de
+  190 px. Se cierra con `align-content: start` en `main`. Vale para cualquier página
+  corta futura, no solo para la portada.
+- **La marca eran cinco nodos unidos en diagonal y a 20 px se leía como una X**, o
+  sea como un botón de cerrar. Ahora es un bocadillo de conversación de píxeles.
+- **Las fechas ISO sin hora son medianoche UTC**: al formatearlas en un huso al oeste
+  de Greenwich salía el día anterior («1 de agosto» para el 2). Va `timeZone: "UTC"`.
+- **A 360 px no había navegación**: la barra se ocultaba y solo quedaba el pie. Ahora
+  hay un desplegable de 44×44.
+- Las tildes de Press Start 2P **sí existen** y se colocan bien (comprobado ampliando
+  «últimas» a 6 aumentos). No hace falta buscarle sustituta.
+
+**Trampa de tipos que encontró `astro check`:** el diccionario español llevaba
+`as const`, así que cada cadena era su propio tipo literal y `Dict = typeof es`
+acababa exigiendo que el inglés dijera **exactamente lo mismo, letra por letra**
+(242 errores). Sin `as const` se comprueba la forma, que es lo que se quería.
+
+### Verificación hecha
+
+Navegador real (Chromium por CDP, `scripts/shot.mjs`) a **1440, 768 y 360 px**: cero
+desbordamiento horizontal en los tres (`scrollWidth === innerWidth`); el único
+elemento más ancho que la ventana es el `<code>` del bloque de Docker, que scrollea
+dentro de su propia caja. **Hover disparado con ratón de verdad** (nuevo `HOVER="x,y"`
+en `shot.mjs`, porque un evento sintético desde la página no activa `:hover`): la card
+se levanta 3 px y aparece la sombra de acento. `astro check` limpio en 13 archivos.
+`astro build` genera 16 páginas.
+
+La captura del hero es **la app de verdad**, no un montaje: se levantó una instancia
+aislada en el puerto 5055 con su base en el scratchpad (nunca `data/app.db`), se
+sembró con `seed.mjs` —cuatro personas registradas de verdad y una conversación— y se
+fotografió con el token en `localStorage`. La instancia se paró y sus datos se
+borraron al terminar.
+
+### Pendiente de esta tanda
+
+- **`apps/web` sigue pidiendo las fuentes a Google.** Aquí ya está resuelto con
+  Fontsource; queda copiar el mismo enfoque al cliente.
+- **`ws` está en 8.18.0 y tiene dos avisos altos** (divulgación de memoria y DoS por
+  fragmentos diminutos). Se arregla subiendo a 8.21.1. Es dependencia de producción de
+  la instancia, no del sitio; no se tocó en esta tanda para no mezclar cosas.
+- El repositorio del pie apunta a `github.com/kirbo/distop`, que es un marcador: hay
+  que poner la URL real. Lo mismo con `site: "https://distop.app"` en `astro.config.mjs`.
+- No hay imagen de Open Graph (`og:image`), así que al compartir el enlace sale sin
+  tarjeta. Es una captura de 1200×630 en `public/`.
+- Falta la página de descubrimiento de comunidades públicas: la API ya tiene
+  `/api/v1/discovery`, pero el sitio es estático y no puede consultarla en el build.

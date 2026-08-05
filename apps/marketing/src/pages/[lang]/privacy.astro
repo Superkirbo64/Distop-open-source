@@ -1,0 +1,34 @@
+---
+import Base from "../../layouts/Base.astro";
+import { LOCALES, UI, type Locale } from "../../i18n/ui";
+
+export function getStaticPaths() {
+  return LOCALES.map((lang) => ({ params: { lang } }));
+}
+
+const locale = Astro.params.lang as Locale;
+const t = UI[locale];
+---
+
+<Base locale={locale} path="privacy/" title={t.privacy.title} description={t.privacy.sub}>
+  <section>
+    <div class="stack">
+      <p class="eyebrow">{t.footer.links.privacy}</p>
+      <h1>{t.privacy.title}</h1>
+      <p class="lead">{t.privacy.sub}</p>
+    </div>
+
+    <div class="grid-cards" style="margin-block-start:2.5rem">
+      {
+        t.privacy.items.map((item) => (
+          <article class="card reveal">
+            <h3>{item.title}</h3>
+            <p>{item.body}</p>
+          </article>
+        ))
+      }
+    </div>
+
+    <p class="mono reveal" style="color:var(--muted);margin-block-start:2rem">{t.privacy.updated}</p>
+  </section>
+</Base>

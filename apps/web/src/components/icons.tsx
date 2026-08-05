@@ -57,7 +57,14 @@ export function Panel({ side = "left", open = false, ...props }: IconProps & { s
   return (
     <Svg {...props} className={side === "right" ? "ai-flip" : ""}>
       <rect width={18} height={18} x={3} y={3} rx={2} ry={2} />
-      {open ? <rect className="ai-slide" x={4} y={4} width={4} height={16} rx={1} fill="currentColor" stroke="none" /> : null}
+      {/* La banda llega hasta el centro de la línea divisoria (x=9) y no hasta
+          su borde (x=8): si no, el trazo de 2px de la línea y el relleno se
+          sumaban en un bloque grueso a la izquierda. El radio 1 de las esquinas
+          es el del marco (2) menos el medio trazo, así que encajan en vez de
+          dejar un escalón. */}
+      {open ? (
+        <path className="ai-slide" d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4z" fill="currentColor" stroke="none" />
+      ) : null}
       <line className="ai-slide" x1={9} y1={3} x2={9} y2={21} />
     </Svg>
   );

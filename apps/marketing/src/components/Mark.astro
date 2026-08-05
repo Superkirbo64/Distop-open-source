@@ -1,0 +1,25 @@
+---
+/**
+ * Marca de Distop: un bocadillo de conversación de píxeles con dos líneas dentro.
+ * Dibujada aquí, no copiada de ningún sitio (§24). La primera versión eran cinco
+ * nodos unidos en diagonal y a 20 px se leía como una X, o sea como un botón de
+ * cerrar: se vio en la captura, no en el código.
+ */
+type Props = { size?: number; class?: string };
+const { size = 20, class: className = "" } = Astro.props;
+---
+
+<svg
+  class={className}
+  width={size}
+  height={size}
+  viewBox="0 0 12 12"
+  fill="currentColor"
+  shape-rendering="crispEdges"
+  aria-hidden="true"
+  focusable="false"
+>
+  <path
+    d="M2 1h8v1H2zM1 2h1v6H1zM10 2h1v6h-1zM2 8h8v1H2zM3 9h2v1H3zM3 10h1v1H3zM3 4h2v1H3zM6 4h3v1H6z"
+  ></path>
+</svg>

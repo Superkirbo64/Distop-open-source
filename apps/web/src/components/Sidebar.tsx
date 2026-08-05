@@ -41,7 +41,7 @@ export function Sidebar({
 
   if (!communityId || !data) {
     return (
-      <div data-pane="sidebar" className="hidden w-full border-r border-line bg-surface md:block" aria-hidden="true" />
+      <div data-pane="sidebar" className="hidden w-full border-r border-line bg-surface wide:block" aria-hidden="true" />
     );
   }
 

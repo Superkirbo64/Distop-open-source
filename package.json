@@ -11,9 +11,13 @@
     "dev:web": "npm run dev --workspace @distop/web",
     "build": "npm run build --workspace @distop/web",
     "start": "npm run start --workspace @distop/node-server",
-    "host": "npm run build && npm run start",
+    "host": "node scripts/host.mjs",
+    "shot": "node scripts/shot.mjs",
+    "voice-check": "node scripts/voice-check.mjs",
+    "site": "npm run dev --workspace @distop/marketing",
+    "site:build": "npm run build --workspace @distop/marketing",
     "test": "npm run test --workspace @distop/node-server",
-    "typecheck": "tsc -p apps/node-server --noEmit && tsc -p apps/web --noEmit"
+    "typecheck": "tsc -p apps/node-server --noEmit && tsc -p apps/web --noEmit && npm run typecheck --workspace @distop/marketing"
   },
   "devDependencies": {
     "concurrently": "9.1.2",

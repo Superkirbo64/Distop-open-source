@@ -193,6 +193,19 @@ export function countOwners(): number {
   return (db.prepare("SELECT COUNT(*) AS n FROM users WHERE kind = 'local'").get() as { n: number }).n;
 }
 
+/**
+ * Quien puso en marcha la instancia: la cuenta local más antigua.
+ * Es la única a la que se le permite tocar cosas del anfitrión (abrir un túnel,
+ * por ejemplo). Ser administrador de una comunidad no basta: administrar una
+ * comunidad no da derecho a manejar el ordenador de otra persona (§28.5).
+ */
+export function isInstanceOwner(userId: string): boolean {
+  const row = db.prepare("SELECT id FROM users WHERE kind = 'local' ORDER BY created_at LIMIT 1").get() as
+    | { id: string }
+    | undefined;
+  return Boolean(row) && row!.id === userId;
+}
+
 export function findUserById(id: string): UserRow | undefined {
   return db.prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined;
 }

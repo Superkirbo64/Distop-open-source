@@ -151,6 +151,163 @@ test("nadie puede concederse permisos que no tiene", async () => {
   assert.equal(escalation.status, 403, "un moderador no puede fabricar un rol de administrador");
 });
 
+test("eliminar la cuenta la borra de verdad, con sus comunidades y sus archivos", async () => {
+  const cuenta = await call("POST", "/api/v1/auth/register", {
+    body: { username: "efimera", password: "contrasena-larga-7" },
+  });
+  const token = cuenta.json.access_token as string;
+  const userId = cuenta.json.user.id as string;
+
+  const comunidad = await call("POST", "/api/v1/communities", { token, body: { name: "De paso" } });
+  const boot = await call("GET", `/api/v1/communities/${comunidad.json.id}/bootstrap`, { token });
+  const canal = boot.json.channels.find((c: any) => c.kind === "text");
+  await call("POST", `/api/v1/channels/${canal.id}/messages`, { token, body: { content: "hola" } });
+
+  // Escribir mal el nombre no borra nada: es la red de seguridad del diálogo.
+  const flojo = await call("DELETE", "/api/v1/users/me", { token, body: { username: "otra-cosa" } });
+  assert.equal(flojo.status, 400, "sin confirmar el nombre exacto no se borra");
+
+  const borrado = await call("DELETE", "/api/v1/users/me", { token, body: { username: "efimera" } });
+  assert.equal(borrado.status, 200);
+  assert.equal(borrado.json.communities, 1, "se lleva la comunidad que era suya");
+
+  const { db } = await import("./db.ts");
+  const quedaUsuario = db.prepare("SELECT id FROM users WHERE id = ?").get(userId);
+  assert.equal(quedaUsuario, undefined, "la fila del usuario ya no está");
+
+  const quedanMensajes = db.prepare("SELECT COUNT(*) AS n FROM messages WHERE author_id = ?").get(userId) as { n: number };
+  assert.equal(quedanMensajes.n, 0, "ni sus mensajes");
+
+  const quedanSesiones = db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ?").get(userId) as { n: number };
+  assert.equal(quedanSesiones.n, 0, "ni sus sesiones");
+
+  const conElToken = await call("GET", "/api/v1/users/me", { token });
+  assert.equal(conElToken.status, 401, "y el token que tenía deja de valer");
+});
+
+test("el secreto de sesiones se crea solo y sobrevive al reinicio", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { pathToFileURL } = await import("node:url");
+  const { existsSync, readFileSync, statSync } = await import("node:fs");
+
+  const dir = mkdtempSync(join(tmpdir(), "distop-secreto-"));
+  const configUrl = pathToFileURL(join(import.meta.dirname, "config.ts")).href;
+
+  // Cada lectura es un proceso nuevo: es la única forma de comprobar de verdad
+  // que el secreto sobrevive a un reinicio y no vive solo en memoria.
+  const arrancar = () =>
+    execFileSync(process.execPath, ["--input-type=module", "-e", `import {config} from ${JSON.stringify(configUrl)}; console.log(config.authSecret);`], {
+      env: { ...process.env, AUTH_SECRET: "", DATABASE_PATH: join(dir, "app.db") },
+      encoding: "utf8",
+    }).trim();
+
+  const primero = arrancar();
+  const segundo = arrancar();
+
+  assert.equal(primero, segundo, "dos arranques comparten secreto: nadie se queda deslogueado al reiniciar");
+  assert.ok(primero.length >= 32, "y es largo de verdad");
+
+  const fichero = join(dir, "secret.key");
+  assert.ok(existsSync(fichero), "vive junto a la base, no en el .env");
+  assert.equal(readFileSync(fichero, "utf8").trim(), primero);
+
+  // En Windows los bits POSIX no significan nada; donde sí, solo el dueño.
+  if (process.platform !== "win32") {
+    assert.equal(statSync(fichero).mode & 0o077, 0, "ni el grupo ni el resto pueden leerlo");
+  }
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("abrir la instancia al mundo es cosa de quien la hospeda, no de cualquier admin", async () => {
+  // La primera cuenta local de la base es quien puso en marcha la instancia; el
+  // resto, por muchos permisos que tengan en su comunidad, no maneja su máquina.
+  const forastero = await call("POST", "/api/v1/auth/register", {
+    body: { username: "forastero", password: "contrasena-larga-9" },
+  });
+  const suya = await call("POST", "/api/v1/communities", {
+    token: forastero.json.access_token,
+    body: { name: "La mía" },
+  });
+  assert.equal(suya.status, 200, "es administrador de su propia comunidad");
+
+  const mirar = await call("GET", "/api/v1/instance/tunnel", { token: forastero.json.access_token });
+  assert.equal(mirar.status, 403, "y aun así no puede ni mirar el estado del túnel");
+
+  const abrir = await call("POST", "/api/v1/instance/tunnel", { token: forastero.json.access_token });
+  assert.equal(abrir.status, 403, "ni abrirlo");
+
+  const sinSesion = await call("POST", "/api/v1/instance/tunnel");
+  assert.equal(sinSesion.status, 401, "y sin sesión, ni eso");
+
+  const relevo = await call("GET", "/api/v1/instance/relay", { token: forastero.json.access_token });
+  assert.equal(relevo.status, 403, "ni decidir por dónde pasa la voz de la instancia");
+});
+
+test("el relevo de voz se configura desde la aplicación y no acepta un valor que no relevaría", async () => {
+  const { setRelay, relayState, iceServers } = await import("./ice.ts");
+  const urls = async () =>
+    (await iceServers()).flatMap((s) => (Array.isArray(s.urls) ? s.urls : [s.urls])) as string[];
+
+  // De fábrica, solo conexión directa: no hay ningún TURN público sin cuenta que
+  // funcione, y dejar uno muerto apuntado falla igual pero parece configurado.
+  assert.equal(relayState().mode, "direct");
+  assert.ok(!(await urls()).some((u) => u.startsWith("turn:")), "nada sale de los aparatos si nadie lo pidió");
+  assert.ok((await urls()).some((u) => u.startsWith("stun:")), "pero la dirección pública sí se descubre");
+
+  await assert.rejects(
+    () => setRelay({ mode: "custom", url: "stun:no-vale.example:3478" }),
+    "un STUN donde hace falta un TURN no cuela",
+  );
+  await assert.rejects(() => setRelay({ mode: "cloudflare" }), "ni Cloudflare sin credenciales");
+  await assert.rejects(() => setRelay({ mode: "metered" }), "ni Metered sin credenciales");
+  assert.equal(relayState().mode, "direct", "y nada de eso llegó a guardarse");
+
+  await setRelay({ mode: "custom", url: "turn:mio.example:3478", username: "yo", credential: "clave" });
+  assert.ok((await urls()).includes("turn:mio.example:3478"), "el TURN propio sí entra");
+  assert.equal(relayState().username, "yo", "la interfaz recupera el usuario");
+  assert.ok(!("credential" in relayState()), "pero la contraseña no se devuelve jamás");
+  assert.ok(!("apiToken" in relayState()), "ni el token de Cloudflare");
+  assert.ok(!("apiKey" in relayState()), "ni la clave de Metered");
+
+  await setRelay({ mode: "direct" });
+});
+
+test("publicar la instancia deja de tratar a nadie como local", async () => {
+  /* El agujero: cloudflared se conecta desde 127.0.0.1, así que TODA petición que
+     llega por el túnel parece venir del propio equipo. Con eso, /auth/recover
+     entregaba una sesión de quien hospeda —sin contraseña ni código— a cualquiera
+     que tuviera la URL, y /info le regalaba antes la lista de nombres. */
+  const { startTunnel, stopTunnel } = await import("./tunnel.ts");
+
+  const antes = await call("GET", "/api/v1/info");
+  assert.equal(antes.json.setup_requires_code, false, "sin publicar, desde el propio equipo no se pide código");
+  assert.ok(Array.isArray(antes.json.recoverable), "y se ven las cuentas recuperables");
+
+  // Se finge una dirección pública sin levantar cloudflared: es el mismo estado.
+  const { config } = await import("./config.ts");
+  const original = config.publicUrl;
+  (config as { publicUrl: string }).publicUrl = "https://ejemplo.trycloudflare.com";
+  try {
+    const durante = await call("GET", "/api/v1/info");
+    assert.equal(durante.json.setup_requires_code, true, "publicada, la reclamación sí pide código");
+    assert.deepEqual(durante.json.recoverable, [], "y no se filtra ningún nombre de cuenta");
+
+    const robo = await call("POST", "/api/v1/auth/recover", { body: { username: "ada" } });
+    assert.ok(!robo.json.access_token, "ni se entrega una sesión sin el código de la instancia");
+    assert.ok(robo.status >= 400, `debería rechazarse, devolvió ${robo.status}`);
+
+    const conCodigo = await call("POST", "/api/v1/auth/recover", {
+      body: { username: "ada", setup_code: "no-es-el-codigo" },
+    });
+    assert.equal(conCodigo.status, 403, "y un código inventado tampoco vale");
+  } finally {
+    (config as { publicUrl: string }).publicUrl = original;
+    stopTunnel();
+    void startTunnel;
+  }
+});
+
 test("uuidv7 ordena por tiempo de creación", () => {
   const ids = Array.from({ length: 50 }, uuidv7);
   assert.deepEqual([...ids].sort(), ids, "el orden lexicográfico coincide con el de creación");

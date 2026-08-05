@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { useStore } from "./store.ts";
-import { Rail } from "./components/Rail.tsx";
+import { CreateCommunity, JoinCommunity, Rail } from "./components/Rail.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { Chat } from "./components/Chat.tsx";
 import { Members } from "./components/Members.tsx";
@@ -16,7 +16,35 @@ import { Settings } from "./views/Settings.tsx";
 import { Manage } from "./views/Manage.tsx";
 import { Button, ErrorNote, Field, Modal, Spinner, Toggle, useErrorText, useT } from "./components/ui.tsx";
 import { api } from "./lib/api.ts";
+import { onStaleBuild, watchBuild } from "./lib/version.ts";
 import type { Invite as InviteEntity } from "@distop/protocol";
+
+/**
+ * Banda de "hay versión nueva".
+ * No recarga sola: si estás en mitad de una llamada o escribiendo, decides tú
+ * cuándo. Pero deja de ser invisible, que es lo que hacía perder tardes
+ * persiguiendo fallos ya arreglados.
+ */
+function StaleBuild() {
+  const t = useT();
+  const [stale, setStale] = useState(false);
+
+  useEffect(() => {
+    watchBuild();
+    return onStaleBuild(setStale);
+  }, []);
+
+  if (!stale) return null;
+
+  return (
+    <div className="fixed inset-x-0 bottom-3 z-50 mx-auto flex w-fit items-center gap-3 rounded-card border border-line bg-raise px-4 py-2.5 shadow-[var(--shadow)]">
+      <span className="text-sm">{t("update.available")}</span>
+      <Button variant="primary" onClick={() => location.reload()}>
+        {t("update.reload")}
+      </Button>
+    </div>
+  );
+}
 
 function usePath(): [string, (next: string) => void] {
   const [path, setPath] = useState(location.pathname);
@@ -77,6 +105,8 @@ export function App() {
   const [settings, setSettings] = useState(false);
   const [manage, setManage] = useState(false);
   const [invite, setInvite] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [joining, setJoining] = useState(false);
   const [mobilePane, setMobilePane] = useState<"nav" | "main" | "members">("main");
   const [sidebarOpen, setSidebarOpen] = usePanel("sidebar", true);
   const [membersOpen, setMembersOpen] = usePanel("members", true);
@@ -134,7 +164,7 @@ export function App() {
       data-sidebar={sidebarOpen ? "on" : "off"}
       data-members={membersOpen ? "on" : "off"}
     >
-      <Rail onNavigate={() => setMobilePane("main")} />
+      <Rail onNavigate={() => setMobilePane("main")} onCreate={() => setCreating(true)} onJoin={() => setJoining(true)} />
 
       <Sidebar
         onOpenSettings={() => setSettings(true)}
@@ -149,6 +179,8 @@ export function App() {
         sidebarOpen={sidebarOpen}
         membersOpen={membersOpen}
         onOpenSidebar={() => setMobilePane("nav")}
+        onCreateCommunity={() => setCreating(true)}
+        onJoinCommunity={() => setJoining(true)}
       />
 
       {/* Siempre montado: plegarlo anima su columna, y desmontarlo daría el salto
@@ -158,6 +190,9 @@ export function App() {
       <Settings open={settings} onClose={() => setSettings(false)} />
       <Manage open={manage} onClose={() => setManage(false)} />
       <CreateInvite open={invite} onClose={() => setInvite(false)} />
+      <CreateCommunity open={creating} onClose={() => setCreating(false)} />
+      <JoinCommunity open={joining} onClose={() => setJoining(false)} />
+      <StaleBuild />
     </div>
   );
 }
@@ -173,16 +208,73 @@ function CreateInvite({ open, onClose }: { open: boolean; onClose: () => void })
   const [temporary, setTemporary] = useState(true);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reach, setReach] = useState<"idle" | "checking" | "ok" | "fail" | "local" | "opening">("idle");
+  const [isHost, setIsHost] = useState(false);
+
+  const address = (publicUrl || location.origin).replace(/\/$/, "");
+  const isLocal = /localhost|127\.0\.0\.1|\[::1\]/.test(address);
 
   useEffect(() => {
     if (!open) {
       setLink("");
       setCopied(false);
       setError(null);
+      setReach("idle");
+      return;
     }
+    // Solo quien hospeda puede abrir el túnel; al resto no se le ofrece un botón
+    // que devolvería 403.
+    void api("GET", "/api/v1/instance/tunnel")
+      .then(() => setIsHost(true))
+      .catch(() => setIsHost(false));
   }, [open]);
 
-  async function create() {
+  /**
+   * Comprobar la dirección ANTES de repartirla.
+   * Un enlace de invitación con una dirección muerta —un túnel que se cerró, un
+   * PUBLIC_URL viejo— parece perfecto y no le funciona a nadie. Quien lo comparte
+   * se entera por el silencio del otro lado, y eso ya ha pasado aquí.
+   */
+  async function check(): Promise<void> {
+    if (isLocal) {
+      setReach("local");
+      return;
+    }
+    setReach("checking");
+    try {
+      const res = await fetch(`${address}/health`, { signal: AbortSignal.timeout(8000) });
+      setReach(res.ok ? "ok" : "fail");
+    } catch {
+      setReach("fail");
+    }
+  }
+
+  /**
+   * Abrir el túnel aquí mismo, sin mandar a nadie a otra pantalla.
+   * El momento en que descubres que tu dirección no sirve es justo este, así que
+   * la solución tiene que estar en este diálogo y no tres clics más allá.
+   */
+  async function openTunnel(): Promise<void> {
+    setReach("opening");
+    setError(null);
+    try {
+      const state = await api<{ status: string; url: string; error: string }>("POST", "/api/v1/instance/tunnel");
+      if (state.status === "on" && state.url) {
+        useStore.setState({ publicUrl: state.url });
+        setReach("ok");
+        // Un enlace creado con la dirección vieja ya no sirve: se rehace solo.
+        if (link) await create(state.url);
+      } else {
+        setReach("fail");
+        setError(t(state.error === "no-cloudflared" ? "share.needsCloudflared" : "share.failed"));
+      }
+    } catch (err) {
+      setReach("fail");
+      setError(errorText(err));
+    }
+  }
+
+  async function create(overrideAddress?: string) {
     if (!communityId) return;
     setError(null);
     try {
@@ -191,7 +283,8 @@ function CreateInvite({ open, onClose }: { open: boolean; onClose: () => void })
         expires_in_s: temporary ? 60 * 60 * 24 * 7 : null,
       });
       // La dirección pública manda: un enlace a localhost no le sirve a nadie más.
-      setLink(`${(publicUrl || location.origin).replace(/\/$/, "")}/invite/${created.code}`);
+      const base = (overrideAddress || publicUrl || location.origin).replace(/\/$/, "");
+      setLink(`${base}/invite/${created.code}`);
     } catch (err) {
       setError(errorText(err));
     }
@@ -205,13 +298,43 @@ function CreateInvite({ open, onClose }: { open: boolean; onClose: () => void })
       footer={
         <>
           <Button onClick={onClose}>{t("common.close")}</Button>
-          <Button variant="primary" onClick={create}>
+          <Button variant="primary" onClick={() => void create()}>
             {t("manage.newInvite")}
           </Button>
         </>
       }
     >
       <div className="flex flex-col gap-4">
+        {/* Paso previo: de dónde va a salir el enlace y si esa dirección
+            responde. Antes se creaba a ciegas sobre lo que hubiera en PUBLIC_URL. */}
+        <section className="flex flex-col gap-2 rounded-[10px] border border-line p-3">
+          <span className="text-xs text-muted">{t("invite.willUse")}</span>
+          <code className="truncate text-xs">{address}</code>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={() => void check()} disabled={reach === "checking" || reach === "opening"}>
+              {reach === "checking" ? t("invite.checking") : t("invite.check")}
+            </Button>
+            {reach === "ok" ? <span className="text-xs text-ok">{t("invite.reachable")}</span> : null}
+            {reach === "fail" ? <span className="text-xs text-danger">{t("invite.unreachable")}</span> : null}
+            {reach === "local" ? <span className="text-xs text-warn">{t("invite.localOnly")}</span> : null}
+          </div>
+
+          {/* La salida está aquí mismo, no en otra pantalla. */}
+          {isHost && (reach === "fail" || reach === "local" || reach === "opening") ? (
+            <div className="flex flex-col gap-1.5">
+              <Button variant="primary" onClick={() => void openTunnel()} disabled={reach === "opening"}>
+                {reach === "opening" ? t("share.opening") : t("share.createLink")}
+              </Button>
+              <p className="text-xs text-muted">{t("invite.tunnelHere")}</p>
+            </div>
+          ) : null}
+
+          {!isHost && (reach === "fail" || reach === "local") ? (
+            <p className="text-xs text-muted">{t("invite.fixHint")}</p>
+          ) : null}
+        </section>
+
         <Field label={t("manage.inviteUses")} hint={t("manage.inviteUnlimited")}>
           {(id) => (
             <input

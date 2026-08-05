@@ -1,0 +1,64 @@
+---
+import Base from "../../layouts/Base.astro";
+import { LOCALES, UI, type Locale } from "../../i18n/ui";
+
+export function getStaticPaths() {
+  return LOCALES.map((lang) => ({ params: { lang } }));
+}
+
+const locale = Astro.params.lang as Locale;
+const t = UI[locale];
+---
+
+<Base locale={locale} path="install/" title={t.install.title} description={t.install.sub}>
+  <section>
+    <div class="stack">
+      <p class="eyebrow">{t.nav.install}</p>
+      <h1>{t.install.title}</h1>
+      <p class="lead">{t.install.sub}</p>
+    </div>
+
+    <div class="grid-cards" style="margin-block-start:2.5rem">
+      {
+        t.install.ways.map((way) => (
+          <article class="card reveal">
+            <span class="card__tag">{way.tag}</span>
+            <h3>{way.title}</h3>
+            <p>{way.body}</p>
+            {way.code && (
+              <div class="code" style="margin-block-start:0.5rem;box-shadow:none">
+                <pre><code>{way.code}</code></pre>
+              </div>
+            )}
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <section style="padding-block-start:0">
+    <div class="stack">
+      <h2 class="reveal">{t.install.reqTitle}</h2>
+      <ul class="reveal" style="color:var(--muted);max-width:62ch;padding-inline-start:1.2rem">
+        {t.install.reqs.map((r) => <li style="margin-block-end:0.5rem">{r}</li>)}
+      </ul>
+    </div>
+
+    <div class="code reveal" style="margin-block-start:2rem">
+      <div class="code__bar">
+        <span class="code__dot" aria-hidden="true"></span>
+        {t.host.codeLabel}
+      </div>
+      <pre><code>{t.host.code}</code></pre>
+    </div>
+
+    <div class="notice reveal" style="margin-block-start:1.75rem">
+      <h3>{t.host.warnTitle}</h3>
+      <p>{t.host.warn}</p>
+    </div>
+
+    <p style="margin-block-start:2rem">
+      <a class="btn btn--primary" href={`/${locale}/hosting/`}>{t.hero.cta2}</a>
+    </p>
+  </section>
+</Base>

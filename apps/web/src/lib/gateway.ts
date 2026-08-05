@@ -10,6 +10,8 @@ export type ConnectionStatus = "connecting" | "online" | "reconnecting" | "offli
 
 type EventHandler = (event: ServerEvent) => void;
 type StatusHandler = (status: ConnectionStatus) => void;
+/** Voz o imagen de alguien de la sala: [1 byte de tipo][16 bytes de quién][datos]. */
+type MediaHandler = (userId: string, kind: number, payload: Uint8Array) => void;
 
 let socket: WebSocket | null = null;
 let retries = 0;
@@ -18,6 +20,18 @@ let closedOnPurpose = false;
 
 const eventHandlers = new Set<EventHandler>();
 const statusHandlers = new Set<StatusHandler>();
+let mediaHandler: MediaHandler | null = null;
+
+export function onMedia(handler: MediaHandler | null): void {
+  mediaHandler = handler;
+}
+
+/** Vuelve a poner los guiones que se le quitaron para caber en 16 bytes. */
+function readSender(bytes: Uint8Array): string {
+  let hex = "";
+  for (const byte of bytes) hex += byte.toString(16).padStart(2, "0");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 
 function emitStatus(status: ConnectionStatus): void {
   for (const handler of statusHandlers) handler(status);
@@ -48,7 +62,18 @@ export function connect(): void {
     emitStatus("online");
   };
 
+  // Los paquetes de voz llegan en binario por este mismo socket; no hay que
+  // pasarlos por JSON ni despertar a los oyentes de eventos por cada uno.
+  socket.binaryType = "arraybuffer";
+
   socket.onmessage = (raw) => {
+    if (raw.data instanceof ArrayBuffer) {
+      if (!mediaHandler || raw.data.byteLength <= 17) return;
+      const bytes = new Uint8Array(raw.data);
+      mediaHandler(readSender(bytes.subarray(1, 17)), bytes[0]!, bytes.subarray(17));
+      return;
+    }
+
     let event: ServerEvent;
     try {
       event = JSON.parse(String(raw.data)) as ServerEvent;
@@ -85,6 +110,12 @@ export function disconnect(): void {
 
 export function sendCommand(command: ClientCommand): void {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(command));
+}
+
+/** Un paquete de voz o imagen. Se descarta si el socket va justo: lo viejo no sirve. */
+export function sendMedia(frame: ArrayBuffer): void {
+  if (socket?.readyState !== WebSocket.OPEN || socket.bufferedAmount > 524_288) return;
+  socket.send(frame);
 }
 
 /** Volver a la pestaña con la instancia caída no debería costar 15 s de espera. */

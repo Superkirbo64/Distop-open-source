@@ -1,0 +1,71 @@
+---
+import Mark from "./Mark.astro";
+import { UI, type Locale } from "../i18n/ui";
+
+type Props = { locale: Locale };
+const { locale } = Astro.props;
+const t = UI[locale];
+const L = t.footer.links;
+
+const REPO = "https://github.com/kirbo/distop";
+
+const columns = [
+  {
+    heading: t.footer.product,
+    items: [
+      { label: L.features, href: `/${locale}/#features` },
+      { label: L.install, href: `/${locale}/install/` },
+      { label: L.hosting, href: `/${locale}/hosting/` },
+      { label: L.news, href: `/${locale}/news/` },
+    ],
+  },
+  {
+    heading: t.footer.project,
+    items: [
+      { label: L.code, href: REPO },
+      { label: L.license, href: `${REPO}/blob/main/LICENSE` },
+      { label: L.contributing, href: `${REPO}/blob/main/CONTRIBUTING.md` },
+      { label: L.security, href: `${REPO}/blob/main/SECURITY.md` },
+    ],
+  },
+  {
+    heading: t.footer.help,
+    items: [
+      { label: L.issues, href: `${REPO}/issues` },
+      { label: L.privacy, href: `/${locale}/privacy/` },
+    ],
+  },
+];
+---
+
+<footer class="site-footer layout">
+  <div class="site-footer__grid">
+    <div>
+      <p class="brand" style="margin-block-end:0.75rem">
+        <Mark class="brand__mark" />
+        Distop
+      </p>
+      <p class="lead" style="font-size:0.9375rem">{t.footer.tagline}</p>
+    </div>
+
+    {
+      columns.map((col) => (
+        <nav>
+          <h2>{col.heading}</h2>
+          <ul>
+            {col.items.map((item) => (
+              <li>
+                <a href={item.href}>{item.label}</a>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      ))
+    }
+  </div>
+
+  <div class="site-footer__legal">
+    <p>{t.footer.legal}</p>
+    <p class="mono">AGPL-3.0 · v0.1.0</p>
+  </div>
+</footer>

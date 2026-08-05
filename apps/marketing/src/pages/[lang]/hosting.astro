@@ -1,0 +1,61 @@
+---
+import Base from "../../layouts/Base.astro";
+import { LOCALES, UI, type Locale } from "../../i18n/ui";
+
+export function getStaticPaths() {
+  return LOCALES.map((lang) => ({ params: { lang } }));
+}
+
+const locale = Astro.params.lang as Locale;
+const t = UI[locale];
+
+const blocks = [
+  { title: t.hosting.tunnelTitle, body: t.hosting.tunnelBody },
+  { title: t.hosting.proxyTitle, body: t.hosting.proxyBody },
+  { title: t.hosting.backupTitle, body: t.hosting.backupBody },
+  { title: t.hosting.offlineTitle, body: t.hosting.offlineBody },
+];
+---
+
+<Base locale={locale} path="hosting/" title={t.hosting.title} description={t.hosting.sub}>
+  <section>
+    <div class="stack">
+      <p class="eyebrow">{t.nav.hosting}</p>
+      <h1>{t.hosting.title}</h1>
+      <p class="lead">{t.hosting.sub}</p>
+    </div>
+
+    <div class="steps reveal" style="margin-block-start:2.5rem">
+      {
+        t.host.steps.map((s) => (
+          <article class="step">
+            <h3>{s.title}</h3>
+            <p>{s.body}</p>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <section style="padding-block-start:0">
+    <div class="grid-cards">
+      {
+        blocks.map((b) => (
+          <article class="card reveal">
+            <h3>{b.title}</h3>
+            <p>{b.body}</p>
+          </article>
+        ))
+      }
+    </div>
+
+    <div class="notice reveal" style="margin-block-start:2rem">
+      <h3>{t.host.warnTitle}</h3>
+      <p>{t.host.warn}</p>
+    </div>
+
+    <p style="margin-block-start:2rem">
+      <a class="btn btn--primary" href={`/${locale}/install/`}>{t.hero.cta1}</a>
+    </p>
+  </section>
+</Base>

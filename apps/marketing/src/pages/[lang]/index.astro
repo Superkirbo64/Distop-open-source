@@ -1,0 +1,194 @@
+---
+import Base from "../../layouts/Base.astro";
+import { LOCALES, UI, type Locale } from "../../i18n/ui";
+import { NEWS } from "../../i18n/news";
+
+export function getStaticPaths() {
+  return LOCALES.map((lang) => ({ params: { lang } }));
+}
+
+const locale = Astro.params.lang as Locale;
+const t = UI[locale];
+const latest = NEWS.slice(0, 2);
+const fmt = new Intl.DateTimeFormat(locale === "pt-br" ? "pt-BR" : locale, {
+  // Las fechas son ISO sin hora, o sea medianoche UTC: sin fijar la zona, en
+  // cualquier huso al oeste de Greenwich se imprime el dia anterior.
+  timeZone: "UTC",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+---
+
+<Base locale={locale} path="" intro>
+  <!-- Hero ------------------------------------------------------------- -->
+  <section class="hero bleed">
+    <canvas class="dotfield" aria-hidden="true"></canvas>
+    <div class="scanlines" aria-hidden="true"></div>
+
+    <div class="layout">
+      <div class="hero__grid">
+        <div class="hero__copy">
+          <p class="eyebrow reveal">{t.hero.eyebrow}</p>
+          <h1 class="reveal">
+            <span>{t.hero.line1}</span>
+            <span class="accent">{t.hero.line2}<i class="caret" aria-hidden="true"></i></span>
+          </h1>
+          <p class="lead reveal">{t.hero.sub}</p>
+          <div class="hero__actions reveal">
+            <a class="btn btn--primary" href={`/${locale}/install/`}>{t.hero.cta1}</a>
+            <a class="btn" href={`/${locale}/hosting/`}>{t.hero.cta2}</a>
+          </div>
+          <p class="mono reveal" style="color:var(--muted)">{t.hero.note}</p>
+        </div>
+
+        <div class="hero__art reveal">
+          <figure class="shot" style="margin:0">
+            <img
+              src="/shots/chat.png"
+              width="1440"
+              height="900"
+              alt="Distop: canal de texto con mensajes, lista de canales y lista de miembros"
+              loading="eager"
+              decoding="async"
+            />
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Nada de esto se paga ---------------------------------------------- -->
+  <section id="free">
+    <div class="stack">
+      <p class="eyebrow reveal">{t.free.eyebrow}</p>
+      <h2 class="reveal">{t.free.title}</h2>
+      <p class="lead reveal">{t.free.sub}</p>
+    </div>
+
+    <ul class="scoreboard reveal" style="list-style:none;margin:2rem 0 0;padding:0">
+      {
+        t.free.items.map((item) => (
+          <li class="score">
+            <span class="score__name">{item}</span>
+            <span class="score__value">{t.free.tag}</span>
+          </li>
+        ))
+      }
+    </ul>
+
+    <p class="lead reveal" style="margin-block-start:1.5rem">{t.free.footnote}</p>
+  </section>
+
+  <!-- Funciones ---------------------------------------------------------- -->
+  <section id="features">
+    <div class="stack">
+      <p class="eyebrow reveal">{t.features.eyebrow}</p>
+      <h2 class="reveal">{t.features.title}</h2>
+      <p class="lead reveal">{t.features.sub}</p>
+    </div>
+
+    <div class="grid-cards" style="margin-block-start:2rem">
+      {
+        t.features.items.map((f) => (
+          <article class="card reveal">
+            <span class="card__tag">{f.tag}</span>
+            <h3>{f.title}</h3>
+            <p>{f.body}</p>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <!-- Hospedar ----------------------------------------------------------- -->
+  <section id="host">
+    <div class="stack">
+      <p class="eyebrow reveal">{t.host.eyebrow}</p>
+      <h2 class="reveal">{t.host.title}</h2>
+      <p class="lead reveal">{t.host.sub}</p>
+    </div>
+
+    <div class="steps reveal" style="margin-block-start:2rem">
+      {
+        t.host.steps.map((s) => (
+          <article class="step">
+            <h3>{s.title}</h3>
+            <p>{s.body}</p>
+          </article>
+        ))
+      }
+    </div>
+
+    <div class="code reveal" style="margin-block-start:1.75rem">
+      <div class="code__bar">
+        <span class="code__dot" aria-hidden="true"></span>
+        {t.host.codeLabel}
+      </div>
+      <pre><code>{t.host.code}</code></pre>
+    </div>
+
+    <div class="notice reveal" style="margin-block-start:1.75rem">
+      <h3>{t.host.warnTitle}</h3>
+      <p>{t.host.warn}</p>
+    </div>
+  </section>
+
+  <!-- Tus datos ---------------------------------------------------------- -->
+  <section id="data">
+    <div class="stack">
+      <p class="eyebrow reveal">{t.data.eyebrow}</p>
+      <h2 class="reveal">{t.data.title}</h2>
+      <p class="lead reveal">{t.data.sub}</p>
+    </div>
+
+    <div class="grid-cards" style="margin-block-start:2rem">
+      {
+        t.data.items.map((d) => (
+          <article class="card reveal">
+            <h3>{d.title}</h3>
+            <p>{d.body}</p>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
+  <!-- Novedades ---------------------------------------------------------- -->
+  <section id="news">
+    <div class="stack">
+      <p class="eyebrow reveal">{t.news.eyebrow}</p>
+      <h2 class="reveal">{t.news.title}</h2>
+    </div>
+
+    <div style="margin-block-start:1.5rem">
+      {
+        latest.map((entry) => (
+          <article class="entry reveal">
+            <time datetime={entry.date}>{fmt.format(new Date(entry.date))}</time>
+            <h3>{entry.title[locale]}</h3>
+            <p>{entry.body[locale]}</p>
+          </article>
+        ))
+      }
+    </div>
+
+    <p style="margin-block-start:1.75rem">
+      <a class="btn reveal" href={`/${locale}/news/`}>{t.news.all}</a>
+    </p>
+  </section>
+
+  <!-- Llamada final ------------------------------------------------------ -->
+  <section class="finale bleed">
+    <div class="layout" style="width:100%">
+      <div class="stack" style="justify-items:center">
+        <h2 class="reveal">{t.cta.title}</h2>
+        <p class="lead reveal">{t.cta.sub}</p>
+        <div class="hero__actions reveal" style="justify-content:center">
+          <a class="btn btn--primary" href={`/${locale}/install/`}>{t.cta.b1}</a>
+          <a class="btn" href="https://github.com/kirbo/distop">{t.cta.b2}</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>

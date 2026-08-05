@@ -20,7 +20,7 @@ import type {
 import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
 import { connect, disconnect, onEvent, onStatus, sendCommand, type ConnectionStatus } from "./lib/gateway.ts";
 import { detectLocale, type Locale } from "./i18n.ts";
-import { configureVoice, handleSignal, syncPeers } from "./lib/voice.ts";
+import { configureVoice, handleSignal, resumeVoice, setVideoMode, syncPeers } from "./lib/voice.ts";
 
 export type ThemeChoice = "light" | "dark" | "system";
 export type Density = "compact" | "cozy";
@@ -193,10 +193,12 @@ export const useStore = create<State>()((set, get) => ({
         setup_required: boolean;
         setup_requires_code: boolean;
         ice_servers: RTCIceServer[];
+        video: { mode: "host" | "direct"; quality: "low" | "medium" | "high" };
         public_url: string;
       }>("GET", "/api/v1/info");
       set({ setup: { required: info.setup_required, requiresCode: info.setup_requires_code }, publicUrl: info.public_url });
       iceServers = info.ice_servers ?? [];
+      setVideoMode(info.video?.mode ?? "host", info.video?.quality ?? "medium");
     } catch {
       // Instancia inalcanzable: el propio cliente lo dirá al intentar entrar.
     }
@@ -332,6 +334,9 @@ onEvent((event: ServerEvent) => {
       // Tras reconectar hay que rehacer la suscripción y refrescar lo perdido.
       const active = state.activeCommunityId;
       if (active) void useStore.getState().openCommunity(active);
+      // Y volver a anunciarse en la llamada: el servidor te dio por ido al caerse
+      // el socket, y quien quedara dentro seguiría hablándole a una conexión muerta.
+      resumeVoice();
       return;
     }
 
@@ -386,11 +391,10 @@ onEvent((event: ServerEvent) => {
 
     case "VOICE_STATE_UPDATE": {
       useStore.setState({ voice: { ...state.voice, [event.d.channel_id]: event.d.states } });
-      // Si es la sala donde estoy, hay que abrir o cerrar conexiones con los pares.
-      void syncPeers(
-        event.d.channel_id,
-        event.d.states.map((s) => s.user_id),
-      );
+      // Si es la sala donde estoy, hay que abrir, rehacer o cerrar conexiones.
+      // Va la hora de entrada, no solo el id: al recargar una pestaña el id sigue
+      // siendo el mismo y sin esa fecha nadie sabría que hay que reconectar.
+      void syncPeers(event.d.channel_id, event.d.states);
       return;
     }
 

@@ -4,7 +4,8 @@
  * servidor está vivo es tan importante como el propio contenido (§26).
  */
 import { useState } from "react";
-import { Server } from "lucide-react";
+import { useEffect } from "react";
+import { Link as LinkIcon, Server } from "lucide-react";
 import { Cross } from "./icons.tsx";
 import { useStore } from "../store.ts";
 import { Button, ErrorNote, Field, IconButton, Modal, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
@@ -12,13 +13,20 @@ import { api } from "../lib/api.ts";
 import { formatDuration } from "../i18n.ts";
 import type { Community } from "@distop/protocol";
 
-export function Rail({ onNavigate }: { onNavigate?: () => void }) {
+export function Rail({
+  onNavigate,
+  onCreate,
+  onJoin,
+}: {
+  onNavigate?: () => void;
+  onCreate: () => void;
+  onJoin: () => void;
+}) {
   const t = useT();
   const communities = useStore((s) => s.communities);
   const activeId = useStore((s) => s.activeCommunityId);
   const openCommunity = useStore((s) => s.openCommunity);
 
-  const [creating, setCreating] = useState(false);
   const [status, setStatus] = useState(false);
 
   return (
@@ -57,8 +65,12 @@ export function Rail({ onNavigate }: { onNavigate?: () => void }) {
         ))}
       </ul>
 
-      <IconButton label={t("community.create")} onClick={() => setCreating(true)} className="h-12 w-12 border border-dashed border-line">
+      <IconButton label={t("community.create")} onClick={onCreate} className="h-12 w-12 border border-dashed border-line">
         <Cross size={20} />
+      </IconButton>
+
+      <IconButton label={t("community.join")} onClick={onJoin} className="h-10 w-10">
+        <LinkIcon size={18} />
       </IconButton>
 
       <IconButton label={t("instance.status")} onClick={() => setStatus(true)} className="h-10 w-10">
@@ -66,7 +78,6 @@ export function Rail({ onNavigate }: { onNavigate?: () => void }) {
       </IconButton>
       <ConnectionDot />
 
-      <CreateCommunity open={creating} onClose={() => setCreating(false)} />
       <InstanceStatus open={status} onClose={() => setStatus(false)} />
     </nav>
   );
@@ -90,7 +101,123 @@ function ConnectionDot() {
   );
 }
 
-function CreateCommunity({ open, onClose }: { open: boolean; onClose: () => void }) {
+/**
+ * Entrar con un enlace sin salir de la aplicación (§34).
+ * Pegar la invitación aquí evita el rodeo de abrirla en el navegador, y funciona
+ * igual con el enlace entero o solo con el código.
+ */
+export function JoinCommunity({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const t = useT();
+  const errorText = useErrorText();
+  const openCommunity = useStore((s) => s.openCommunity);
+  const reload = useStore((s) => s.reloadCommunities);
+
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<{ community: { name: string; accent_color: string }; members: number } | null>(null);
+
+  // Se acepta lo que la gente pega de verdad: la URL completa, con o sin barra
+  // final, o el código suelto.
+  const code = value.trim().replace(/\/+$/, "").split("/").pop() ?? "";
+
+  /* Vista previa mientras se escribe: entrar a una comunidad sin saber cuál es
+     antes de pulsar es pedir un acto de fe. Si el código no existe todavía, se
+     calla: escribir a medias no es un error. */
+  useEffect(() => {
+    if (code.length < 3) {
+      setPreview(null);
+      return;
+    }
+    let vigente = true;
+    const timer = setTimeout(() => {
+      void api<{ community: { name: string; accent_color: string }; members: number }>(
+        "GET",
+        `/api/v1/invites/${encodeURIComponent(code)}`,
+      )
+        .then((data) => vigente && setPreview(data))
+        .catch(() => vigente && setPreview(null));
+    }, 350);
+
+    return () => {
+      vigente = false;
+      clearTimeout(timer);
+    };
+  }, [code]);
+
+  async function join(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api<{ community: Community | null }>("POST", `/api/v1/invites/${encodeURIComponent(code)}/join`);
+      await reload();
+      if (result.community) await openCommunity(result.community.id);
+      setValue("");
+      onClose();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={t("community.join")}
+      footer={
+        <>
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
+          <Button variant="primary" onClick={join} disabled={busy || code.length < 3}>
+            {t("community.joinAction")}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <Field label={t("community.joinLabel")} hint={t("community.joinHint")}>
+          {(id) => (
+            <input
+              id={id}
+              className="field"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="abc123  ·  https://…/invite/abc123"
+              autoFocus
+            />
+          )}
+        </Field>
+
+        {preview ? (
+          <div className="flex items-center gap-3 rounded-[10px] border border-line p-3">
+            <span
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] text-white"
+              style={{ background: preview.community.accent_color }}
+            >
+              <span className="display text-sm font-bold">{preview.community.name.slice(0, 2).toUpperCase()}</span>
+            </span>
+            <div className="min-w-0">
+              <p className="display truncate font-bold">{preview.community.name}</p>
+              <p className="text-xs text-muted">
+                {t(preview.members === 1 ? "invite.memberOne" : "invite.members", { count: preview.members })}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
+        {error ? <ErrorNote>{error}</ErrorNote> : null}
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Vive fuera de la barra a propósito: en móvil la barra está escondida, y quien
+ * todavía no tiene ninguna comunidad no llegaba a ella. El diálogo lo monta el
+ * cascarón, así que se puede abrir desde donde haga falta.
+ */
+export function CreateCommunity({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT();
   const errorText = useErrorText();
   const openCommunity = useStore((s) => s.openCommunity);
@@ -197,14 +324,58 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
  * pública, así que se dice aquí con el comando ya escrito, en vez de dejarlo
  * enterrado en la documentación.
  */
+interface TunnelState {
+  status: "off" | "starting" | "on" | "error";
+  url: string;
+  error: string;
+}
+
+/**
+ * Abrir la instancia al mundo, desde la propia aplicación (§6).
+ * Antes esto era un comando para copiar en un terminal y una variable que
+ * editar a mano en un fichero. Quien hospeda desde casa no tiene por qué pasar
+ * por ahí para invitar a alguien: el botón hace las dos cosas.
+ */
 function ShareInstance() {
   const t = useT();
+  const errorText = useErrorText();
   const publicUrl = useStore((s) => s.publicUrl);
+
+  const [tunnel, setTunnel] = useState<TunnelState | null>(null);
+  const [isHost, setIsHost] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // Solo quien hospeda puede abrir el túnel; para el resto, la sección se queda
+  // en "esta es la dirección" sin botones que darían 403.
+  useEffect(() => {
+    void api<TunnelState>("GET", "/api/v1/instance/tunnel")
+      .then((state) => {
+        setIsHost(true);
+        setTunnel(state);
+      })
+      .catch(() => setIsHost(false));
+  }, []);
 
   const address = publicUrl || location.origin;
   const isLocal = !publicUrl && /localhost|127\.0\.0\.1|\[::1\]/.test(location.origin);
-  const tunnelCommand = `cloudflared tunnel --url ${location.origin}`;
+
+  async function toggle(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const state = await api<TunnelState>(tunnel?.status === "on" ? "DELETE" : "POST", "/api/v1/instance/tunnel");
+      setTunnel(state);
+      // La dirección nueva manda ya para las invitaciones, sin reiniciar nada.
+      useStore.setState({ publicUrl: state.url });
+      if (state.status === "error") setError(t(state.error === "no-cloudflared" ? "share.needsCloudflared" : "share.failed"));
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <section className="flex flex-col gap-3 rounded-[10px] border border-line p-3">
@@ -226,21 +397,19 @@ function ShareInstance() {
         </div>
       </div>
 
-      {isLocal ? (
-        <>
-          <p className="text-xs text-warn">{t("share.localOnly")}</p>
-          <p className="text-xs text-muted">{t("share.howTo")}</p>
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs text-muted">{t("share.tunnel")}</span>
-            <code className="block overflow-x-auto rounded-[10px] bg-sunken px-2 py-1.5 text-[0.7rem] whitespace-nowrap">
-              {tunnelCommand}
-            </code>
-            <p className="text-xs text-muted">{t("share.thenSet")}</p>
-          </div>
-        </>
-      ) : (
-        <p className="text-xs text-ok">{t("share.ready")}</p>
-      )}
+      {isLocal ? <p className="text-xs text-warn">{t("share.localOnly")}</p> : <p className="text-xs text-ok">{t("share.ready")}</p>}
+
+      {isHost ? (
+        <div className="flex flex-col gap-1.5">
+          <Button variant={tunnel?.status === "on" ? "ghost" : "primary"} onClick={toggle} disabled={busy}>
+            {busy ? t("share.opening") : tunnel?.status === "on" ? t("share.closeLink") : t("share.createLink")}
+          </Button>
+          <p className="text-xs text-muted">
+            {tunnel?.status === "on" ? t("share.linkTemporary") : t("share.createLinkHint")}
+          </p>
+          {error ? <ErrorNote>{error}</ErrorNote> : null}
+        </div>
+      ) : null}
 
       <p className="text-xs text-muted">{t("share.hostReminder")}</p>
     </section>

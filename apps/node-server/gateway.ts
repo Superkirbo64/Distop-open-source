@@ -22,10 +22,15 @@ interface Client {
   sessionId: string;
   subs: Set<Snowflake>;
   alive: boolean;
+  /** Cuota de paquetes de audio del segundo en curso (ver relayAudio). */
+  audio: { frames: number; since: number };
 }
 
 const clients = new Set<Client>();
-const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+/* 64 KB bastaban para mandos y audio, pero un fotograma clave de pantalla
+   compartida los pasa de largo. El límite de verdad lo pone LIMITS por tipo de
+   paquete; esto es solo la red de seguridad del protocolo. */
+const wss = new WebSocketServer({ noServer: true, maxPayload: 768 * 1024 });
 
 export function onlineCount(): number {
   return new Set([...clients].map((c) => c.userId)).size;
@@ -134,6 +139,14 @@ function handleCommand(client: Client, raw: string): void {
       return;
     }
 
+    case "VOICE_VIDEO": {
+      const { channel_id: channelId, source } = cmd.d ?? {};
+      if (typeof channelId !== "string") return;
+      if (source !== null && source !== "camera" && source !== "screen") return;
+      if (voice.setVideo(channelId, client.userId, source)) announceVoice(channelId);
+      return;
+    }
+
     case "VOICE_SIGNAL": {
       const { channel_id: channelId, to_user_id: to, payload } = cmd.d ?? {};
       if (typeof channelId !== "string" || typeof to !== "string") return;
@@ -149,6 +162,81 @@ function handleCommand(client: Client, raw: string): void {
     case "PING":
       send(client, { t: "PONG", d: { at: Date.now() } });
       return;
+  }
+}
+
+/* ── audio por la instancia (§9.4) ──────────────────────────────────────
+   La voz NO va entre navegadores: pasa por aquí, como el resto de la
+   plataforma. Es lo que convierte esto en un servidor de verdad —el equipo que
+   hospeda da vida a la sala y al apagarlo se acaba— y, sobre todo, es lo único
+   que funciona siempre: si la persona ya está viendo la aplicación, su conexión
+   con la instancia existe, y el audio va por esa misma conexión. Sin agujeros
+   que perforar, sin STUN, sin TURN, sin cuenta en ningún servicio.
+
+   Cuesta subida a quien hospeda: cada persona que habla se reenvía a las demás.
+   Con Opus a 32 kbit/s, cinco personas hablando a la vez son ~640 kbit/s. El
+   vídeo NO pasa por aquí: eso sí tumbaría una conexión doméstica. */
+
+/* Del cliente llega [1 byte de tipo][datos]; a los demás sale
+   [1 byte de tipo][16 bytes de quién][datos]. El id va en binario y no en texto
+   porque son decenas de paquetes por segundo. */
+const KIND_AUDIO = 0;
+const KIND_VIDEO_KEY = 1;
+const KIND_VIDEO_DELTA = 2;
+
+interface Limit {
+  /** Tamaño máximo de un paquete. */
+  bytes: number;
+  /** Paquetes por segundo tolerados antes de tirarlos. */
+  rate: number;
+  /** Cola del socket de destino a partir de la cual se descarta. */
+  buffered: number;
+}
+
+/* El vídeo aguanta mucho menos cola que el audio a propósito. Sobre TCP, dejar
+   que se acumule no lo hace llegar: lo hace llegar TARDE, y cada vez más tarde.
+   Tirar fotogramas es lo que mantiene la imagen pegada al presente. */
+const LIMITS: Record<number, Limit> = {
+  [KIND_AUDIO]: { bytes: 4096, rate: 150, buffered: 262_144 },
+  [KIND_VIDEO_KEY]: { bytes: 512_000, rate: 90, buffered: 1_048_576 },
+  [KIND_VIDEO_DELTA]: { bytes: 256_000, rate: 200, buffered: 524_288 },
+};
+
+function writeSender(userId: Snowflake, into: Buffer): void {
+  into.write(userId.replaceAll("-", ""), 1, 16, "hex");
+}
+
+function relayMedia(client: Client, packet: Buffer): void {
+  if (packet.length < 2) return;
+  const kind = packet[0]!;
+  const limit = LIMITS[kind];
+  if (!limit || packet.length - 1 > limit.bytes) return;
+
+  const now = Date.now();
+  if (now - client.audio.since >= 1000) client.audio = { frames: 0, since: now };
+  if (++client.audio.frames > limit.rate) return;
+
+  const channelId = voice.channelOf(client.userId);
+  if (!channelId) return;
+  const sender = voice.participantOf(channelId, client.userId);
+  if (!sender) return;
+  // Silenciado o sin vídeo anunciado, el servidor no lo reenvía. No basta con que
+  // el cliente deje de mandarlo: el cliente lo escribe cualquiera.
+  if (kind === KIND_AUDIO ? sender.muted : !sender.video) return;
+
+  const out = Buffer.allocUnsafe(17 + packet.length - 1);
+  out[0] = kind;
+  writeSender(client.userId, out);
+  packet.copy(out, 17, 1);
+
+  for (const other of clients) {
+    if (other.userId === client.userId || other.ws.readyState !== other.ws.OPEN) continue;
+    const listener = voice.participantOf(channelId, other.userId);
+    if (!listener) continue;
+    // Quien está ensordecido no recibe audio: no lo iba a oír y ocupa subida.
+    if (kind === KIND_AUDIO && listener.deafened) continue;
+    if (other.ws.bufferedAmount > limit.buffered) continue;
+    other.ws.send(out, { binary: true });
   }
 }
 
@@ -175,7 +263,14 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
   }
 
   wss.handleUpgrade(req, socket, head, (ws) => {
-    const client: Client = { ws, userId: auth.user.id, sessionId: auth.sessionId, subs: new Set(), alive: true };
+    const client: Client = {
+      ws,
+      userId: auth.user.id,
+      sessionId: auth.sessionId,
+      subs: new Set(),
+      alive: true,
+      audio: { frames: 0, since: 0 },
+    };
     clients.add(client);
 
     send(client, {
@@ -188,7 +283,12 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
       },
     });
 
-    ws.on("message", (data) => handleCommand(client, String(data)));
+    // El audio viaja en binario y los mandos en JSON por el mismo socket: así no
+    // hay un segundo puerto que abrir ni un segundo túnel que montar.
+    ws.on("message", (data, isBinary) => {
+      if (isBinary) relayMedia(client, data as Buffer);
+      else handleCommand(client, String(data));
+    });
     ws.on("pong", () => {
       client.alive = true;
     });

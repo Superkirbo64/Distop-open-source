@@ -23,12 +23,16 @@ export function Chat({
   onToggleMembers,
   onToggleSidebar,
   onOpenSidebar,
+  onCreateCommunity,
+  onJoinCommunity,
   sidebarOpen,
   membersOpen,
 }: {
   onToggleMembers: () => void;
   onToggleSidebar: () => void;
   onOpenSidebar: () => void;
+  onCreateCommunity: () => void;
+  onJoinCommunity: () => void;
   sidebarOpen: boolean;
   membersOpen: boolean;
 }) {
@@ -68,7 +72,21 @@ export function Chat({
   if (!data) {
     return (
       <main data-pane="main" className="grid flex-1 place-items-center bg-bg">
-        <EmptyState title={t("community.empty")} hint={t("community.emptyHint")} />
+        {/* Con la barra de comunidades escondida (móvil), esta pantalla era un
+            callejón sin salida: ni cabecera, ni botón de volver, ni forma de
+            crear la primera comunidad. */}
+        <EmptyState
+          title={t("community.empty")}
+          hint={t("community.emptyHint")}
+          action={
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button variant="primary" onClick={onCreateCommunity}>
+                {t("community.create")}
+              </Button>
+              <Button onClick={onJoinCommunity}>{t("community.join")}</Button>
+            </div>
+          }
+        />
       </main>
     );
   }
@@ -89,11 +107,11 @@ export function Chat({
     return (
       <main data-pane="main" className="flex min-w-0 flex-1 flex-col bg-bg">
         <header className="flex h-[var(--header-h)] shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-          <button onClick={onOpenSidebar} className="md:hidden" aria-label={t("common.back")}>
+          <button onClick={onOpenSidebar} className="wide:hidden" aria-label={t("common.back")}>
             <CornerUpLeft size={18} />
           </button>
-          <IconButton label={t("nav.panel")} onClick={onToggleSidebar} pressed={sidebarOpen} className="hidden md:inline-flex">
-            <Panel size={17} />
+          <IconButton label={t("nav.panel")} onClick={onToggleSidebar} aria-pressed={sidebarOpen} className="hidden wide:inline-flex">
+            <Panel size={17} open={sidebarOpen} />
           </IconButton>
           <Icon size={18} className="shrink-0 text-muted" />
           <h1 className="display truncate text-[0.95rem] font-bold">{channel.name}</h1>
@@ -136,11 +154,11 @@ export function Chat({
       </a>
 
       <header className="flex h-[var(--header-h)] shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
-        <button onClick={onOpenSidebar} className="md:hidden" aria-label={t("common.back")}>
+        <button onClick={onOpenSidebar} className="wide:hidden" aria-label={t("common.back")}>
           <CornerUpLeft size={18} />
         </button>
-        <IconButton label={t("nav.panel")} onClick={onToggleSidebar} pressed={sidebarOpen} className="hidden md:inline-flex">
-          <Panel size={17} />
+        <IconButton label={t("nav.panel")} onClick={onToggleSidebar} aria-pressed={sidebarOpen} className="hidden wide:inline-flex">
+          <Panel size={17} open={sidebarOpen} />
         </IconButton>
         <Icon size={18} className="shrink-0 text-muted" />
         <h1 className="display truncate text-[0.95rem] font-bold">{channel.name}</h1>

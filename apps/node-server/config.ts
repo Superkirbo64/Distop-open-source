@@ -3,6 +3,8 @@
  * Si algo falta o es inválido el proceso muere aquí, no a mitad de una petición.
  */
 import { randomBytes } from "node:crypto";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 function str(key: string, fallback: string): string {
   const v = process.env[key];
@@ -31,10 +33,42 @@ function list(key: string, fallback: string[]): string[] {
   return v.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-const authSecret = str("AUTH_SECRET", "");
-if (!authSecret && process.env.NODE_ENV === "production") {
-  throw new Error("AUTH_SECRET es obligatorio en producción. Genera uno: openssl rand -hex 32");
+/**
+ * Secreto de firma de sesiones, sin pedírselo a nadie (§22).
+ *
+ * Manda la variable de entorno cuando existe (Docker, un despliegue serio). Si
+ * no, la instancia se genera el suyo y lo guarda junto a su base de datos, con
+ * permisos de solo-dueño. Antes se generaba uno nuevo en cada arranque, así que
+ * reiniciar dejaba a todo el mundo fuera; y la alternativa era escribirlo en el
+ * .env, un fichero que se abre, se comparte en capturas y se sube por error.
+ *
+ * El fichero no se imprime en ningún log ni se devuelve por ninguna ruta: solo
+ * lo lee este proceso al arrancar.
+ */
+function loadSecret(databasePath: string): string {
+  const fromEnv = str("AUTH_SECRET", "");
+  if (fromEnv) return fromEnv;
+
+  const file = join(dirname(resolve(databasePath)), "secret.key");
+  if (existsSync(file)) {
+    const stored = readFileSync(file, "utf8").trim();
+    if (stored.length >= 32) return stored;
+  }
+
+  const generated = randomBytes(32).toString("hex");
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, `${generated}\n`, { mode: 0o600 });
+  try {
+    // En Windows no hace nada; en Linux y macOS es la diferencia entre que lo
+    // lea solo tu usuario o cualquiera con cuenta en la máquina.
+    chmodSync(file, 0o600);
+  } catch {
+    // Sistema de ficheros sin permisos POSIX: el fichero ya está escrito.
+  }
+  return generated;
 }
+
+const databasePath = str("DATABASE_PATH", "./data/app.db");
 
 export const config = {
   port: int("PORT", 5000),
@@ -42,11 +76,11 @@ export const config = {
   instanceName: str("INSTANCE_NAME", "Instancia Distop"),
   publicUrl: str("PUBLIC_URL", ""),
 
-  databasePath: str("DATABASE_PATH", "./data/app.db"),
+  databasePath,
   storagePath: str("DEFAULT_STORAGE_PATH", "./data/uploads"),
 
-  /** Sin AUTH_SECRET en desarrollo se genera uno efímero: reiniciar cierra sesiones. */
-  authSecret: authSecret || randomBytes(32).toString("hex"),
+  /** De la variable de entorno, o del fichero que la instancia se crea sola. */
+  authSecret: loadSecret(databasePath),
 
   /**
    * Código de un solo uso para reclamar una instancia recién instalada.

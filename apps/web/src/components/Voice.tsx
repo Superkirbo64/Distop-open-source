@@ -4,12 +4,32 @@
  * y quien está conectada tiene un panel fijo encima de su barra de usuario con
  * lo que se usa cada dos minutos: callar, ensordecer y colgar.
  */
-import { useEffect, useState } from "react";
-import { MicOff, PhoneOff, Signal, Volume2, VolumeX } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Maximize2,
+  MicOff,
+  Minimize2,
+  MonitorUp,
+  PhoneOff,
+  Signal,
+  Video,
+  VideoOff,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { Headset, Microphone } from "./icons.tsx";
-import type { Member, VoiceState } from "@distop/protocol";
+import { PERMISSIONS, has, toBits, type Member, type VoiceState } from "@distop/protocol";
 import { useStore } from "../store.ts";
-import { leaveVoice, onVoice, setDeafened, setMuted, type VoiceLocalState } from "../lib/voice.ts";
+import {
+  canShareScreen,
+  leaveVoice,
+  onVoice,
+  setDeafened,
+  setMuted,
+  setShareMuted,
+  setVideoSource,
+  type VoiceLocalState,
+} from "../lib/voice.ts";
 import { Avatar, ErrorNote, IconButton, useT } from "./ui.tsx";
 
 /**
@@ -26,7 +46,17 @@ export function useVoiceLocal(): VoiceLocalState {
     muted: false,
     deafened: false,
     speaking: new Set(),
+    video: null,
+    localVideo: null,
+    videos: new Map(),
+    videoFps: null,
+    shareAudio: false,
+    shareMuted: false,
+    peerStates: new Map(),
+    reflexive: false,
+    route: null,
     error: null,
+    videoError: null,
   });
   useEffect(() => onVoice(setState), []);
   return state;
@@ -74,15 +104,22 @@ export function VoiceBar() {
   const states = useStore((s) => (local.channelId ? (s.voice[local.channelId] ?? EMPTY) : EMPTY));
 
   if (local.error) {
+    const reason =
+      local.error === "denied" ? "voice.denied" : local.error === "unsupported" ? "voice.unsupported" : "voice.noDevice";
     return (
       <div className="border-t border-line px-3 py-2">
-        <ErrorNote>{local.error === "denied" ? t("voice.denied") : t("voice.noDevice")}</ErrorNote>
+        <ErrorNote>{t(reason)}</ErrorNote>
       </div>
     );
   }
 
   if (!local.channelId) return null;
   const channel = data?.channels.find((c) => c.id === local.channelId);
+  const permissions = toBits(data?.channel_permissions[local.channelId] ?? "0");
+  const canCamera = has(permissions, PERMISSIONS.USE_CAMERA);
+  // Compartir pantalla necesita permiso y un navegador que sepa hacerlo: en
+  // móvil no existe, y un botón que nunca funciona es peor que ningún botón.
+  const canScreen = has(permissions, PERMISSIONS.STREAM) && canShareScreen();
 
   return (
     <div className="flex flex-col gap-2 border-t border-line bg-raise px-3 py-2.5">
@@ -118,8 +155,129 @@ export function VoiceBar() {
         </button>
       </div>
 
-      <p className="text-[0.65rem] text-muted">{t("voice.peerToPeer", { count: Math.max(states.length - 1, 0) })}</p>
+      {canCamera || canScreen ? (
+        <div className="flex gap-1">
+          {canCamera ? (
+            <button
+              onClick={() => void setVideoSource(local.video === "camera" ? null : "camera")}
+              aria-pressed={local.video === "camera"}
+              className={`btn h-9 min-h-9 flex-1 px-2 text-xs ${local.video === "camera" ? "btn-primary" : "btn-ghost"}`}
+            >
+              {local.video === "camera" ? <VideoOff size={14} /> : <Video size={14} />}
+              {local.video === "camera" ? t("voice.cameraOff") : t("voice.camera")}
+            </button>
+          ) : null}
+          {canScreen ? (
+            <button
+              onClick={() => void setVideoSource(local.video === "screen" ? null : "screen")}
+              aria-pressed={local.video === "screen"}
+              className={`btn h-9 min-h-9 flex-1 px-2 text-xs ${local.video === "screen" ? "btn-primary" : "btn-ghost"}`}
+            >
+              <MonitorUp size={14} />
+              {local.video === "screen" ? t("voice.screenOff") : t("voice.screen")}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* La voz ya no depende de esto: solo el vídeo, que sí va directo. Cuando
+          no hay camino entre las dos redes se dice, en vez de dejar un recuadro
+          negro sin explicación. */}
+      {[...local.peerStates.values()].some((s) => s === "failed") ? (
+        <ErrorNote>{local.reflexive ? t("voice.needsTurn") : t("voice.needsStun")}</ErrorNote>
+      ) : null}
+
+      {/* Solo aparece si de verdad hay sonido que silenciar: compartir una ventana
+          suelta, o ciertos escritorios de Linux, no lo entregan. */}
+      {local.shareAudio ? (
+        <button
+          onClick={() => setShareMuted(!local.shareMuted)}
+          aria-pressed={local.shareMuted}
+          className={`btn h-9 min-h-9 px-2 text-xs ${local.shareMuted ? "btn-danger" : "btn-ghost"}`}
+        >
+          {local.shareMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          {local.shareMuted ? t("voice.shareUnmute") : t("voice.shareMute")}
+        </button>
+      ) : null}
+
+      {local.video && local.videoFps !== null ? (
+        <p className="text-[0.65rem] text-muted">{t("voice.videoFps", { fps: local.videoFps })}</p>
+      ) : null}
+
+      {local.videoError ? (
+        <ErrorNote>{local.videoError === "denied" ? t("voice.videoDenied") : t("voice.noCamera")}</ErrorNote>
+      ) : null}
+
+      {/* Por dónde va cada cosa. La voz siempre por la instancia; el vídeo,
+          directo, y si acabó pasando por un relevo ajeno se dice. */}
+      <p className="text-[0.65rem] text-muted">{t("voice.throughHost", { count: Math.max(states.length - 1, 0) })}</p>
+      {local.video && local.route ? (
+        <p className="text-[0.65rem] text-muted">{t(local.route === "relay" ? "voice.viaRelay" : "voice.videoDirect")}</p>
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * Un `<video>` no acepta el stream por props: hay que asignarlo al nodo.
+ * El propio vídeo va silenciado (oírse a uno mismo con retardo es insoportable)
+ * y `playsInline` evita que iOS lo abra a pantalla completa.
+ */
+function VideoTile({ stream, self }: { stream: MediaStream; self: boolean }) {
+  const ref = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || node.srcObject === stream) return;
+    node.srcObject = stream;
+    void node.play().catch(() => {
+      // Autoplay bloqueado hasta que haya un gesto: entrar a la llamada ya lo es.
+    });
+  }, [stream]);
+
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      muted
+      // La cámara propia se ve en espejo, como en cualquier videollamada.
+      className={`absolute inset-0 h-full w-full rounded-card bg-black object-contain ${self ? "-scale-x-100" : ""}`}
+    />
+  );
+}
+
+/**
+ * Entrar y salir de pantalla completa con el mismo botón.
+ * Antes solo entraba: para volver había que saber que existe Escape, y con el
+ * ratón no había ninguna salida. Un botón que solo hace la mitad del viaje.
+ */
+function FullscreenButton() {
+  const t = useT();
+  const [full, setFull] = useState(false);
+  const ref = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    // El estado también cambia por Escape o por F11, no solo por este botón.
+    const sync = () => setFull(document.fullscreenElement === ref.current?.closest("figure"));
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  const label = full ? t("voice.exitFullscreen") : t("voice.fullscreen");
+  return (
+    <button
+      ref={ref}
+      onClick={() => {
+        if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+        else void ref.current?.closest("figure")?.requestFullscreen().catch(() => {});
+      }}
+      aria-label={label}
+      title={label}
+      className="absolute top-2 right-2 z-10 grid h-8 w-8 place-items-center rounded-lg bg-bg/70 text-ink transition-colors hover:bg-bg"
+    >
+      {full ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+    </button>
   );
 }
 
@@ -127,6 +285,7 @@ export function VoiceBar() {
 export function VoiceStage({ channelId }: { channelId: string }) {
   const t = useT();
   const local = useVoiceLocal();
+  const selfId = useStore((s) => s.user?.id);
   const communityId = useStore((s) => s.activeCommunityId);
   const data = useStore((s) => (communityId ? s.data[communityId] : undefined));
   const states = useStore((s) => s.voice[channelId] ?? EMPTY);
@@ -147,26 +306,52 @@ export function VoiceStage({ channelId }: { channelId: string }) {
         const member = data?.members.find((m) => m.user.id === state.user_id);
         const name = member?.nickname ?? member?.user.display_name ?? "…";
         const speaking = local.speaking.has(state.user_id);
+        const self = state.user_id === selfId;
+        // La pista existe desde que se conecta el par, pero solo se pinta si el
+        // servidor dice que esa persona está emitiendo: es lo que convierte el
+        // permiso de cámara en algo visible, y evita mostrar un cuadro negro.
+        const stream = self ? local.localVideo : local.videos.get(state.user_id);
+        const video = state.video && stream ? stream : null;
+        const link = local.peerStates.get(state.user_id);
 
         return (
           <figure
             key={state.user_id}
-            className="relative grid aspect-video place-items-center rounded-card border bg-surface transition-colors duration-150"
+            /* El estado va también en atributos y no solo en el color del borde:
+               "¿me está llegando su voz?" se responde mirando esto, sin tener que
+               adivinar por una sombra. */
+            data-user={state.user_id}
+            data-speaking={speaking}
+            data-link={link ?? "none"}
+            className="relative grid aspect-video place-items-center overflow-hidden rounded-card border bg-surface transition-colors duration-150"
             style={{ borderColor: speaking ? "var(--ok)" : "var(--line)" }}
           >
-            <span
-              className="rounded-full transition-shadow duration-150"
-              style={{ boxShadow: speaking ? "0 0 0 4px color-mix(in oklab, var(--ok) 45%, transparent)" : "none" }}
-            >
-              <Avatar name={name} url={member?.user.avatar_url} id={state.user_id} size={72} />
-            </span>
+            {video ? (
+              <>
+                <VideoTile stream={video} self={self && state.video === "camera"} />
+                <FullscreenButton />
+              </>
+            ) : (
+              <span
+                className="rounded-full transition-shadow duration-150"
+                style={{ boxShadow: speaking ? "0 0 0 4px color-mix(in oklab, var(--ok) 45%, transparent)" : "none" }}
+              >
+                <Avatar name={name} url={member?.user.avatar_url} id={state.user_id} size={72} />
+              </span>
+            )}
             <figcaption className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg bg-bg/80 px-2 py-1 text-xs">
               {state.deafened ? (
                 <VolumeX size={12} className="text-danger" />
               ) : state.muted ? (
                 <MicOff size={12} className="text-danger" />
               ) : null}
+              {state.video === "screen" ? <MonitorUp size={12} className="text-accent" /> : null}
               <span className="max-w-40 truncate font-medium">{name}</span>
+              {/* Sin conexión con esa persona no hay vídeo que valga, y conviene
+                  distinguirlo de "tiene la cámara apagada". */}
+              {!self && link && link !== "connected" ? (
+                <span className={link === "failed" ? "text-danger" : "text-warn"}>{t(`voice.link.${link}`)}</span>
+              ) : null}
             </figcaption>
           </figure>
         );

@@ -7,6 +7,8 @@ import { randomBytes } from "node:crypto";
 import { PERMISSIONS, ALL_PERMISSIONS, has, toBits, uuidv7 } from "@distop/protocol";
 import type { Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
+import { publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
+import { iceServers, relayState, setRelay, videoMode } from "./ice.ts";
 import { audit, db, seedCommunity, uniqueSlug } from "./db.ts";
 import {
   authenticate,
@@ -17,6 +19,7 @@ import {
   findUserById,
   findUserByUsername,
   hashPassword,
+  isInstanceOwner,
   revokeAllSessions,
   revokeSession,
   rotateSession,
@@ -56,7 +59,7 @@ import {
   type Ctx,
 } from "./http.ts";
 import { instanceHealth, VERSION } from "./instance.ts";
-import { deleteAttachmentsOf, linkAttachments, saveUpload, serveFile } from "./storage.ts";
+import { deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, saveUpload, serveFile } from "./storage.ts";
 import { disconnectSession, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import { statesOfCommunity } from "./voice.ts";
 
@@ -83,7 +86,7 @@ const CHANNEL_NAME = /^[^\s#@][^#@]{0,63}$/;
 route("GET", "/health", () => instanceHealth(onlineCount()));
 route("GET", "/api/v1/health", () => instanceHealth(onlineCount()));
 
-route("GET", "/api/v1/info", (ctx) => ({
+route("GET", "/api/v1/info", async (ctx) => ({
   name: config.instanceName,
   version: VERSION,
   registration_enabled: config.registrationEnabled,
@@ -91,10 +94,16 @@ route("GET", "/api/v1/info", (ctx) => ({
   public_discovery_enabled: config.publicDiscoveryEnabled,
   max_upload_mb: config.maxUploadMb,
   allowed_upload_types: config.allowedUploadTypes,
-  /** Dirección por la que llega la gente de fuera; vacía = solo local (§6). */
-  public_url: config.publicUrl,
-  /** Servidores ICE para la voz: sin ellos solo se conecta dentro de la misma red. */
-  ice_servers: config.iceServers,
+  /** Dirección por la que llega la gente de fuera; vacía = solo local (§6).
+      Si hay un túnel abierto desde la app, esa manda sobre la del .env. */
+  public_url: publicUrl(),
+  /** Estado del túnel, para que la interfaz pueda ofrecer abrirlo o cerrarlo. */
+  tunnel: tunnelState(),
+  /** Por dónde se buscan los caminos entre navegadores. Sin esto la voz solo
+      funciona entre dos equipos de la misma red, y ni siquiera siempre. */
+  ice_servers: await iceServers(),
+  /** Si la imagen pasa por la instancia o va directa, y con qué techo de calidad (§9.5). */
+  video: videoMode(),
   /** Instancia sin dueño: el cliente enseña la puesta en marcha, no el login. */
   setup_required: countOwners() === 0,
   setup_requires_code: !isLocalRequest(ctx),
@@ -345,6 +354,44 @@ route("POST", "/api/v1/users/me/upgrade", async (ctx) => {
     user.id,
   );
   return toSelfUser(findUserById(user.id)!);
+});
+
+/**
+ * Borrar la cuenta de verdad (§29.6).
+ * Nada de "desactivar" ni de dejar la fila marcada: se va de la base. Las
+ * comunidades que tenga en propiedad se van con ella —son suyas, y dejarlas
+ * huérfanas sin nadie que las administre es peor— y sus archivos salen del disco
+ * del anfitrión, no solo del índice.
+ *
+ * Se pide el nombre de usuario escrito a mano: es irreversible y no hay papelera.
+ */
+route("DELETE", "/api/v1/users/me", async (ctx) => {
+  const { user, sessionId } = requireAuth(ctx);
+  const body = await readJson(ctx);
+  const confirm = v.string(body, "username", { min: 1, max: 32 });
+  if (confirm.trim().toLowerCase() !== user.username.toLowerCase())
+    throw badRequest("Escribe tu nombre de usuario exactamente para confirmar.");
+
+  const owned = db.prepare("SELECT id FROM communities WHERE owner_id = ?").all(user.id) as { id: string }[];
+
+  // A quien esté dentro se le avisa ANTES de que desaparezca la comunidad:
+  // después ya no hay a quién publicarle.
+  for (const community of owned) {
+    publish(community.id, { t: "MEMBER_LEAVE", d: { community_id: community.id, user_id: user.id } });
+  }
+
+  deleteAttachmentsOwnedBy(user.id);
+  for (const community of owned) db.prepare("DELETE FROM communities WHERE id = ?").run(community.id);
+
+  // El resto cuelga de la fila del usuario por clave foránea: sesiones,
+  // membresías, mensajes y reacciones se van en cascada con ella.
+  db.prepare("DELETE FROM users WHERE id = ?").run(user.id);
+
+  revokeAllSessions(user.id);
+  // Cierra también el socket abierto: si no, seguiría recibiendo eventos una
+  // cuenta que ya no existe.
+  disconnectSession(sessionId);
+  return { deleted: true, communities: owned.length };
 });
 
 route("POST", "/api/v1/users/me/sessions/revoke-all", (ctx) => {
@@ -1098,6 +1145,58 @@ route("POST", "/api/v1/invites/:code/join", (ctx) => {
   }
 
   return { community: getCommunity(invite.community_id), channel_id: invite.channel_id };
+});
+
+/* ── abrir la instancia al mundo (§6) ──────────────────────────────── */
+
+/**
+ * Solo quien puso en marcha la instancia. No es un permiso de comunidad: esto
+ * arranca un proceso en el ordenador anfitrión, y administrar una comunidad no
+ * da derecho sobre la máquina de quien la hospeda.
+ */
+function requireHost(ctx: Ctx): void {
+  const { user } = requireAuth(ctx);
+  if (!isInstanceOwner(user.id)) throw forbidden("Esto solo puede hacerlo quien hospeda la instancia.");
+}
+
+route("GET", "/api/v1/instance/tunnel", (ctx) => {
+  requireHost(ctx);
+  return tunnelState();
+});
+
+route("POST", "/api/v1/instance/tunnel", async (ctx) => {
+  requireHost(ctx);
+  rateLimit(`tunnel:${ctx.ip}`, 5, 60_000);
+  return startTunnel();
+});
+
+route("DELETE", "/api/v1/instance/tunnel", (ctx) => {
+  requireHost(ctx);
+  return stopTunnel();
+});
+
+/* Relevo de voz: quién puede reenviar el audio y el vídeo cuando dos redes no
+   se dejan conectar en directo. Decisión de quien hospeda, desde la aplicación. */
+route("GET", "/api/v1/instance/relay", (ctx) => {
+  requireHost(ctx);
+  return relayState();
+});
+
+route("PUT", "/api/v1/instance/relay", async (ctx) => {
+  requireHost(ctx);
+  const body = await readJson(ctx);
+  const text = (key: string): Record<string, string> =>
+    typeof body[key] === "string" ? { [key]: (body[key] as string).trim() } : {};
+  return setRelay({
+    ...text("mode"),
+    ...text("url"),
+    ...text("username"),
+    ...text("credential"),
+    ...text("keyId"),
+    ...text("apiToken"),
+    ...text("appName"),
+    ...text("apiKey"),
+  } as Parameters<typeof setRelay>[0]);
 });
 
 /* ── adjuntos (§28.3) ──────────────────────────────────────────────── */

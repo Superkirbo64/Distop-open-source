@@ -60,15 +60,20 @@ async function call(method: string, path: string, opts: { token?: string; body?:
 interface Client {
   socket: WebSocket;
   inbox: Array<{ t: string; d: any }>;
+  /** Paquetes de voz: llegan en binario por el mismo socket, no son JSON. */
+  audio: Buffer[];
 }
 
 const clients: Client[] = [];
 
 function open(token: string): Promise<Client> {
   const socket = new WebSocket(`${wsBase}?token=${encodeURIComponent(token)}`);
-  const client: Client = { socket, inbox: [] };
+  const client: Client = { socket, inbox: [], audio: [] };
   clients.push(client);
-  socket.on("message", (raw) => client.inbox.push(JSON.parse(String(raw)) as { t: string; d: any }));
+  socket.on("message", (raw, isBinary) => {
+    if (isBinary) client.audio.push(raw as Buffer);
+    else client.inbox.push(JSON.parse(String(raw)) as { t: string; d: any });
+  });
 
   return new Promise((resolve, reject) => {
     socket.once("open", () => resolve(client));
@@ -142,6 +147,162 @@ test("dos personas en el mismo canal se ven escribir en tiempo real", async () =
   assert.ok(!departure.online.includes(ana.user.id));
 
   clientLeo.socket.close();
+});
+
+test("el vídeo se anuncia a la sala y respeta el permiso de cada fuente", async () => {
+  const rita = await call("POST", "/api/v1/auth/register", { body: { username: "rita", password: "contrasena-larga-5" } });
+  const tom = await call("POST", "/api/v1/auth/register", { body: { username: "tom", password: "contrasena-larga-6" } });
+
+  const community = await call("POST", "/api/v1/communities", { token: rita.access_token, body: { name: "Vídeo" } });
+  const invite = await call("POST", `/api/v1/communities/${community.id}/invites`, { token: rita.access_token, body: {} });
+  await call("POST", `/api/v1/invites/${invite.code}/join`, { token: tom.access_token });
+
+  const boot = await call("GET", `/api/v1/communities/${community.id}/bootstrap`, { token: rita.access_token });
+  const channel = boot.channels.find((c: any) => c.kind === "voice");
+  const everyone = boot.roles.find((r: any) => r.is_default);
+
+  // Cámara sí, pantalla no: son permisos distintos y se comprueban por separado.
+  const { PERMISSIONS } = await import("@distop/protocol");
+  await call("PUT", `/api/v1/channels/${channel.id}/permissions/${everyone.id}`, {
+    token: rita.access_token,
+    body: { target_type: "role", allow: "0", deny: PERMISSIONS.STREAM.toString() },
+  });
+
+  const clientTom = await open(tom.access_token);
+  await waitFor(clientTom, "READY");
+  clientTom.socket.send(JSON.stringify({ t: "SUBSCRIBE", d: { community_id: community.id } }));
+
+  clientTom.socket.send(JSON.stringify({ t: "VOICE_JOIN", d: { channel_id: channel.id } }));
+  const joined = await waitFor(clientTom, "VOICE_STATE_UPDATE", (d) => d.states.length === 1);
+  assert.equal(joined.states[0].user_id, tom.user.id);
+  assert.equal(joined.states[0].video, null, "se entra sin vídeo");
+
+  // Sin STREAM la pantalla no se anuncia: nadie la verá aunque su navegador capture.
+  clientTom.socket.send(JSON.stringify({ t: "VOICE_VIDEO", d: { channel_id: channel.id, source: "screen" } }));
+  await new Promise((r) => setTimeout(r, 300));
+  assert.ok(
+    !clientTom.inbox.some((e) => e.t === "VOICE_STATE_UPDATE" && e.d.states[0]?.video === "screen"),
+    "compartir pantalla sin permiso no cambia el estado",
+  );
+
+  clientTom.socket.send(JSON.stringify({ t: "VOICE_VIDEO", d: { channel_id: channel.id, source: "camera" } }));
+  const withCamera = await waitFor(clientTom, "VOICE_STATE_UPDATE", (d) => d.states[0]?.video === "camera");
+  assert.equal(withCamera.states[0].video, "camera");
+
+  clientTom.socket.send(JSON.stringify({ t: "VOICE_VIDEO", d: { channel_id: channel.id, source: null } }));
+  const off = await waitFor(clientTom, "VOICE_STATE_UPDATE", (d) => d.states[0]?.video === null);
+  assert.equal(off.states[0].video, null, "apagar la cámara también se anuncia");
+
+  clientTom.socket.close();
+});
+
+test("la voz pasa por la instancia y solo llega a quien está en la sala", async () => {
+  /* Este es el cambio que hace que la voz funcione siempre: no se negocia nada
+     entre navegadores, el audio sube por el mismo socket que ya atraviesa el
+     túnel y la instancia lo reparte. Aquí se comprueba lo que el servidor debe
+     garantizar: que llegue a la sala, que NO llegue a quien está fuera, y que
+     silenciado signifique silenciado aunque el cliente insista. */
+  const ana = await call("POST", "/api/v1/auth/register", { body: { username: "anav", password: "contrasena-larga-7" } });
+  const bea = await call("POST", "/api/v1/auth/register", { body: { username: "beav", password: "contrasena-larga-8" } });
+  const eva = await call("POST", "/api/v1/auth/register", { body: { username: "evav", password: "contrasena-larga-a" } });
+
+  const community = await call("POST", "/api/v1/communities", { token: ana.access_token, body: { name: "Voz" } });
+  const invite = await call("POST", `/api/v1/communities/${community.id}/invites`, {
+    token: ana.access_token,
+    body: {},
+  });
+  for (const quien of [bea, eva]) await call("POST", `/api/v1/invites/${invite.code}/join`, { token: quien.access_token });
+
+  const boot = await call("GET", `/api/v1/communities/${community.id}/bootstrap`, { token: ana.access_token });
+  const channel = boot.channels.find((c: any) => c.kind === "voice");
+
+  const abrir = async (quien: any) => {
+    const client = await open(quien.access_token);
+    await waitFor(client, "READY");
+    client.socket.send(JSON.stringify({ t: "SUBSCRIBE", d: { community_id: community.id } }));
+    return client;
+  };
+  const aSock = await abrir(ana);
+  const bSock = await abrir(bea);
+  const eSock = await abrir(eva);
+
+  // Ana y Bea entran a la voz; Eva se queda fuera aunque esté en la comunidad.
+  for (const client of [aSock, bSock]) client.socket.send(JSON.stringify({ t: "VOICE_JOIN", d: { channel_id: channel.id } }));
+  await waitFor(bSock, "VOICE_STATE_UPDATE", (d) => d.states.length === 2);
+
+  /* El formato: del cliente sale [tipo][datos] y a los demás llega
+     [tipo][16 bytes de quién][datos]. Tipo 0 es voz, 1 y 2 son imagen. */
+  const datos = Buffer.from([0xfc, 0x01, 0x02, 0x03, 0x04]);
+  const enviar = (kind: number) => aSock.socket.send(Buffer.concat([Buffer.of(kind), datos]), { binary: true });
+
+  enviar(0);
+  await new Promise((r) => setTimeout(r, 400));
+
+  assert.equal(bSock.audio.length, 1, "le llega a Bea, que está en la sala");
+  assert.equal(eSock.audio.length, 0, "y no a Eva, que está en la comunidad pero fuera de la llamada");
+  assert.equal(aSock.audio.length, 0, "ni vuelve a quien lo mandó");
+
+  const llegada = bSock.audio[0]!;
+  assert.equal(llegada[0], 0, "conserva el tipo de paquete");
+  assert.equal(
+    llegada.subarray(1, 17).toString("hex"),
+    ana.user.id.replaceAll("-", ""),
+    "viene marcado con quién habla",
+  );
+  assert.deepEqual(llegada.subarray(17), datos, "y el contenido llega intacto");
+
+  /* La imagen no se reenvía si esa persona no ha anunciado que está emitiendo.
+     Igual que con el silencio: no vale con que el cliente diga que sí, porque el
+     cliente lo escribe cualquiera. */
+  bSock.audio.length = 0;
+  enviar(1);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(bSock.audio.length, 0, "sin cámara anunciada, el vídeo no pasa");
+
+  aSock.socket.send(JSON.stringify({ t: "VOICE_VIDEO", d: { channel_id: channel.id, source: "camera" } }));
+  await waitFor(bSock, "VOICE_STATE_UPDATE", (d) => d.states.some((s: any) => s.user_id === ana.user.id && s.video));
+  enviar(1);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(bSock.audio.length, 1, "con la cámara encendida sí");
+
+  // Silenciada, el servidor deja de reenviar su voz aunque su cliente siga mandando.
+  bSock.audio.length = 0;
+  aSock.socket.send(JSON.stringify({ t: "VOICE_MUTE", d: { channel_id: channel.id, muted: true, deafened: false } }));
+  await waitFor(bSock, "VOICE_STATE_UPDATE", (d) => d.states.some((s: any) => s.user_id === ana.user.id && s.muted));
+
+  enviar(0);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(bSock.audio.length, 0, "silenciada en el servidor es silenciada de verdad");
+
+  for (const client of [aSock, bSock, eSock]) client.socket.close();
+});
+
+test("volver a entrar en la misma sala renueva la hora de entrada", async () => {
+  /* Al recargar la pestaña el id de usuario no cambia, así que sin una hora de
+     entrada nueva el resto de la sala no tiene forma de saber que hay que
+     rehacer la conexión WebRTC: se quedan hablándole a un navegador que ya no
+     existe, y esa persona ve "conectando" para siempre. */
+  const nel = await call("POST", "/api/v1/auth/register", { body: { username: "nel", password: "contrasena-larga-9" } });
+  const community = await call("POST", "/api/v1/communities", { token: nel.access_token, body: { name: "Recarga" } });
+  const boot = await call("GET", `/api/v1/communities/${community.id}/bootstrap`, { token: nel.access_token });
+  const channel = boot.channels.find((c: any) => c.kind === "voice");
+
+  const client = await open(nel.access_token);
+  await waitFor(client, "READY");
+  client.socket.send(JSON.stringify({ t: "SUBSCRIBE", d: { community_id: community.id } }));
+
+  client.socket.send(JSON.stringify({ t: "VOICE_JOIN", d: { channel_id: channel.id } }));
+  const first = await waitFor(client, "VOICE_STATE_UPDATE", (d) => d.states.length === 1);
+  const before = first.states[0].joined_at;
+
+  await new Promise((r) => setTimeout(r, 25));
+  client.socket.send(JSON.stringify({ t: "VOICE_JOIN", d: { channel_id: channel.id } }));
+  const again = await waitFor(client, "VOICE_STATE_UPDATE", (d) => d.states[0]?.joined_at > before);
+
+  assert.equal(again.states.length, 1, "no se duplica a la persona en la sala");
+  assert.ok(again.states[0].joined_at > before, "la segunda entrada trae una hora nueva");
+
+  client.socket.close();
 });
 
 test("un canal sin permiso de lectura no se emite a quien no lo ve", async () => {

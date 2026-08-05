@@ -4,9 +4,10 @@
  * vienen resueltos por el navegador, sin librería de por medio.
  */
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Image as ImageIcon } from "lucide-react";
 import { translate, type MessageKey } from "../i18n.ts";
 import { useStore } from "../store.ts";
-import { RequestError } from "../lib/api.ts";
+import { RequestError, upload } from "../lib/api.ts";
 
 export function useT() {
   const locale = useStore((s) => s.prefs.locale);
@@ -64,12 +65,106 @@ export function IconButton({
       title={label}
       // Un interruptor tiene que decir en qué posición está, no solo qué hace.
       {...(pressed === undefined ? {} : { "aria-pressed": pressed })}
-      className={`icon-btn grid h-9 w-9 place-items-center rounded-[10px] ${
+      // Se centra con flex y no con `place-items`: quien use este botón puede
+      // cambiarle el display desde className (`wide:inline-flex`, por ejemplo), y
+      // en flex `justify-items` no hace nada — el icono se quedaba pegado al
+      // borde izquierdo. `items-center justify-center` centra en los dos casos.
+      className={`icon-btn flex h-9 w-9 items-center justify-center rounded-[10px] ${
         pressed ? "bg-accent-soft text-accent" : "text-muted hover:bg-raise hover:text-ink"
       } ${className}`}
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Imagen que sale del equipo de quien la pone, no de una URL que hay que buscar
+ * por ahí (§10).
+ * Sube el archivo a la propia instancia y devuelve su dirección. El campo de
+ * texto sigue debajo porque pegar un enlace externo también vale —un GIF alojado
+ * fuera no ocupa disco del anfitrión— pero deja de ser la única forma.
+ */
+export function ImageField({
+  label,
+  hint,
+  value,
+  onChange,
+  preview = "square",
+}: {
+  label: string;
+  hint?: string | undefined;
+  value: string;
+  onChange: (url: string) => void;
+  preview?: "square" | "wide" | "round";
+}) {
+  const t = useT();
+  const errorText = useErrorText();
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function pick(file: File | undefined): Promise<void> {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const uploaded = await upload(file);
+      onChange(uploaded.url);
+    } catch (err) {
+      // El límite de tamaño y los tipos permitidos los pone la instancia: su
+      // mensaje ya dice cuál es, así que se enseña tal cual.
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = "";
+    }
+  }
+
+  const shape = preview === "round" ? "h-16 w-16 rounded-full" : preview === "wide" ? "h-16 w-28 rounded-[10px]" : "h-16 w-16 rounded-[10px]";
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-sm font-medium text-ink">{label}</span>
+
+      <div className="flex items-center gap-3">
+        <span className={`grid shrink-0 place-items-center overflow-hidden border border-line bg-sunken ${shape}`}>
+          {value ? (
+            <img src={value} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <ImageIcon size={18} className="text-muted" />
+          )}
+        </span>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex gap-1.5">
+            <Button onClick={() => input.current?.click()} disabled={busy}>
+              {busy ? t("common.uploading") : t("common.chooseFile")}
+            </Button>
+            {value ? <Button onClick={() => onChange("")}>{t("common.remove")}</Button> : null}
+          </div>
+          {hint ? <p className="text-xs text-muted">{hint}</p> : null}
+        </div>
+      </div>
+
+      <input
+        ref={input}
+        type="file"
+        accept="image/*"
+        className="sr-only"
+        onChange={(event) => void pick(event.target.files?.[0])}
+      />
+
+      <input
+        className="field text-xs"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={t("common.orPasteUrl")}
+        inputMode="url"
+      />
+
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+    </div>
   );
 }
 
@@ -155,6 +250,7 @@ export function Modal({
   footer?: ReactNode;
   size?: "md" | "lg";
 }) {
+  const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -176,7 +272,9 @@ export function Modal({
         <div className="flex max-h-[86dvh] flex-col">
           <header className="flex items-center justify-between gap-4 border-b border-line px-5 py-4">
             <h2 className="display text-lg font-bold">{title}</h2>
-            <IconButton label="×" onClick={onClose}>
+            {/* El nombre accesible no puede ser "×": un lector de pantalla lo lee
+                como "por" o "times", que no dice qué hace el botón. */}
+            <IconButton label={t("common.close")} onClick={onClose}>
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M18 6 6 18M6 6l12 12" />
               </svg>
