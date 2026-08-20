@@ -149,15 +149,20 @@ export function Send(props: IconProps) {
   );
 }
 
-/** El clip se inclina, como si acabaras de engancharlo. */
-export function Clip(props: IconProps) {
+/**
+ * La flecha sube al pasar el ratón, como si el archivo acabara de salir.
+ * Geometría y coreografía: icono "Upload" de animate-ui, mismo trazo que ya
+ * traíamos con lucide-react bajo otro nombre (createLucideIcon("Upload", ...)).
+ * El grupo que sube es la flecha; la bandeja de abajo se queda quieta.
+ */
+export function Upload(props: IconProps) {
   return (
     <Svg {...props}>
-      <path
-        className="ai-tilt"
-        d="M13.234 20.252 21 12.3a3.5 3.5 0 0 0-4.95-4.95l-9.9 9.9a5.5 5.5 0 0 0 7.778 7.778l7.07-7.07"
-        transform="translate(0 -3)"
-      />
+      <g className="ai-lift">
+        <path d="M12 3v12" />
+        <path d="m7 8 5-5 5 5" />
+      </g>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
     </Svg>
   );
 }

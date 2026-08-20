@@ -4,7 +4,7 @@
  * servidor está vivo es tan importante como el propio contenido (§26).
  */
 import { useState } from "react";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Link as LinkIcon, Server } from "lucide-react";
 import { Cross } from "./icons.tsx";
 import { useStore } from "../store.ts";
@@ -12,6 +12,27 @@ import { Button, ErrorNote, Field, IconButton, Modal, Toggle, useT, useLocale, u
 import { api } from "../lib/api.ts";
 import { formatDuration } from "../i18n.ts";
 import type { Community } from "@distop/protocol";
+
+/**
+ * Lo que queda sin leer en cada comunidad, sumando sus canales.
+ * Se calcula aquí y no se guarda: son dos objetos pequeños y un bucle, y tener
+ * el total duplicado en el estado es la forma segura de que un día no cuadren.
+ */
+function useCommunityUnread(): Record<string, { count: number; mentions: number }> {
+  const unread = useStore((s) => s.unread);
+  const owner = useStore((s) => s.channelOwner);
+
+  return useMemo(() => {
+    const totals: Record<string, { count: number; mentions: number }> = {};
+    for (const [channelId, entry] of Object.entries(unread)) {
+      const communityId = owner[channelId];
+      if (!communityId || entry.count === 0) continue;
+      const current = totals[communityId] ?? { count: 0, mentions: 0 };
+      totals[communityId] = { count: current.count + entry.count, mentions: current.mentions + entry.mentions };
+    }
+    return totals;
+  }, [unread, owner]);
+}
 
 export function Rail({
   onNavigate,
@@ -26,6 +47,7 @@ export function Rail({
   const communities = useStore((s) => s.communities);
   const activeId = useStore((s) => s.activeCommunityId);
   const openCommunity = useStore((s) => s.openCommunity);
+  const unread = useCommunityUnread();
 
   const [status, setStatus] = useState(false);
 
@@ -37,10 +59,21 @@ export function Rail({
     >
       <ul className="flex flex-1 flex-col items-center gap-2 overflow-y-auto">
         {communities.map((community) => (
-          <li key={community.id} className="relative">
-            {activeId === community.id ? (
-              <span aria-hidden="true" className="marker-active absolute top-1/2 -left-3 h-8 w-1 -translate-y-1/2" />
-            ) : null}
+          <li key={community.id} className="group relative">
+            {/* Una sola pastilla para los tres estados en vez de un punto y un
+                marcador aparte: crece de 0 a 8 a 36 píxeles según sea "nada",
+                "algo sin leer" o "estoy aquí". Así se lee una altura, que es una
+                escala, en lugar de tener que distinguir dos formas distintas. */}
+            <span
+              aria-hidden="true"
+              className={`marker-active absolute top-1/2 -left-3 w-1 -translate-y-1/2 transition-all duration-200 ${
+                activeId === community.id
+                  ? "h-9"
+                  : unread[community.id]
+                    ? "h-2 group-hover:h-5"
+                    : "h-0 group-hover:h-5"
+              }`}
+            />
             <button
               onClick={() => {
                 void openCommunity(community.id);
@@ -61,6 +94,21 @@ export function Rail({
                 <span className="display text-base font-bold">{community.name.slice(0, 2).toUpperCase()}</span>
               )}
             </button>
+
+            {/* Fuera del botón y no dentro: el icono recorta su contenido, y una
+                insignia dentro se quedaría a medias contra el borde redondeado. */}
+            {unread[community.id] && activeId !== community.id ? (
+              unread[community.id]!.mentions > 0 ? (
+                <span
+                  className="absolute -right-1 -bottom-1 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-sunken bg-danger px-1 text-[0.6rem] font-bold text-white tabular-nums"
+                  aria-label={t("unread.mentions", { count: unread[community.id]!.mentions })}
+                >
+                  {unread[community.id]!.mentions > 99 ? "99+" : unread[community.id]!.mentions}
+                </span>
+              ) : (
+                <span className="sr-only">{t("unread.some")}</span>
+              )
+            ) : null}
           </li>
         ))}
       </ul>

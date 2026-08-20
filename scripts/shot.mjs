@@ -38,6 +38,10 @@ const browser = spawn(CHROME, [
   "--remote-debugging-port=0",
   `--user-data-dir=${profile}`,
   `--window-size=${width},${height}`,
+  // Micrófono y cámara falsos: sin esto no se puede fotografiar nada de voz,
+  // porque getUserMedia se queda esperando un permiso que nadie va a dar.
+  "--use-fake-ui-for-media-stream",
+  "--use-fake-device-for-media-stream",
   "--hide-scrollbars",
   "--no-first-run",
   "--disable-gpu",

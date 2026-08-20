@@ -184,6 +184,68 @@ const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+
+  /* Estado de lectura y menciones.
+     `last_read_id` es un id de mensaje, no una fecha: los UUIDv7 ya ordenan por
+     tiempo, así que "lo que no he leído" es una comparación de texto contra el
+     índice que ya existe, sin columna de fecha ni reloj de por medio. */
+  `
+  CREATE TABLE read_state (
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    channel_id   TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    last_read_id TEXT NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    PRIMARY KEY (user_id, channel_id)
+  );
+
+  ALTER TABLE messages ADD COLUMN mentions_everyone INTEGER NOT NULL DEFAULT 0;
+  `,
+
+  /* Estado de presencia elegido a mano. Va en users y no en una tabla aparte
+     porque acompaña a la persona entre dispositivos, igual que el idioma. */
+  `
+  ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'online';
+  ALTER TABLE users ADD COLUMN custom_status TEXT;
+  `,
+
+  /* Emojis y stickers propios de cada comunidad (§10.3).
+     El archivo se reutiliza de `attachments` con message_id NULL, así que se
+     sirve por /api/v1/files/:id como cualquier otro y no hay un segundo camino
+     que proteger. OJO: cuando exista la limpieza de adjuntos huérfanos tendrá
+     que respetar los que estén referenciados aquí. */
+  `
+  CREATE TABLE emojis (
+    id            TEXT PRIMARY KEY,
+    community_id  TEXT NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    name          TEXT NOT NULL,
+    kind          TEXT NOT NULL DEFAULT 'emoji',
+    attachment_id TEXT NOT NULL REFERENCES attachments(id) ON DELETE CASCADE,
+    creator_id    TEXT NOT NULL,
+    created_at    INTEGER NOT NULL
+  );
+  CREATE UNIQUE INDEX idx_emojis_name ON emojis(community_id, kind, name);
+  CREATE INDEX idx_emojis_community ON emojis(community_id);
+  `,
+
+  /* Un GIF o sticker elegido de la galería ya no se descarga (§22): se reenvía
+     desde la instancia cada vez que alguien lo ve, como la galería de avatares,
+     para no ocupar disco del anfitrión con algo que Giphy ya aloja. `path` se
+     deja vacío en ese caso — no se puede quitarle NOT NULL a una columna ya
+     creada sin reconstruir la tabla, así que source_url es la que manda. */
+  `
+  ALTER TABLE attachments ADD COLUMN source_url TEXT;
+  `,
+
+  /* Personalización del perfil (§10.1): marco del avatar, placa del nombre,
+     fuente, efectos y tema de la tarjeta.
+
+     Una columna JSON y no ocho columnas: son ocho ajustes del MISMO adorno, se
+     leen y se escriben siempre juntos, y añadir el noveno no debería costar una
+     migración. Lo que impide que aquí entre basura no es el tipo de la columna
+     sino toProfileStyle() del protocolo, que corre al guardar y al leer. */
+  `
+  ALTER TABLE users ADD COLUMN profile_style TEXT NOT NULL DEFAULT '{}';
+  `,
 ];
 
 const current = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
@@ -223,6 +285,27 @@ export function audit(
   db.prepare(
     "INSERT INTO audit_log (id, community_id, actor_id, action, target_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ).run(uuidv7(), communityId, actorId, action, targetId, JSON.stringify(details), Date.now());
+}
+
+/**
+ * Deja al día todos los canales de una comunidad para alguien.
+ * Se llama al entrar: quien acaba de llegar no tiene mil mensajes "sin leer" de
+ * conversaciones que no vivió. Lo que no ha pasado todavía sí se le avisará.
+ */
+export function markCommunityRead(userId: string, communityId: string): void {
+  const now = Date.now();
+  const rows = db
+    .prepare(
+      `SELECT c.id AS channel_id, (SELECT m.id FROM messages m WHERE m.channel_id = c.id ORDER BY m.id DESC LIMIT 1) AS last
+       FROM channels c WHERE c.community_id = ?`,
+    )
+    .all(communityId) as { channel_id: string; last: string | null }[];
+
+  const upsert = db.prepare(
+    `INSERT INTO read_state (user_id, channel_id, last_read_id, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, channel_id) DO UPDATE SET last_read_id = excluded.last_read_id, updated_at = excluded.updated_at`,
+  );
+  for (const row of rows) if (row.last) upsert.run(userId, row.channel_id, row.last, now);
 }
 
 /** Crea comunidad + rol @everyone + categoría y canales de arranque. */

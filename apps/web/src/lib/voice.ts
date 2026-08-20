@@ -7,7 +7,7 @@
  * Quién ofrece y quién responde se decide comparando ids, no por orden de
  * llegada: si los dos ofrecen a la vez, la negociación se rompe (glare).
  */
-import type { Snowflake, VideoSource } from "@distop/protocol";
+import type { Snowflake, VideoSource, VoiceAction } from "@distop/protocol";
 import { onMedia, sendMedia, sendCommand } from "./gateway.ts";
 import * as relay from "./relay.ts";
 
@@ -830,4 +830,14 @@ async function pollStats(): Promise<void> {
   if (routeChanged && state.video) {
     for (const other of peers.values()) if (other.videoSender) void tuneSender(other.videoSender, state.video);
   }
+}
+
+/**
+ * Acciones de moderación sobre otra persona de la sala (§11).
+ * No cambian nada en local: se piden y se espera al VOICE_STATE_UPDATE. Si el
+ * permiso no da, la instancia calla y la interfaz no llega a mentir diciendo que
+ * silenció a alguien que sigue hablando.
+ */
+export function moderateVoice(channelId: string, userId: string, action: VoiceAction): void {
+  sendCommand({ t: "VOICE_MODERATE", d: { channel_id: channelId, user_id: userId, action } });
 }

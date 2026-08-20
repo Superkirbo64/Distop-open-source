@@ -4,11 +4,12 @@
  * vuelve a comprobar igualmente, esto solo evita ofrecer lo imposible.
  */
 import { useState } from "react";
-import { Crown, MoreVertical, X } from "lucide-react";
+import { Ban, CalendarDays, Clock, Crown, MicOff, MoreVertical, UserRound, Video, Volume2, VolumeX, X } from "lucide-react";
 import { PERMISSIONS, has, toBits, type Member } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
-import { Avatar, IconButton, Menu, MenuItem, Modal, useConfirm, useLocale, useT } from "./ui.tsx";
+import { Avatar, DisplayName, IconButton, Menu, MenuItem, Modal, useConfirm, useLocale, useT } from "./ui.tsx";
+import { cardBackground, effectClass } from "./ProfileStyle.tsx";
 import { formatDate } from "../i18n.ts";
 
 /**
@@ -84,7 +85,12 @@ export function Members({ onClose }: { onClose: () => void }) {
             const isOwner = data!.community.owner_id === member.user.id;
             const canModerate = member.user.id !== me?.id && !isOwner;
             return (
-              <li key={member.user.id} className="group flex items-center gap-2 rounded-[10px] px-2 py-1.5 hover:bg-raise">
+              /* La placa va en background-image y el hover en background-color:
+                 por eso conviven en la misma fila sin pisarse (ver styles.css). */
+              <li
+                key={member.user.id}
+                className={`group flex items-center gap-2 rounded-[10px] px-2 py-1.5 hover:bg-raise plate plate-${member.user.profile_style.nameplate}`}
+              >
                 <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setProfile(member)}>
                   <Avatar
                     name={member.nickname ?? member.user.display_name}
@@ -92,11 +98,17 @@ export function Members({ onClose }: { onClose: () => void }) {
                     id={member.user.id}
                     size={30}
                     ring={data!.online.includes(member.user.id) ? "online" : "offline"}
+                    profile={member.user.profile_style}
                   />
                   <span className="min-w-0">
                     <span className="flex items-center gap-1">
-                      <span className="block truncate text-sm font-medium" style={colorOf(member) ? { color: colorOf(member) } : undefined}>
-                        {member.nickname ?? member.user.display_name}
+                      <span className="block truncate text-sm font-medium">
+                        <DisplayName
+                          name={member.nickname ?? member.user.display_name}
+                          style={member.user.profile_style}
+                          accent={member.user.accent_color}
+                          roleColor={colorOf(member)}
+                        />
                       </span>
                       {isOwner ? <Crown size={12} className="shrink-0 text-warn" aria-label={t("members.owner")} /> : null}
                     </span>
@@ -196,58 +208,255 @@ export function Members({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * Tarjeta de perfil (§10.1).
+ * Portada a sangre, avatar centrado encima y el resto en bloques: quién es, sus
+ * roles, dónde coincidís y qué está haciendo ahora mismo. Todo lo que pinta
+ * sale de datos reales de la instancia; no hay huecos rellenos con servicios de
+ * terceros ni nada que dependa de pagar (§10).
+ */
 function ProfileCard({ member, onClose, color }: { member: Member | null; onClose: () => void; color: string | undefined }) {
   const t = useT();
   const locale = useLocale();
-  const roles = useStore((s) => (s.activeCommunityId ? (s.data[s.activeCommunityId]?.roles ?? EMPTY) : EMPTY));
+  const communities = useStore((s) => s.data);
+  const voice = useStore((s) => s.voice);
+  const activeId = useStore((s) => s.activeCommunityId);
+
+  const active = activeId ? communities[activeId] : undefined;
+  const roles = active?.roles ?? EMPTY;
+
+  if (!member) return <Modal open={false} onClose={onClose} title="" chrome={false}>{null}</Modal>;
+
+  const user = member.user;
+  const isOnline = active?.online.includes(user.id) ?? false;
+  const isOwner = active?.community.owner_id === user.id;
+  const timedOut = (member.timeout_until ?? 0) > Date.now();
+
+  /* Lo único "en vivo" que este cliente sabe de otra persona es si está metida
+     en una sala de voz. Ocupa el sitio que otros clientes llenan con lo que
+     estás escuchando en un servicio de música ajeno. */
+  const rooms = Object.values(communities).flatMap((data) =>
+    data.channels
+      .filter((channel) => channel.kind === "voice")
+      .map((channel) => ({ channel, community: data.community })),
+  );
+  const room = rooms.find(({ channel }) => (voice[channel.id] ?? EMPTY).some((state) => state.user_id === user.id));
+  const voiceState = room ? voice[room.channel.id]?.find((state) => state.user_id === user.id) : undefined;
+
+  /* Comunidades en común: solo las que este cliente ya tiene cargadas. Es una
+     cota inferior honesta, no una consulta al servidor por cada perfil abierto. */
+  const mutual = Object.values(communities).filter((data) => data.members.some((m) => m.user.id === user.id));
+
+  const badges: Array<{ key: string; icon: typeof Crown; label: string; tone: string }> = [];
+  if (isOwner) badges.push({ key: "owner", icon: Crown, label: t("members.owner"), tone: "var(--warn)" });
+  if (user.kind === "guest") badges.push({ key: "guest", icon: UserRound, label: t("members.guest"), tone: "var(--muted)" });
+  if (timedOut) badges.push({ key: "timeout", icon: Clock, label: t("message.timedOut"), tone: "var(--warn)" });
+  if (member.banned) badges.push({ key: "banned", icon: Ban, label: t("members.banned"), tone: "var(--danger)" });
 
   return (
-    <Modal open={member !== null} onClose={onClose} title={member?.user.display_name ?? ""}>
-      {member ? (
-        <div className="flex flex-col gap-4">
-          {member.user.banner_url ? (
-            <img src={member.user.banner_url} alt="" className="h-28 w-full rounded-[10px] object-cover" />
-          ) : (
-            <div className="h-20 rounded-[10px]" style={{ background: member.user.accent_color ?? "var(--accent)" }} />
-          )}
+    <Modal open onClose={onClose} title={user.display_name} chrome={false}>
+      <div className="flex min-h-full flex-col">
+        {/* Portada a sangre: el diálogo ya recorta las esquinas, así que la
+            imagen llega al borde sin redondearla otra vez aquí. */}
+        <div
+          className="relative h-32 shrink-0"
+          style={{ background: cardBackground(user.profile_style, user.accent_color, user.banner_url) }}
+        >
+          {/* El efecto se pinta sobre la portada, y lleva pointer-events:none en
+              su clase para no comerse el clic del boton de cerrar de aqui al lado. */}
+          <div className={`absolute inset-0 ${effectClass(user.profile_style)}`} />
+          {/* Botón propio y no IconButton: encima de una foto cualquiera hace
+              falta contraste fijo, y los colores del tema no lo garantizan. */}
+          <button
+            aria-label={t("common.close")}
+            title={t("common.close")}
+            onClick={onClose}
+            className="absolute top-3 right-3 grid h-9 w-9 place-items-center rounded-[10px] text-white backdrop-blur"
+            style={{ background: "rgb(0 0 0 / 0.4)" }}
+          >
+            <X size={17} />
+          </button>
+        </div>
 
-          <div className="flex items-center gap-3">
-            <Avatar name={member.user.display_name} url={member.user.avatar_url} id={member.user.id} size={56} />
-            <div>
-              <p className="display text-lg font-bold" style={color ? { color } : undefined}>
-                {member.nickname ?? member.user.display_name}
-              </p>
-              <p className="text-sm text-muted">
-                {member.user.kind === "guest" ? t("members.guest") : `@${member.user.username}`}
-                {member.user.pronouns ? ` · ${member.user.pronouns}` : ""}
-              </p>
-            </div>
-          </div>
+        <div className="-mt-12 flex flex-col items-center px-5 text-center">
+          {/* `relative` no es decorativo: el <img> de la portada es contenido
+              en línea y se pinta después que el fondo de un bloque hermano, así
+              que sin posicionarlo la foto se comía el avatar. El recorte contra
+              la portada lo pone `cutout`, que sabe callarse cuando hay aro. */}
+          <span className="relative inline-block">
+            <Avatar
+              name={member.nickname ?? user.display_name}
+              url={user.avatar_url}
+              id={user.id}
+              size={88}
+              ring={isOnline ? "online" : "offline"}
+              profile={user.profile_style}
+              cutout={6}
+            />
+          </span>
 
-          {member.user.bio ? <p className="text-sm whitespace-pre-wrap">{member.user.bio}</p> : null}
+          <h3 className="display mt-3 flex flex-wrap items-center justify-center gap-1.5 text-xl font-bold">
+            <DisplayName
+              name={member.nickname ?? user.display_name}
+              style={user.profile_style}
+              accent={user.accent_color}
+              roleColor={color}
+            />
+            <code className="rounded-md bg-sunken px-1.5 py-0.5 font-body text-[0.72rem] font-medium text-accent">
+              @{user.username}
+            </code>
+          </h3>
 
-          {member.role_ids.length > 0 ? (
-            <div>
-              <h4 className="mb-1.5 text-xs font-semibold tracking-wider text-muted uppercase">{t("members.roles")}</h4>
-              <ul className="flex flex-wrap gap-1.5">
-                {roles
-                  .filter((role) => member.role_ids.includes(role.id))
-                  .map((role) => (
-                    <li
-                      key={role.id}
-                      className="rounded-full border px-2.5 py-0.5 text-xs"
-                      style={{ borderColor: role.color ?? "var(--line)", color: role.color ?? "var(--muted)" }}
-                    >
-                      {role.name}
-                    </li>
-                  ))}
-              </ul>
-            </div>
+          {badges.length > 0 ? (
+            <ul className="mt-2 flex items-center gap-1.5">
+              {badges.map((badge) => (
+                <li
+                  key={badge.key}
+                  title={badge.label}
+                  className="grid h-7 w-7 place-items-center rounded-full bg-raise"
+                  style={{ color: badge.tone }}
+                >
+                  <badge.icon size={14} aria-label={badge.label} />
+                </li>
+              ))}
+            </ul>
           ) : null}
 
-          <p className="text-xs text-muted">{t("members.joined", { date: formatDate(locale, member.joined_at) })}</p>
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-muted">
+            <span
+              aria-hidden="true"
+              className="inline-block h-2 w-2 rounded-full"
+              style={{ background: isOnline ? "var(--ok)" : "var(--muted)" }}
+            />
+            {isOnline ? t("members.online") : t("members.disconnected")}
+            {user.pronouns ? ` · ${user.pronouns}` : ""}
+          </p>
+
+          {user.bio ? <p className="mt-3 text-sm whitespace-pre-wrap text-muted">{user.bio}</p> : null}
         </div>
-      ) : null}
+
+        <PrivateNote targetId={user.id} />
+
+        {member.role_ids.length > 0 ? (
+          <section className="px-5 pt-5">
+            <h4 className="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">{t("members.roles")}</h4>
+            <ul className="flex flex-wrap gap-1.5">
+              {roles
+                .filter((role) => member.role_ids.includes(role.id))
+                .map((role) => (
+                  <li
+                    key={role.id}
+                    className="flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs"
+                    style={{ borderColor: role.color ?? "var(--line)", color: role.color ?? "var(--muted)" }}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="inline-block h-2 w-2 rounded-full"
+                      style={{ background: role.color ?? "var(--muted)" }}
+                    />
+                    {role.name}
+                  </li>
+                ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {mutual.length > 0 ? (
+          <section className="px-5 pt-5">
+            <h4 className="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">
+              {t("members.mutual")} — {mutual.length}
+            </h4>
+            <ul className="grid grid-cols-3 gap-3">
+              {mutual.map((data) => (
+                <li key={data.community.id} className="flex flex-col items-center gap-1.5 text-center">
+                  <Avatar name={data.community.name} url={data.community.icon_url} id={data.community.id} size={56} />
+                  <span className="w-full truncate text-[0.7rem] font-medium">{data.community.name}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        <div className="h-5 shrink-0" />
+
+        {/* Barra de abajo fija, como el reproductor del diseño, pero contando lo
+            único que de verdad está pasando: dónde está ahora, o desde cuándo. */}
+        <div className="sticky bottom-0 mt-auto flex items-center gap-3 border-t border-line bg-raise px-5 py-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-accent-soft text-accent">
+            {room ? <Volume2 size={16} aria-label={t("members.inVoice")} /> : <CalendarDays size={16} aria-hidden="true" />}
+          </span>
+          <span className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-sm font-medium">
+              {room ? `# ${room.channel.name}` : t("members.joined", { date: formatDate(locale, member.joined_at) })}
+            </span>
+            <span className="block truncate text-[0.7rem] text-muted">
+              {room ? room.community.name : t("members.created", { date: formatDate(locale, user.created_at) })}
+            </span>
+          </span>
+          {voiceState && (voiceState.muted || voiceState.deafened || voiceState.video) ? (
+            <span className="flex shrink-0 items-center gap-1.5 text-muted">
+              {voiceState.muted ? <MicOff size={14} aria-hidden="true" /> : null}
+              {voiceState.deafened ? <VolumeX size={14} aria-hidden="true" /> : null}
+              {voiceState.video ? <Video size={14} aria-hidden="true" /> : null}
+            </span>
+          ) : null}
+        </div>
+      </div>
     </Modal>
+  );
+}
+
+/**
+ * Nota privada sobre alguien (§10.1).
+ *
+ * Vive en los ajustes de QUIEN la escribe, no en el perfil de quien la recibe:
+ * es una anotacion tuya sobre otra persona, y esa otra persona no tiene por que
+ * poder leerla ni saber que existe. Por eso no hay evento ni se publica a la
+ * comunidad — sale y entra por el mismo PATCH del propio perfil.
+ *
+ * ponytail: dentro del JSON de ajustes, sin tabla propia. Son un par de lineas
+ * por persona; el dia que alguien las quiera buscar o paginar, se muda.
+ */
+function PrivateNote({ targetId }: { targetId: string }) {
+  const t = useT();
+  const me = useStore((s) => s.user);
+  const refreshUser = useStore((s) => s.refreshUser);
+
+  const notas = (me?.settings.notes ?? {}) as Record<string, string>;
+  const guardada = typeof notas[targetId] === "string" ? notas[targetId] : "";
+  const [texto, setTexto] = useState(guardada);
+
+  if (!me || me.id === targetId) return null;
+
+  async function guardar() {
+    const limpio = texto.trim();
+    if (limpio === guardada) return;
+
+    // Una nota vacia se BORRA en vez de guardarse como cadena vacia: si no, los
+    // ajustes irian engordando con una entrada por cada perfil que se abre.
+    const siguientes = { ...notas };
+    if (limpio) siguientes[targetId] = limpio;
+    else delete siguientes[targetId];
+
+    try {
+      refreshUser(await api("PATCH", "/api/v1/users/me", { settings: { ...me!.settings, notes: siguientes } }));
+    } catch {
+      setTexto(guardada); // Si no se guardo, que el campo no diga lo contrario.
+    }
+  }
+
+  return (
+    <section className="px-5 pt-5">
+      <h4 className="mb-2 text-xs font-semibold tracking-wider text-muted uppercase">{t("members.note")}</h4>
+      <textarea
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        onBlur={() => void guardar()}
+        maxLength={500}
+        rows={2}
+        placeholder={t("members.notePlaceholder")}
+        className="field min-h-16 text-sm"
+      />
+    </section>
   );
 }

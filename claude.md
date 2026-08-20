@@ -624,183 +624,13 @@ Debe existir un registro de auditoría.
 
 ## 12. Bots, plugins y extensiones
 
-La plataforma deberá ser extensible.
-
-Debe existir una API para:
-
-* Bots.
-* Webhooks.
-* Aplicaciones.
-* Plugins.
-* Integraciones.
-* Automatizaciones.
-* Temas.
-* Widgets.
-* Comandos.
-* Eventos.
-* Paneles personalizados.
-
-La arquitectura debe evitar que plugins ejecuten código peligroso dentro del cliente.
-
-Considerar:
-
-* Plugins aislados.
-* Sandboxing.
-* Permisos declarativos.
-* Manifiestos.
-* APIs limitadas.
-* Firma opcional.
-* Revisión comunitaria.
-* Lista de permisos antes de instalar.
-* Marketplace abierto.
-* Instalación desde GitHub.
-* Instalación mediante URL.
-* Instalación mediante archivo.
-
-Ejemplo de manifiesto:
-
-```json
-{
-  "name": "Minecraft Status",
-  "version": "1.0.0",
-  "description": "Muestra jugadores y estado del servidor",
-  "permissions": [
-    "read_channels",
-    "send_messages",
-    "manage_game_server_widget"
-  ],
-  "entry": "index.js"
-}
-```
+La plataforma deberá ser extensible mediante bots, webhooks y plugins, con arquitectura aislada/sandboxed. Ver skill `plugin-architecture` para los requisitos completos (no implementado aún en este repo).
 
 ---
 
 ## 13. Servidores de Minecraft y servicios comunitarios
 
-Los usuarios podrán utilizar la plataforma para administrar servidores de juegos, principalmente Minecraft.
-
-La plataforma deberá diferenciar:
-
-1. Integración con un servidor Minecraft existente.
-2. Instalación de un servidor Minecraft.
-3. Administración del servidor.
-4. Visualización del estado.
-5. Conexión entre eventos del juego y canales.
-6. Ejecución de otros servicios comunitarios.
-
-### 13.1 Instalación
-
-El administrador podrá instalar:
-
-* Minecraft Java.
-* Minecraft Bedrock.
-* Paper.
-* Purpur.
-* Fabric.
-* Forge.
-* NeoForge.
-* Velocity.
-* Waterfall u otras alternativas mantenidas.
-
-El sistema podrá utilizar plantillas Docker.
-
-Ejemplo conceptual:
-
-```yaml
-services:
-  minecraft:
-    image: itzg/minecraft-server
-    environment:
-      EULA: "TRUE"
-      TYPE: "PAPER"
-      MEMORY: "4G"
-    ports:
-      - "25565:25565"
-    volumes:
-      - "./minecraft-data:/data"
-```
-
-La interfaz deberá permitir:
-
-* Seleccionar versión.
-* Seleccionar tipo de servidor.
-* Definir memoria.
-* Definir puerto.
-* Configurar whitelist.
-* Configurar operadores.
-* Instalar plugins.
-* Iniciar.
-* Detener.
-* Reiniciar.
-* Ver consola.
-* Ver logs.
-* Realizar backups.
-* Restaurar backups.
-* Ver jugadores online.
-* Ver CPU y memoria.
-* Copiar dirección del servidor.
-
-### 13.2 Integración con la comunidad
-
-Funciones deseadas:
-
-* Widget de estado.
-* Jugadores online.
-* Dirección del servidor.
-* Versión.
-* Latencia.
-* Eventos de entrada y salida.
-* Chat puente.
-* Avisos de servidor.
-* Registro de muertes.
-* Logros.
-* Estado de backups.
-* Botones de iniciar y detener.
-* Permisos por rol.
-
-### 13.3 Seguridad
-
-Nunca exponer directamente:
-
-* Contraseñas.
-* Tokens RCON.
-* Claves privadas.
-* Variables de entorno.
-* Dirección interna.
-* Acceso al sistema de archivos completo.
-
-Los servicios de juegos deben ejecutarse aislados.
-
-Preferir:
-
-* Contenedores.
-* Usuarios sin privilegios.
-* Volúmenes limitados.
-* Límites de CPU.
-* Límites de RAM.
-* Redes separadas.
-* Secretos cifrados.
-* Logs auditables.
-
-### 13.4 Otros servicios
-
-La arquitectura deberá poder soportar posteriormente:
-
-* Terraria.
-* Valheim.
-* Factorio.
-* Project Zomboid.
-* Palworld.
-* Counter-Strike.
-* Servidores web.
-* Wikis.
-* Bots.
-* Bases de datos.
-* Paneles.
-* Repositorios.
-* Herramientas para comunidades.
-
-No implementar todos estos servicios en el MVP. Diseñar una arquitectura extensible.
+La plataforma deberá permitir instalar y administrar servidores de juegos, principalmente Minecraft, con integración a canales y aislamiento de seguridad. Ver skill `game-server-integration` para los requisitos completos (no implementado aún en este repo).
 
 ---
 
@@ -1064,52 +894,7 @@ Transportes posibles:
 * WebRTC.
 * Server-Sent Events para casos específicos.
 
-Cada instancia deberá exponer endpoints estandarizados.
-
-Ejemplo conceptual:
-
-```text
-GET    /api/v1/health
-GET    /api/v1/info
-POST   /api/v1/auth/login
-POST   /api/v1/auth/refresh
-GET    /api/v1/communities
-GET    /api/v1/channels
-GET    /api/v1/channels/:id/messages
-POST   /api/v1/channels/:id/messages
-PATCH  /api/v1/messages/:id
-DELETE /api/v1/messages/:id
-GET    /api/v1/members
-GET    /api/v1/roles
-POST   /api/v1/invites
-GET    /api/v1/game-servers
-```
-
-WebSocket conceptual:
-
-```text
-wss://instance.example.com/realtime
-```
-
-Eventos:
-
-```text
-READY
-MESSAGE_CREATE
-MESSAGE_UPDATE
-MESSAGE_DELETE
-CHANNEL_CREATE
-CHANNEL_UPDATE
-CHANNEL_DELETE
-MEMBER_JOIN
-MEMBER_LEAVE
-MEMBER_UPDATE
-PRESENCE_UPDATE
-TYPING_START
-VOICE_STATE_UPDATE
-ROLE_UPDATE
-GAME_SERVER_STATUS
-```
+Cada instancia deberá exponer endpoints estandarizados. Ver `packages/protocol/src/index.ts` para la lista actual de endpoints y eventos WebSocket implementados.
 
 Toda modificación del protocolo deberá preservar compatibilidad o incrementar la versión.
 
@@ -1697,18 +1482,7 @@ Prohibido:
 
 ### TypeScript
 
-Utilizar:
-
-```json
-{
-  "compilerOptions": {
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "noImplicitOverride": true
-  }
-}
-```
+Mantener `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` y `noImplicitOverride` activos en cada `tsconfig.json` del monorepo.
 
 ### Validación
 
@@ -1817,44 +1591,7 @@ Fechas, horas, números y tamaños deberán respetar la configuración regional.
 
 ## 33. Configuración mediante variables de entorno
 
-Ejemplo conceptual:
-
-```env
-APP_NAME=Open Community Platform
-APP_URL=http://localhost:3000
-
-CENTRAL_API_URL=http://localhost:4000
-NODE_SERVER_URL=http://localhost:5000
-
-DATABASE_URL=file:./data/app.db
-
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-
-AUTH_SECRET=
-ENCRYPTION_KEY=
-
-ANALYTICS_ENABLED=false
-GOOGLE_ANALYTICS_ID=
-
-REGISTRATION_ENABLED=true
-GUEST_MODE_ENABLED=true
-PUBLIC_DISCOVERY_ENABLED=false
-
-MAX_UPLOAD_SIZE_MB=25
-DEFAULT_STORAGE_PATH=./data/uploads
-
-TUNNEL_PROVIDER=cloudflare
-CLOUDFLARE_TUNNEL_TOKEN=
-```
-
-Crear un archivo:
-
-```text
-.env.example
-```
-
-Nunca subir `.env` real al repositorio.
+Ver `.env.example` para la lista actual de variables.
 
 ---
 

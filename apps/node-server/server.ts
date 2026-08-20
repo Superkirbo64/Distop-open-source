@@ -4,6 +4,7 @@
  * cliente web. Así self-hostear es "docker compose up", no orquestar tres cosas.
  */
 import { createReadStream, existsSync, statSync } from "node:fs";
+import { createGzip } from "node:zlib";
 import { createServer } from "node:http";
 import { extname, join, resolve } from "node:path";
 import { config } from "./config.ts";
@@ -31,8 +32,24 @@ const MIME: Record<string, string> = {
 };
 
 /** Devuelve true si sirvió el fichero; si no, deja pasar a la API. */
-function serveStatic(pathname: string, res: import("node:http").ServerResponse): boolean {
+/**
+ * Formatos de texto: los que gzip encoge de verdad. Los binarios (imágenes,
+ * woff2) ya vienen comprimidos a su manera, y volver a comprimirlos gasta CPU
+ * del anfitrión por nada: a veces el resultado hasta pesa más.
+ */
+const COMPRESIBLE = new Set([".html", ".js", ".css", ".json", ".svg", ".webmanifest"]);
+
+/**
+ * Devuelve true si sirvió el fichero; si no, deja pasar a la API.
+ *
+ * Comprime sobre la marcha, no en el build: el catálogo de emojis animados
+ * (§10.2) son 878 JSON, 68 MB sin comprimir, y sin esto cada uno se plantaría
+ * en el navegador de cada miembro a su peso completo. Gzip nativo de Node, sin
+ * dependencia nueva; ni el propio bundle del cliente se comprimía hasta ahora.
+ */
+function serveStatic(req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse): boolean {
   if (!hasClient) return false;
+  const pathname = (req.url ?? "/").split("?")[0]!;
 
   const candidate = resolve(WEB_DIST, `.${decodeURIComponent(pathname)}`);
   const isAsset = candidate.startsWith(WEB_DIST) && existsSync(candidate) && statSync(candidate).isFile();
@@ -40,12 +57,19 @@ function serveStatic(pathname: string, res: import("node:http").ServerResponse):
   const file = isAsset ? candidate : join(WEB_DIST, "index.html");
   const ext = extname(file);
 
+  const aceptaGzip = COMPRESIBLE.has(ext) && (req.headers["accept-encoding"] ?? "").includes("gzip");
+
   res.writeHead(200, {
     "content-type": MIME[ext] ?? "application/octet-stream",
     "cache-control": isAsset && ext !== ".html" ? "public, max-age=31536000, immutable" : "no-cache",
     "x-content-type-options": "nosniff",
+    vary: "accept-encoding",
+    ...(aceptaGzip ? { "content-encoding": "gzip" } : {}),
   });
-  createReadStream(file).pipe(res);
+
+  const source = createReadStream(file);
+  if (aceptaGzip) source.pipe(createGzip()).pipe(res);
+  else source.pipe(res);
   return true;
 }
 
@@ -53,7 +77,7 @@ export const server = createServer((req, res) => {
   const pathname = (req.url ?? "/").split("?")[0]!;
   const isApi = pathname.startsWith("/api/") || pathname === "/health";
 
-  if (!isApi && (req.method === "GET" || req.method === "HEAD") && serveStatic(pathname, res)) return;
+  if (!isApi && (req.method === "GET" || req.method === "HEAD") && serveStatic(req, res)) return;
   void handleRequest(req, res);
 });
 

@@ -151,6 +151,55 @@ export const config = {
     return { urls: `${scheme}:${entry.slice(at + 1)}`, username: username ?? "", credential: credential ?? "" };
   }),
 
+  /**
+   * Buscador de GIF (§12). Apagado mientras no haya clave.
+   *
+   * La búsqueda la hace la INSTANCIA, nunca el navegador: si la hiciera el
+   * cliente, cada miembro le entregaría su IP y lo que busca a un tercero, y la
+   * clave del admin acabaría dentro del JavaScript que cualquiera puede leer
+   * (§13.3, §22). Con proxy, Giphy solo ve una máquina: la del anfitrión.
+   *
+   * La clave gratuita se pide en developers.giphy.com. Sin ella la pestaña de
+   * GIF no aparece, y nada más deja de funcionar.
+   */
+  giphyApiKey: str("GIPHY_API_KEY", ""),
+
+  /**
+   * Galeria de stickers, contra la API de Klipy.
+   *
+   * Separada de la de GIF a proposito: son dos servicios distintos y cada
+   * anfitrion decide si quiere uno, el otro, los dos o ninguno. Mismo trato que
+   * Giphy — la peticion la hace la INSTANCIA, nunca el navegador, asi que Klipy
+   * ve una maquina y no la IP de cada miembro (§13.3, §22).
+   *
+   * La clave se pide en klipy.com/developers. La de prueba admite 100 llamadas
+   * por hora; sin clave, la galeria no aparece y los stickers propios de la
+   * comunidad siguen funcionando igual.
+   */
+  klipyApiKey: str("KLIPY_API_KEY", ""),
+
+  /**
+   * Buscador de fondos de pantalla (§10.2), contra la API de Wallhaven.
+   *
+   * Igual que el de GIF: lo pide la INSTANCIA. Aquí no es solo privacidad —
+   * wallhaven.cc no manda cabeceras CORS, así que desde el navegador la
+   * petición ni sale. La búsqueda va forzada a purity=100 (SFW), y con eso la
+   * clave sobra: solo hace falta para contenido que aquí no se pide. Se deja
+   * configurable por si algún día la cuota con cuenta difiere de los 45/min.
+   */
+  wallhavenApiKey: str("WALLHAVEN_API_KEY", ""),
+
+  /**
+   * Importar stickers desde un paquete de Telegram (§10.3), como sticker propio
+   * de la comunidad. Apagado mientras no haya token.
+   *
+   * El token identifica a un BOT, no a una cuenta: se saca hablándole a
+   * @BotFather en Telegram, en segundos y gratis. Lo pide la INSTANCIA, nunca
+   * el navegador — el token no puede viajar al cliente (§22), y por eso hace
+   * falta este proxy igual que con Giphy o la galería de avatares.
+   */
+  telegramBotToken: str("TELEGRAM_BOT_TOKEN", ""),
+
   logLevel: str("LOG_LEVEL", "info"),
   isProduction: process.env.NODE_ENV === "production",
 } as const;

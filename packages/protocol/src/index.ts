@@ -5,6 +5,9 @@
 
 export const PROTOCOL_VERSION = "v1";
 
+export { RINGS, RING_IDS, type Ring } from "./rings.ts";
+import { RING_IDS } from "./rings.ts";
+
 /* ─────────────────────────── Permisos (§11) ───────────────────────────
    Bitfield de más de 32 flags → BigInt. Viaja por JSON como string decimal. */
 
@@ -92,6 +95,15 @@ export type Snowflake = string;
 
 export type UserKind = "local" | "guest";
 
+/**
+ * Estado elegido a mano, distinto de "tiene un socket abierto" (§9.1).
+ * Son dos cosas que la gente confunde: la conexión la sabe la instancia, el
+ * estado lo decide la persona. `invisible` es la excepción a propósito: quien
+ * lo elige desaparece de la lista de conectados aunque esté dentro.
+ */
+export const USER_STATUSES = ["online", "idle", "dnd", "invisible"] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
+
 export interface PublicUser {
   id: Snowflake;
   username: string;
@@ -102,6 +114,12 @@ export interface PublicUser {
   pronouns: string | null;
   accent_color: string | null;
   kind: UserKind;
+  /** Lo que ha elegido; para saber si está en línea hace falta además la presencia. */
+  status: UserStatus;
+  /** Frase corta y opcional junto al nombre. Texto plano: no se interpreta nada. */
+  custom_status: string | null;
+  /** Marco, placa, fuente y efectos. Público porque el punto es que se vea (§10.1). */
+  profile_style: ProfileStyle;
   created_at: number;
 }
 
@@ -109,6 +127,117 @@ export interface SelfUser extends PublicUser {
   locale: string;
   theme: string;
   settings: Record<string, unknown>;
+}
+
+/* ── personalización del perfil (§10.1, §10.2) ─────────────────────────
+   Todo esto es GRATIS, y no por generosidad: es el punto del proyecto (§10).
+   En las plataformas comerciales el marco del avatar, la placa del nombre y
+   los efectos son justo lo que se vende, y por eso aquí no hay ni tienda ni
+   "exclusivo de X" — solo un catálogo abierto.
+
+   Se guardan IDENTIFICADORES de un catálogo cerrado, nunca CSS ni una URL que
+   escriba el cliente. Ese es el detalle de seguridad que sostiene todo lo
+   demás: el id acaba pegado a un nombre de clase CSS, así que si el cliente
+   pudiera inventarse el valor tendríamos una vía de inyección en cada perfil
+   de la comunidad (§22). Con catálogo, lo peor que puede mandar es un id que
+   no existe, y ese se descarta al normalizar.
+
+   Los efectos son CSS y nada más: ni imágenes que descargar, ni una librería
+   de animación, ni un asset por decoración. Cuestan cero bytes de red y se
+   ven igual en cualquier instancia recién instalada. */
+
+export const NAMEPLATES = ["none", "mist", "aurora", "sunset", "forest", "ocean", "ember"] as const;
+export type Nameplate = (typeof NAMEPLATES)[number];
+
+export const NAME_FONTS = ["default", "display", "mono", "serif", "round", "wide"] as const;
+export type NameFont = (typeof NAME_FONTS)[number];
+
+export const NAME_EFFECTS = ["plain", "gradient", "neon", "pop", "animated"] as const;
+export type NameEffect = (typeof NAME_EFFECTS)[number];
+
+export const PROFILE_EFFECTS = ["none", "sparkles", "confetti", "rain", "embers", "aurora"] as const;
+export type ProfileEffect = (typeof PROFILE_EFFECTS)[number];
+
+export interface ProfileStyle {
+  /**
+   * Imagen propia superpuesta al avatar.
+   *
+   * La trae quien la usa: aquí no se distribuye ninguna ilustración, porque
+   * el proyecto no puede repartir arte del que no tiene licencia (§24). El
+   * techo es el disco del anfitrión, no una lista cerrada de marcos.
+   */
+  avatar_deco_url: string | null;
+  /**
+   * Aro del catalogo incluido (CC BY 4.0, ver rings.ts). Es un id validado, no
+   * una ruta: acaba componiendo /rings/<id>.png, asi que dejar pasar texto
+   * libre seria dejar que el cliente pida cualquier fichero (§22).
+   */
+  avatar_ring: string | null;
+  nameplate: Nameplate;
+  name_font: NameFont;
+  name_effect: NameEffect;
+  /** null = hereda `accent_color`, para no tener que elegir el color dos veces. */
+  name_color: string | null;
+  profile_effect: ProfileEffect;
+  /** Degradado de la tarjeta de perfil. null = se usa `accent_color`. */
+  theme_a: string | null;
+  theme_b: string | null;
+}
+
+export const DEFAULT_PROFILE_STYLE: ProfileStyle = {
+  avatar_deco_url: null,
+  avatar_ring: null,
+  nameplate: "none",
+  name_font: "default",
+  name_effect: "plain",
+  name_color: null,
+  profile_effect: "none",
+  theme_a: null,
+  theme_b: null,
+};
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+
+/**
+ * Cualquier cosa → un ProfileStyle válido.
+ *
+ * La usan las dos puntas: el servidor al guardar y al leer, el cliente al
+ * pintar. Un id que no está en su catálogo no es un error que reventar, es un
+ * valor que se cae al de por defecto — así una instancia vieja leyendo un
+ * perfil nuevo pinta el perfil sin adornos en vez de romperse (§28.6).
+ */
+export function toProfileStyle(raw: unknown): ProfileStyle {
+  const source = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+
+  const pick = <T extends string>(key: string, allowed: readonly T[], fallback: T): T => {
+    const value = source[key];
+    return typeof value === "string" && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
+  };
+  const color = (key: string): string | null => {
+    const value = source[key];
+    return typeof value === "string" && HEX_COLOR.test(value) ? value : null;
+  };
+
+  /* Acaba en un <img src>, asi que solo pasan rutas de esta instancia o enlaces
+     http(s). Se descartan `data:` y `javascript:` por lista blanca y no por
+     lista negra: lo que no se reconoce, fuera (§22). */
+  const imagen = (key: string): string | null => {
+    const value = source[key];
+    if (typeof value !== "string" || value.length === 0 || value.length > 300) return null;
+    return /^(https?:\/\/|\/)/.test(value) ? value : null;
+  };
+
+  return {
+    avatar_deco_url: imagen("avatar_deco_url"),
+    avatar_ring: typeof source.avatar_ring === "string" && RING_IDS.includes(source.avatar_ring) ? source.avatar_ring : null,
+    nameplate: pick("nameplate", NAMEPLATES, "none"),
+    name_font: pick("name_font", NAME_FONTS, "default"),
+    name_effect: pick("name_effect", NAME_EFFECTS, "plain"),
+    name_color: color("name_color"),
+    profile_effect: pick("profile_effect", PROFILE_EFFECTS, "none"),
+    theme_a: color("theme_a"),
+    theme_b: color("theme_b"),
+  };
 }
 
 export interface Community {
@@ -205,6 +334,70 @@ export interface Message {
   pinned: boolean;
   attachments: Attachment[];
   reactions: Reaction[];
+  /** Se resolvió al escribir, con el permiso de entonces: reescribir el texto no lo cambia. */
+  mentions_everyone: boolean;
+}
+
+/* ── menciones (§9.2) ──────────────────────────────────────────────────
+   Van en el texto como `<@id>` y `<#id>`, no como el nombre escrito. El nombre
+   se pinta al leer, así que renombrarse no rompe las menciones viejas ni
+   convierte a nadie en otra persona. */
+
+export const MENTION_USER = /<@([0-9a-f-]{36})>/g;
+export const MENTION_CHANNEL = /<#([0-9a-f-]{36})>/g;
+
+export function mentionsUser(content: string, userId: Snowflake): boolean {
+  return content.includes(`<@${userId}>`);
+}
+
+/** Qué hay sin leer en un canal. `mentions > 0` es lo que merece interrumpir. */
+export interface Unread {
+  count: number;
+  mentions: number;
+}
+
+/* ── emojis y stickers propios (§10.3) ─────────────────────────────────
+   No hay tope por suscripción: el límite es el disco de quien hospeda, y eso
+   se dice claro en vez de inventar un número. Un sticker es lo mismo que un
+   emoji con otro tamaño de pintado, así que comparten tabla y comparten sintaxis
+   en el texto: `<:nombre:id>`. */
+
+export const EMOJI_KINDS = ["emoji", "sticker"] as const;
+export type EmojiKind = (typeof EMOJI_KINDS)[number];
+
+export interface CustomEmoji {
+  id: Snowflake;
+  community_id: Snowflake;
+  name: string;
+  kind: EmojiKind;
+  url: string;
+  creator_id: Snowflake;
+  created_at: number;
+}
+
+/** `<:nombre:id>`. El nombre viaja para poder leerlo si el archivo ya no está. */
+export const CUSTOM_EMOJI = /<:([a-zA-Z0-9_]{2,32}):([0-9a-f-]{36})>/g;
+
+/** Nombres válidos: lo que se puede escribir entre dos puntos sin ambigüedad. */
+export const EMOJI_NAME = /^[a-zA-Z0-9_]{2,32}$/;
+
+/**
+ * Un mensaje hecho solo de emojis se pinta en grande.
+ *
+ * Cubre los dos tipos, que es lo que fallaba antes: los personalizados
+ * `<:nombre:id>` y los de Unicode. Un emoji no es un caracter suelto —lleva
+ * selector de variación, modificador de tono, o varios pictogramas cosidos
+ * con ZWJ, y una bandera son dos indicadores regionales—, así que la
+ * comprobación va sobre esa forma completa y no sobre \p{Emoji}, que da por
+ * bueno cualquier dígito.
+ */
+const SOLO_EMOJIS =
+  /^(?:\p{Extended_Pictographic}(?:\uFE0F|\p{Emoji_Modifier}|\u200D\p{Extended_Pictographic}\uFE0F?)*|\p{Regional_Indicator}{2}|\s)+$/u;
+
+export function isJumbo(content: string): boolean {
+  if (content.trim().length === 0) return false;
+  const sinPersonalizados = content.replace(CUSTOM_EMOJI, "").trim();
+  return sinPersonalizados.length === 0 || SOLO_EMOJIS.test(sinPersonalizados);
 }
 
 export interface Invite {
@@ -219,10 +412,10 @@ export interface Invite {
 }
 
 /* ── voz (§9.4) ────────────────────────────────────────────────────────
-   Malla WebRTC entre pares: la instancia solo hace de señalización, el audio
-   nunca la atraviesa. Para grupos pequeños esto sobra y no exige montar un SFU
-   ni pagar servidores de medios; el techo práctico está en torno a 6 personas
-   por canal, a partir de ahí toca un SFU (fase posterior). */
+   El audio pasa por la instancia, por el mismo socket que el resto: es lo único
+   que funciona siempre, sin puertos que abrir ni STUN ni TURN. El vídeo va
+   directo entre navegadores, porque reenviarlo tumbaría una conexión doméstica.
+   Cuesta subida a quien hospeda: cada quien habla se reenvía a los demás. */
 
 /**
  * Cada persona publica como mucho un vídeo a la vez: cámara o pantalla.
@@ -239,6 +432,9 @@ export interface VoiceState {
   community_id: Snowflake;
   muted: boolean;
   deafened: boolean;
+  /** Impuesto por un moderador: el cliente enseña candado, no un botón que no funciona. */
+  force_muted: boolean;
+  force_deafened: boolean;
   video: VideoSource | null;
   joined_at: number;
 }
@@ -318,6 +514,8 @@ export const GATEWAY_EVENTS = [
   "VOICE_SIGNAL",
   "ROLE_UPDATE",
   "ROLE_DELETE",
+  "READ_UPDATE",
+  "EMOJI_UPDATE",
   "ERROR",
   "PONG",
 ] as const;
@@ -351,8 +549,16 @@ export type ServerEvent =
   | { t: "VOICE_SIGNAL"; d: VoiceSignal }
   | { t: "ROLE_UPDATE"; d: Role }
   | { t: "ROLE_DELETE"; d: { id: Snowflake; community_id: Snowflake } }
+  /* Va a todas TUS sesiones: leer en el móvil tiene que apagar el aviso del escritorio. */
+  | { t: "READ_UPDATE"; d: { channel_id: Snowflake; last_read_id: Snowflake } }
+  /* La lista entera y no el que cambió: es corta y así no hay dos formas de
+     tenerla desincronizada entre quien estaba conectado y quien acaba de entrar. */
+  | { t: "EMOJI_UPDATE"; d: { community_id: Snowflake; emojis: CustomEmoji[] } }
   | { t: "ERROR"; d: ApiError }
   | { t: "PONG"; d: { at: number } };
+
+/** Lo que un moderador puede hacerle a alguien dentro de una sala de voz (§11). */
+export type VoiceAction = "mute" | "unmute" | "deafen" | "undeafen" | "disconnect";
 
 export type ClientCommand =
   | { t: "SUBSCRIBE"; d: { community_id: Snowflake } }
@@ -363,6 +569,7 @@ export type ClientCommand =
   | { t: "VOICE_MUTE"; d: { channel_id: Snowflake; muted: boolean; deafened: boolean } }
   | { t: "VOICE_VIDEO"; d: { channel_id: Snowflake; source: VideoSource | null } }
   | { t: "VOICE_SIGNAL"; d: { channel_id: Snowflake; to_user_id: Snowflake; payload: unknown } }
+  | { t: "VOICE_MODERATE"; d: { channel_id: Snowflake; user_id: Snowflake; action: VoiceAction } }
   | { t: "PING"; d?: undefined };
 
 /* ─────────────────────────── Errores tipados (§30) ─────────────────────────── */

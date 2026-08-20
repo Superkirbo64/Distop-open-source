@@ -194,6 +194,53 @@
     background-image: radial-gradient(var(--line) 1px, transparent 1px);
     background-size: 22px 22px;
   }
+
+  /* Fondo elegido por quien usa la app, y SOLO detrás del chat: la barra de
+     canales y la lista de miembros se quedan opacas a propósito. Son las dos
+     que llevan información que hay que poder leer de un vistazo siempre —
+     quien está conectado, dónde hay algo sin leer—, y esa lectura no puede
+     depender de la foto que alguien haya elegido hoy (§31).
+
+     Dos capas: ::before lleva la imagen y sus filtros de color; ::after el velo
+     y el desenfoque. Separadas porque el brillo o el contraste aplicados al velo
+     lo teñirían, y el desenfoque aplicado a la imagen le deja un borde
+     transparente al muestrear fuera de su caja. Las dos en z-index -1, que
+     pinta encima del fondo del panel y debajo de su contenido; el `isolation`
+     es lo que garantiza que ese -1 no se escape del panel. */
+  :root[data-wallpaper="on"] [data-pane="main"] {
+    position: relative;
+    isolation: isolate;
+  }
+
+  :root[data-wallpaper="on"] [data-pane="main"]::before,
+  :root[data-wallpaper="on"] [data-pane="main"]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  :root[data-wallpaper="on"] [data-pane="main"]::before {
+    background-image: var(--wallpaper);
+    background-size: cover;
+    background-position: center;
+    /* Anclado a la ventana, no al panel: así la foto conserva su encuadre
+       cuando se pliega la lista de miembros o la barra de canales, en vez de
+       reencuadrarse de golpe cada vez que el chat cambia de ancho. El panel
+       pasa a ser una ventana sobre una imagen quieta. */
+    background-attachment: fixed;
+  }
+
+  :root[data-wallpaper="on"] [data-pane="main"]::after {
+    background: color-mix(in oklab, var(--bg) var(--wallpaper-veil, 78%), transparent);
+    /* Todos los filtros viven aquí, no en la capa de la imagen: `filter` sobre
+       ::before le quitaría el anclado a la ventana (un elemento filtrado deja
+       de mirar al viewport) y además le dejaría un borde translúcido al
+       muestrear fuera de su caja. `backdrop-filter` no tiene ninguno de los
+       dos problemas porque recorta contra el borde. */
+    backdrop-filter: blur(var(--wallpaper-blur, 0px)) var(--wallpaper-filter, none);
+  }
 }
 
 /* ── Rejilla maestra (§25) ─────────────────────────────────────────────────
@@ -205,28 +252,59 @@
   display: grid;
   height: 100dvh;
   grid-template-columns: var(--w-rail) var(--w-sidebar) 1fr var(--w-members);
-  grid-template-areas: "rail sidebar main members";
+  /* Dos filas: la de arriba se la reparten los cuatro paneles, y la de abajo la
+     ocupa la barra de perfil, cruzando por debajo de la columna de comunidades.
+     Antes vivía dentro del panel de canales y terminaba donde terminaba la
+     lista de canales, cortada a media pared. */
+  grid-template-rows: 1fr auto;
+  grid-template-areas:
+    "rail sidebar main members"
+    "user user    main members";
   /* Plegar un panel es animar su columna: el chat gana el hueco deslizándose,
      en vez de dar un salto cuando el panel desaparece de golpe. */
   transition: grid-template-columns var(--dur-3) var(--ease-soft);
 }
 
+/* Cada panel a su hueco por nombre. Sin esto se colocaban solos por orden, y
+   al aparecer la segunda fila el chat y la lista de miembros se quedaban en la
+   primera: terminaban a 820 px de una ventana de 900. Nombrados, los que salen
+   en las dos filas las ocupan enteras. */
+.app-grid > [data-pane="rail"] {
+  grid-area: rail;
+}
+.app-grid > [data-pane="sidebar"] {
+  grid-area: sidebar;
+}
+.app-grid > [data-pane="main"] {
+  grid-area: main;
+}
+.app-grid > [data-pane="members"] {
+  grid-area: members;
+}
+.app-grid > [data-pane="user"] {
+  grid-area: user;
+}
+
 .app-grid > [data-pane] {
   min-width: 0;
+  /* Y min-height, que es la que faltaba: un elemento de rejilla nace con
+     min-height: auto, así que cuando su contenido pasaba de alto se salía de
+     la fila en vez de encogerse. Eso hacía crecer la página por debajo de los
+     100dvh, y entonces quien se desplazaba era la VENTANA: se iban de viaje la
+     cabecera, la barra de canales, la lista de miembros y el cuadro de
+     escribir. Con esto cada panel se queda en su fila y el único que se mueve
+     es el historial de mensajes, que es el que lleva su propio overflow. */
+  min-height: 0;
 }
 
 /* Plegar es cosa del escritorio: en móvil manda data-mobile, más abajo. */
 @media (min-width: 901px) {
-  .app-grid[data-sidebar="off"] {
-    --w-sidebar: 0rem;
-  }
   .app-grid[data-members="off"] {
     --w-members: 0rem;
   }
 
   /* Lo plegado no se tabula ni lo lee un lector de pantalla. El recorte se pone
      solo aquí: fuera de este estado, cada panel manda en su propio scroll. */
-  .app-grid[data-sidebar="off"] > [data-pane="sidebar"],
   .app-grid[data-members="off"] > [data-pane="members"] {
     overflow: hidden;
     visibility: hidden;
@@ -256,7 +334,12 @@
 
   .app-grid[data-mobile="nav"] {
     grid-template-columns: auto 1fr;
-    grid-template-areas: "rail sidebar";
+    grid-template-areas:
+      "rail sidebar"
+      "user user";
+  }
+  .app-grid[data-mobile="nav"] > [data-pane="user"] {
+    display: flex;
   }
   .app-grid[data-mobile="nav"] > [data-pane="rail"] {
     display: flex;
@@ -433,7 +516,8 @@
   .marker-active {
     background: var(--accent);
     border-radius: 0 4px 4px 0;
-    animation: marker-in 0.22s cubic-bezier(0.34, 1.3, 0.64, 1);
+    /* Sin animación de entrada: ahora la pastilla siempre está ahí y lo que
+       cambia es su altura, así que la transición la lleva el propio elemento. */
   }
 }
 
@@ -635,4 +719,408 @@ dialog[open] {
 /* Las tarjetas de la sala de voz se levantan cuando alguien habla. */
 figure {
   transition: transform 0.18s ease, border-color 0.15s ease, box-shadow 0.18s ease;
+}
+
+/* En @layer components y no suelto: sin capa, estas reglas le ganaban a las
+   utilidades de Tailwind, y `.pfx { position: relative }` anulaba el
+   `absolute inset-0` de quien lo usa — la capa del efecto medía 0 de alto y no
+   se veía nada. Dentro de la capa, una utilidad puntual siempre puede más. */
+@layer components {
+/* ────────────────────────────────────────────────────────────────────────
+   Personalización del perfil (§10.1, §10.3).
+
+   Marcos de avatar, placas de nombre, fuentes, efectos de nombre y efectos de
+   tarjeta. Todo es CSS y nada más: cero imágenes que descargar, cero librería
+   de animación, cero assets por decoración. Una instancia recién instalada,
+   sin red y sin configurar nada, ya tiene el catálogo entero — que es justo lo
+   contrario de una tienda donde cada marco es un artículo (§10, §29.6).
+
+   Los nombres de clase se componen con el id que trae el perfil (`plate-mist`),
+   y ese id SIEMPRE ha pasado por toProfileStyle en el servidor: aquí no puede
+   llegar un valor que no esté en el catálogo del protocolo (§22).
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* ── placas de nombre ──────────────────────────────────────────────────
+   Van en `background-image` a propósito, no en `background`: la fila de la
+   lista de miembros ya usa `background-color` para el hover, y así las dos
+   cosas conviven en vez de pisarse. El degradado se apaga hacia la izquierda
+   para que el nombre siga leyéndose encima. */
+.plate {
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+.plate-mist {
+  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #818cf8 55%, transparent));
+}
+.plate-aurora {
+  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #34d399 45%, transparent), color-mix(in oklab, #22d3ee 55%, transparent));
+}
+.plate-sunset {
+  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #fb923c 45%, transparent), color-mix(in oklab, #f43f5e 55%, transparent));
+}
+.plate-forest {
+  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #4ade80 50%, transparent));
+}
+.plate-ocean {
+  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #38bdf8 55%, transparent));
+}
+.plate-ember {
+  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #ef4444 50%, transparent));
+}
+
+/* ── fuentes del nombre ────────────────────────────────────────────────
+   Pilas del sistema, más las dos que la aplicación ya carga. Ninguna descarga
+   una fuente nueva: seis opciones distinguibles a coste cero de red. Es menos
+   catálogo que el de una plataforma con fuentes propias, y eso se dice en vez
+   de disimularlo (§29.3). */
+.nfont-default {
+  font-family: var(--font-body);
+}
+.nfont-display {
+  font-family: var(--font-display);
+}
+.nfont-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.nfont-serif {
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+}
+.nfont-round {
+  font-family: ui-rounded, "SF Pro Rounded", "Segoe UI Variable Display", system-ui, sans-serif;
+}
+.nfont-wide {
+  font-family: var(--font-display);
+  letter-spacing: 0.14em;
+}
+
+/* ── efectos del nombre ────────────────────────────────────────────────
+   `--name-color` y `--name-color-2` las pone el componente en línea, sacadas
+   del perfil. Sin ellas todo cae en `currentColor`, que es exactamente como se
+   pintaba el nombre antes de que esto existiera. */
+.fx-plain {
+  color: var(--name-color, currentColor);
+}
+
+.fx-gradient,
+.fx-animated {
+  background-image: linear-gradient(
+    92deg,
+    var(--name-color, currentColor),
+    var(--name-color-2, var(--accent)),
+    var(--name-color, currentColor)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.fx-gradient {
+  background-size: 100% 100%;
+}
+
+.fx-animated {
+  background-size: 220% 100%;
+  animation: name-slide 4s linear infinite;
+}
+
+.fx-neon {
+  color: var(--name-color, currentColor);
+  text-shadow:
+    0 0 4px color-mix(in oklab, var(--name-color, currentColor) 80%, transparent),
+    0 0 12px color-mix(in oklab, var(--name-color, currentColor) 55%, transparent);
+}
+
+/* Sombra dura y desplazada, sin desenfoque: el aspecto de pegatina. */
+.fx-pop {
+  color: var(--name-color, currentColor);
+  text-shadow: 2px 2px 0 var(--name-color-2, var(--accent));
+}
+
+@keyframes name-slide {
+  to {
+    background-position: -220% 0;
+  }
+}
+
+/* ── efectos de la tarjeta de perfil ───────────────────────────────────
+   Capa decorativa sobre la portada. `pointer-events: none` no es opcional: sin
+   eso el efecto se comería el clic del botón de cerrar que vive debajo. */
+.pfx {
+  position: relative;
+  overflow: hidden;
+}
+.pfx::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pfx-sparkles::after {
+  background-image:
+    radial-gradient(2px 2px at 20% 30%, #fff, transparent),
+    radial-gradient(2px 2px at 70% 20%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 45% 70%, #fff, transparent),
+    radial-gradient(2px 2px at 85% 60%, #fff, transparent),
+    radial-gradient(1.5px 1.5px at 10% 80%, #fff, transparent);
+  animation: sparkle 2.6s ease-in-out infinite;
+}
+
+.pfx-confetti::after {
+  background-image:
+    linear-gradient(115deg, transparent 46%, #f472b6 46% 54%, transparent 54%),
+    linear-gradient(75deg, transparent 46%, #38bdf8 46% 54%, transparent 54%),
+    linear-gradient(100deg, transparent 46%, #fbbf24 46% 54%, transparent 54%);
+  background-size: 26px 34px, 34px 30px, 30px 38px;
+  opacity: 0.55;
+  animation: fall 5s linear infinite;
+}
+
+.pfx-rain::after {
+  background-image: linear-gradient(100deg, transparent 48%, color-mix(in oklab, #93c5fd 75%, transparent) 48% 52%, transparent 52%);
+  background-size: 14px 26px;
+  opacity: 0.5;
+  animation: fall 0.9s linear infinite;
+}
+
+.pfx-embers::after {
+  background-image:
+    radial-gradient(2.5px 2.5px at 25% 90%, #fb923c, transparent),
+    radial-gradient(2px 2px at 60% 90%, #f97316, transparent),
+    radial-gradient(3px 3px at 85% 90%, #fbbf24, transparent);
+  animation: rise 4.5s linear infinite;
+}
+
+.pfx-aurora::after {
+  background-image: linear-gradient(115deg, transparent, color-mix(in oklab, #34d399 45%, transparent), color-mix(in oklab, #818cf8 45%, transparent), transparent);
+  background-size: 220% 100%;
+  mix-blend-mode: screen;
+  animation: name-slide 7s linear infinite;
+}
+
+@keyframes sparkle {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@keyframes fall {
+  to {
+    background-position-y: 200%;
+  }
+}
+
+@keyframes rise {
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+  /* ── aros del catálogo incluido (CC BY 4.0) ──────────────────────
+     Cada PNG es un atlas de 960×320 con tres celdas de 320: estructura, acentos
+     y partículas. Se apilan como tres capas del MISMO fichero —una sola
+     descarga— y cada una se anima por separado.
+
+     El movimiento lo pone el navegador, no la imagen: los PNG no llevan
+     fotogramas. Por eso 39 aros animados pesan 1,6 MB en total, cuando 39 GIF
+     equivalentes pesarían bastante más y no se podrían pausar ni recolorear.
+
+     La coreografía viene del propio catálogo: cada pieza declara su perfil de
+     movimiento en rings.json y aquí está la tabla de los dieciocho. No se
+     resumen en dos o tres velocidades porque el reparto es deliberado: los seis
+     que dan la vuelta entera son engranajes y órbitas, y ninguna de las
+     composiciones asimétricas —un panda dormido, un casco de buzo, unas alas—
+     gira más de veintiocho grados. Aplanar la tabla era lo que las rompía, y lo
+     que hacía que los treinta y nueve se movieran igual.
+
+     Los desplazamientos van en % y no en px como en el origen: allí el aro se
+     ve a 300 px y aquí a 24 en la lista de miembros, donde 5 px de vaivén es un
+     salto. En % el movimiento se escala solo con el avatar. */
+  .ring-stack {
+    --base-duration: 24s;
+    --base-turn: 18deg;
+    --accent-duration: 7s;
+    --particle-duration: 2.8s;
+
+    position: absolute;
+    /* El avatar ocupa el 60% central del cuadro: es la proporción para la que
+       se dibujaron los atlas. Más apretado, el aro le come la cara. */
+    inset: -33.33%;
+    /* Sin aislar, el `screen` de las capas de luz se mezclaría con lo que haya
+       detrás —el chat, la lista, el diálogo— y el mismo aro se vería distinto
+       en cada sitio. Aislado, se mezcla solo consigo mismo. */
+    isolation: isolate;
+    pointer-events: none;
+  }
+
+  .ring-layer {
+    position: absolute;
+    inset: 0;
+    background-image: var(--ring-texture);
+    background-repeat: no-repeat;
+    background-size: 300% 100%;
+    transform-origin: center;
+  }
+
+  .ring-base {
+    background-position: 0 0;
+    animation: ring-turn var(--base-duration) ease-in-out infinite alternate;
+  }
+
+  /* `screen` y no opacidad: los acentos son luz. Sumados al trazo de abajo lo
+     iluminan; superpuestos con alfa lo taparían y apagarían el aro entero. */
+  .ring-accents {
+    background-position: 50% 0;
+    mix-blend-mode: screen;
+    animation: ring-drift var(--accent-duration) ease-in-out infinite alternate;
+  }
+
+  .ring-particles {
+    background-position: 100% 0;
+    mix-blend-mode: screen;
+    animation: ring-twinkle var(--particle-duration) ease-in-out infinite;
+  }
+
+  /* `drift` es la coreografía por defecto —los valores de arriba— pero se
+     escribe igual que las demás: si no, no se distingue "es el genérico a
+     propósito" de "se olvidó su fila", que es como se quedaron quietos todos. */
+  .ring-stack[data-ring="drift"] { --base-duration: 24s; --base-turn: 18deg; --accent-duration: 7s; --particle-duration: 2.8s; }
+
+  /* Los seis perfiles con giro propio. */
+  .ring-stack[data-ring="pulse"] { --base-duration: 13s; --base-turn: 8deg; --accent-duration: 2.5s; --particle-duration: 1.35s; }
+  .ring-stack[data-ring="flow"] { --base-duration: 19s; --base-turn: 28deg; --accent-duration: 5.8s; --particle-duration: 2.2s; }
+  .ring-stack[data-ring="breathe"] { --base-duration: 8s; --base-turn: 5deg; --accent-duration: 4.6s; --particle-duration: 3.1s; }
+  .ring-stack[data-ring="orbit"] { --base-duration: 28s; --base-turn: 360deg; --accent-duration: 9s; --particle-duration: 2.5s; }
+  .ring-stack[data-ring="shimmer"] { --base-duration: 21s; --base-turn: 12deg; --accent-duration: 3.8s; --particle-duration: 1.8s; }
+  .ring-stack[data-ring="mechanical"] { --base-duration: 32s; --base-turn: 360deg; --accent-duration: 12s; --particle-duration: 1.6s; }
+
+  /* Los doce que no giran: solo cambian tiempos. */
+  .ring-stack[data-ring="flicker"] { --accent-duration: 2.2s; --particle-duration: 1.4s; }
+  .ring-stack[data-ring="impact"] { --accent-duration: 3.4s; --particle-duration: 1.7s; }
+  .ring-stack[data-ring="equalizer"] { --accent-duration: 2.8s; --particle-duration: 1.9s; }
+  .ring-stack[data-ring="bubble"] { --accent-duration: 5s; --particle-duration: 3.2s; }
+  .ring-stack[data-ring="sway"] { --accent-duration: 4.8s; --particle-duration: 2.4s; }
+  .ring-stack[data-ring="sleep"] { --accent-duration: 6s; --particle-duration: 3.6s; }
+  .ring-stack[data-ring="rain"] { --accent-duration: 5.5s; --particle-duration: 2.1s; }
+  .ring-stack[data-ring="flutter"] { --accent-duration: 1.8s; --particle-duration: 2.6s; }
+  .ring-stack[data-ring="crawl"] { --accent-duration: 5.2s; --particle-duration: 2.4s; }
+  .ring-stack[data-ring="steady"] { --accent-duration: 4.5s; --particle-duration: 3s; }
+  .ring-stack[data-ring="hover"] { --accent-duration: 4s; --particle-duration: 2.5s; }
+
+  /* Qué anima cada capa. Los perfiles que no aparecen aquí se quedan con
+     ring-turn / ring-drift / ring-twinkle y solo cambian de ritmo. */
+  .ring-stack[data-ring="breathe"] .ring-base { animation-name: ring-breathe; }
+  .ring-stack[data-ring="pulse"] .ring-accents { animation-name: ring-pulse; }
+  .ring-stack[data-ring="flow"] .ring-accents { animation-name: ring-flow; }
+  /* A saltos y no continuo: es un mecanismo con dientes, no un fluido. */
+  .ring-stack[data-ring="mechanical"] .ring-accents { animation-timing-function: steps(12, end); }
+
+  /* Composiciones que no son aros: la base se asienta, no gira. */
+  .ring-stack[data-ring="flicker"] .ring-base,
+  .ring-stack[data-ring="equalizer"] .ring-base,
+  .ring-stack[data-ring="bubble"] .ring-base,
+  .ring-stack[data-ring="rain"] .ring-base,
+  .ring-stack[data-ring="flutter"] .ring-base,
+  .ring-stack[data-ring="crawl"] .ring-base { animation: ring-settle 7s ease-in-out infinite alternate; }
+
+  .ring-stack[data-ring="flicker"] .ring-accents { animation-name: overlay-flicker; }
+  .ring-stack[data-ring="impact"] .ring-base { animation: overlay-impact 3.4s ease-out infinite; }
+  .ring-stack[data-ring="impact"] .ring-accents { animation-name: ring-pulse; }
+  .ring-stack[data-ring="equalizer"] .ring-accents { animation-name: ring-pulse; }
+  .ring-stack[data-ring="bubble"] .ring-particles { animation-name: overlay-rise; }
+  .ring-stack[data-ring="sway"] .ring-base { animation: overlay-sway 4.8s ease-in-out infinite alternate; }
+  .ring-stack[data-ring="sleep"] .ring-base { animation: overlay-sleep 6s ease-in-out infinite; }
+  .ring-stack[data-ring="rain"] .ring-particles { animation-name: overlay-rain; }
+  .ring-stack[data-ring="flutter"] .ring-accents { animation-name: overlay-flutter; }
+  .ring-stack[data-ring="crawl"] .ring-accents { animation-name: overlay-crawl; }
+  .ring-stack[data-ring="steady"] .ring-base { animation: none; }
+  .ring-stack[data-ring="steady"] .ring-accents { animation-name: ring-pulse; }
+  .ring-stack[data-ring="hover"] .ring-base { animation: overlay-hover 4s ease-in-out infinite; }
+  .ring-stack[data-ring="hover"] .ring-accents { animation-name: ring-pulse; }
+
+  @keyframes ring-turn {
+    from { transform: rotate(0deg) scale(0.99); }
+    to { transform: rotate(var(--base-turn)) scale(1.01); }
+  }
+
+  @keyframes ring-drift {
+    0% { opacity: 0.62; transform: rotate(-3deg) scale(0.985); }
+    55% { opacity: 0.94; }
+    100% { opacity: 0.72; transform: rotate(4deg) scale(1.018); }
+  }
+
+  @keyframes ring-flow {
+    0% { opacity: 0.54; transform: rotate(-7deg) scale(0.98); filter: brightness(0.9); }
+    100% { opacity: 0.96; transform: rotate(9deg) scale(1.025); filter: brightness(1.24); }
+  }
+
+  @keyframes ring-breathe {
+    0%, 100% { transform: rotate(-2deg) scale(0.975); }
+    50% { transform: rotate(2deg) scale(1.025); }
+  }
+
+  @keyframes ring-pulse {
+    0%, 100% { opacity: 0.48; transform: scale(0.985); filter: brightness(0.86); }
+    48% { opacity: 1; transform: scale(1.025); filter: brightness(1.38); }
+  }
+
+  @keyframes ring-twinkle {
+    0%, 100% { opacity: 0.25; transform: rotate(-2deg) scale(0.99); filter: brightness(0.9); }
+    45% { opacity: 0.96; transform: rotate(2deg) scale(1.025); filter: brightness(1.45); }
+    70% { opacity: 0.52; }
+  }
+
+  @keyframes ring-settle {
+    from { transform: translateY(0.35%) scale(0.995); }
+    to { transform: translateY(-0.35%) scale(1.005); }
+  }
+
+  @keyframes overlay-flicker {
+    0%, 18%, 22%, 62%, 68%, 100% { opacity: 0.9; filter: brightness(1.12); }
+    20%, 65% { opacity: 0.38; filter: brightness(0.72); }
+  }
+
+  @keyframes overlay-impact {
+    0%, 70%, 100% { transform: scale(1); }
+    76% { transform: scale(1.035); }
+    83% { transform: scale(0.992); }
+  }
+
+  @keyframes overlay-rise {
+    0% { opacity: 0.24; transform: translateY(2%) scale(0.99); }
+    55% { opacity: 0.95; }
+    100% { opacity: 0.18; transform: translateY(-3%) scale(1.015); }
+  }
+
+  @keyframes overlay-sway {
+    from { transform: rotate(-1.7deg) translateX(-0.35%); }
+    to { transform: rotate(1.7deg) translateX(0.35%); }
+  }
+
+  @keyframes overlay-sleep {
+    0%, 100% { transform: translateY(0.35%) scale(0.985); }
+    50% { transform: translateY(-0.7%) scale(1.012); }
+  }
+
+  @keyframes overlay-rain {
+    0% { opacity: 0.18; transform: translateY(-2.8%); }
+    35% { opacity: 0.9; }
+    100% { opacity: 0.22; transform: translateY(3.5%); }
+  }
+
+  @keyframes overlay-flutter {
+    0%, 100% { opacity: 0.55; transform: scaleX(0.985) translateY(0.35%); }
+    50% { opacity: 1; transform: scaleX(1.02) translateY(-0.7%); }
+  }
+
+  @keyframes overlay-crawl {
+    0%, 100% { opacity: 0.62; transform: translateX(-0.7%) rotate(-1deg); }
+    50% { opacity: 0.98; transform: translateX(1%) rotate(1deg); }
+  }
+
+  @keyframes overlay-hover {
+    0%, 100% { transform: translateY(1%) rotate(-0.7deg); }
+    50% { transform: translateY(-1.8%) rotate(0.7deg); }
+  }
 }

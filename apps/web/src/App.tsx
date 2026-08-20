@@ -7,12 +7,15 @@ import { useEffect, useState } from "react";
 import { useStore } from "./store.ts";
 import { CreateCommunity, JoinCommunity, Rail } from "./components/Rail.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
+import { VoiceBar } from "./components/Voice.tsx";
+import { UserBar } from "./components/UserBar.tsx";
 import { Chat } from "./components/Chat.tsx";
 import { Members } from "./components/Members.tsx";
 import { Auth } from "./views/Auth.tsx";
 import { Setup } from "./views/Setup.tsx";
 import { Invite } from "./views/Invite.tsx";
 import { Settings } from "./views/Settings.tsx";
+import { WallpaperTuner } from "./components/Wallpaper.tsx";
 import { Manage } from "./views/Manage.tsx";
 import { Button, ErrorNote, Field, Modal, Spinner, Toggle, useErrorText, useT } from "./components/ui.tsx";
 import { api } from "./lib/api.ts";
@@ -103,12 +106,15 @@ export function App() {
   const openCommunity = useStore((s) => s.openCommunity);
 
   const [settings, setSettings] = useState(false);
-  const [manage, setManage] = useState(false);
+  /* En el store y no aquí: el selector de stickers, enterrado dentro de Chat,
+     también ofrece traerte a esta pantalla, y pasarle un callback por tres
+     componentes para eso era peor que una bandera compartida. */
+  const manage = useStore((s) => s.manageOpen);
+  const setManage = useStore((s) => s.setManageOpen);
   const [invite, setInvite] = useState(false);
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
   const [mobilePane, setMobilePane] = useState<"nav" | "main" | "members">("main");
-  const [sidebarOpen, setSidebarOpen] = usePanel("sidebar", true);
   const [membersOpen, setMembersOpen] = usePanel("members", true);
   const isMobile = useIsMobile();
 
@@ -116,19 +122,18 @@ export function App() {
     void boot();
   }, [boot]);
 
-  // Ctrl/⌘+B para los canales, Ctrl/⌘+U para los miembros: plegar sin ratón.
+  // Ctrl/⌘+U para los miembros: plegar sin ratón. El de canales se fue con su
+  // botón: la lista de canales ya no se pliega, siempre está.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
-      const key = event.key.toLowerCase();
-      if (key !== "b" && key !== "u") return;
+      if (event.key.toLowerCase() !== "u") return;
       event.preventDefault();
-      if (key === "b") setSidebarOpen((open) => !open);
-      else setMembersOpen((open) => !open);
+      setMembersOpen((open) => !open);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setSidebarOpen, setMembersOpen]);
+  }, [setMembersOpen]);
 
   // Al entrar sin comunidad activa, abre la primera: nadie quiere una pantalla vacía.
   useEffect(() => {
@@ -161,13 +166,11 @@ export function App() {
     <div
       className="app-grid"
       data-mobile={mobilePane}
-      data-sidebar={sidebarOpen ? "on" : "off"}
       data-members={membersOpen ? "on" : "off"}
     >
       <Rail onNavigate={() => setMobilePane("main")} onCreate={() => setCreating(true)} onJoin={() => setJoining(true)} />
 
       <Sidebar
-        onOpenSettings={() => setSettings(true)}
         onOpenManage={() => setManage(true)}
         onOpenInvite={() => setInvite(true)}
         onNavigate={() => setMobilePane("main")}
@@ -175,8 +178,6 @@ export function App() {
 
       <Chat
         onToggleMembers={() => (isMobile ? setMobilePane(mobilePane === "members" ? "main" : "members") : setMembersOpen(!membersOpen))}
-        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-        sidebarOpen={sidebarOpen}
         membersOpen={membersOpen}
         onOpenSidebar={() => setMobilePane("nav")}
         onCreateCommunity={() => setCreating(true)}
@@ -187,11 +188,20 @@ export function App() {
           que estamos quitando. En móvil lo esconde la rejilla, no React. */}
       <Members onClose={() => (isMobile ? setMobilePane("main") : setMembersOpen(false))} />
 
+      {/* Fuera del panel de canales y en su propia fila: así la barra de perfil
+          cruza por debajo de la columna de comunidades en vez de terminar donde
+          termina la lista, que es lo que la dejaba a media pared. */}
+      <div data-pane="user" className="flex flex-col gap-2 p-2">
+        <VoiceBar />
+        <UserBar onOpenSettings={() => setSettings(true)} />
+      </div>
+
       <Settings open={settings} onClose={() => setSettings(false)} />
       <Manage open={manage} onClose={() => setManage(false)} />
       <CreateInvite open={invite} onClose={() => setInvite(false)} />
       <CreateCommunity open={creating} onClose={() => setCreating(false)} />
       <JoinCommunity open={joining} onClose={() => setJoining(false)} />
+      <WallpaperTuner />
       <StaleBuild />
     </div>
   );

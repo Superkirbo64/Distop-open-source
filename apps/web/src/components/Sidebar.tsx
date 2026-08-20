@@ -1,27 +1,25 @@
 /**
- * Panel de canales de la comunidad activa, con la barra de usuario abajo.
+ * Panel de canales de la comunidad activa.
  * Lo que no puedes usar no se pinta apagado: si no tienes VIEW_CHANNEL el canal
  * simplemente no llega desde la instancia.
  */
 import { useState } from "react";
 import { ChevronDown, Hash, Megaphone, Settings, UserPlus } from "lucide-react";
-import { Cross, Gear, Speaker } from "./icons.tsx";
+import { Cross, Speaker } from "./icons.tsx";
 import { PERMISSIONS, has, toBits, type Channel } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
-import { Avatar, Button, ErrorNote, Field, IconButton, Menu, MenuItem, Modal, useConfirm, useT, useErrorText } from "./ui.tsx";
-import { VoiceBar, VoiceParticipants } from "./Voice.tsx";
+import { Button, ErrorNote, Field, Menu, MenuItem, Modal, useConfirm, useT, useErrorText } from "./ui.tsx";
+import { VoiceParticipants } from "./Voice.tsx";
 import { joinVoice } from "../lib/voice.ts";
 
 const ICONS = { text: Hash, voice: Speaker, announcement: Megaphone } as const;
 
 export function Sidebar({
-  onOpenSettings,
   onOpenManage,
   onOpenInvite,
   onNavigate,
 }: {
-  onOpenSettings: () => void;
   onOpenManage: () => void;
   onOpenInvite: () => void;
   onNavigate?: () => void;
@@ -35,6 +33,7 @@ export function Sidebar({
   const openChannel = useStore((s) => s.openChannel);
   const user = useStore((s) => s.user);
   const voiceRooms = useStore((s) => s.voice);
+  const unread = useStore((s) => s.unread);
 
   const [creating, setCreating] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -66,8 +65,23 @@ export function Sidebar({
     const Icon = ICONS[channel.kind];
     const active = channel.id === activeChannelId;
     const inRoom = voiceRooms[channel.id] ?? [];
+
+    /* Dos avisos distintos, no uno más fuerte: el punto dice "aquí ha pasado
+       algo" y el número dice "te han nombrado". Mezclarlos en un solo contador
+       obliga a entrar en el canal para saber si te tocaba a ti. */
+    const pending = unread[channel.id];
+    const mentions = pending?.mentions ?? 0;
+    const hasUnread = (pending?.count ?? 0) > 0;
+
+    /* Un canal de voz con gente dentro deja de ser una fila y pasa a ser un
+       bloque: el canal, quién está hablando y cómo meter a alguien más, todo
+       sobre el mismo fondo. Suelto, la lista de participantes parecía colgar
+       del canal siguiente. */
+    const enLlamada = channel.kind === "voice" && inRoom.length > 0;
+    const yoDentro = inRoom.some((state) => state.user_id === user?.id);
+
     return (
-      <li key={channel.id}>
+      <li key={channel.id} className={enLlamada ? "rounded-[10px] bg-raise/50 py-0.5" : undefined}>
         <button
           onClick={() => {
             void openChannel(channel.id);
@@ -77,16 +91,44 @@ export function Sidebar({
           }}
           aria-current={active ? "page" : undefined}
           className={`flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left text-sm transition-colors ${
-            active ? "bg-accent-soft font-semibold text-accent" : "text-muted hover:bg-raise hover:text-ink"
+            active
+              ? "bg-accent-soft font-semibold text-accent"
+              : hasUnread
+                ? "font-semibold text-ink hover:bg-raise"
+                : "text-muted hover:bg-raise hover:text-ink"
           }`}
         >
           <Icon size={16} className="shrink-0 opacity-80" />
           <span className="truncate">{channel.name}</span>
+
+          {mentions > 0 ? (
+            <span
+              className="ml-auto grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-danger px-1 text-[0.65rem] font-bold text-white tabular-nums"
+              aria-label={t("unread.mentions", { count: mentions })}
+            >
+              {mentions > 99 ? "99+" : mentions}
+            </span>
+          ) : hasUnread && !active ? (
+            <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-ink" aria-label={t("unread.some")} />
+          ) : null}
+
           {channel.kind === "voice" && inRoom.length > 0 ? (
-            <span className="ml-auto shrink-0 text-[0.65rem] text-muted tabular-nums">{inRoom.length}</span>
+            <span className={`shrink-0 text-[0.65rem] text-muted tabular-nums ${mentions > 0 || hasUnread ? "" : "ml-auto"}`}>
+              {inRoom.length}
+            </span>
           ) : null}
         </button>
         {channel.kind === "voice" ? <VoiceParticipants states={inRoom} members={data!.members} /> : null}
+
+        {yoDentro && canInvite ? (
+          <button
+            onClick={onOpenInvite}
+            className="flex w-full items-center gap-2 rounded-[10px] py-1 pr-2 pl-8 text-left text-xs text-muted transition-colors hover:bg-raise hover:text-ink"
+          >
+            <UserPlus size={13} className="shrink-0" />
+            <span className="truncate">{t("voice.invite")}</span>
+          </button>
+        ) : null}
       </li>
     );
   }
@@ -97,9 +139,23 @@ export function Sidebar({
         trigger={({ onClick }) => (
           <button
             onClick={onClick}
-            className="flex h-[var(--header-h)] w-full shrink-0 items-center justify-between gap-2 border-b border-line px-4 text-left transition-colors hover:bg-raise"
+            className="flex h-[var(--header-h)] w-full shrink-0 items-center gap-2.5 border-b border-line px-3 text-left transition-colors hover:bg-raise"
           >
-            <span className="display truncate text-[0.95rem] font-bold">{data.community.name}</span>
+            {/* El icono también aquí, y no solo en la columna de comunidades: con
+                varias abiertas, el nombre a secas obliga a mirar al rail para saber
+                en cuál estás. */}
+            <span
+              className="grid h-6 w-6 shrink-0 place-items-center overflow-hidden rounded-[7px] text-[0.6rem] font-bold text-white"
+              style={{ background: data.community.icon_url ? undefined : data.community.accent_color }}
+              aria-hidden="true"
+            >
+              {data.community.icon_url ? (
+                <img src={data.community.icon_url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                data.community.name.slice(0, 2).toUpperCase()
+              )}
+            </span>
+            <span className="display min-w-0 flex-1 truncate text-[0.95rem] font-bold">{data.community.name}</span>
             <ChevronDown size={16} className="shrink-0 text-muted" />
           </button>
         )}
@@ -156,7 +212,9 @@ export function Sidebar({
             <button
               onClick={() => setCollapsed((prev) => ({ ...prev, [category.id]: !prev[category.id] }))}
               aria-expanded={!collapsed[category.id]}
-              className="flex w-full items-center gap-1 px-2 py-1 text-[0.7rem] font-semibold tracking-wider text-muted uppercase transition-colors hover:text-ink"
+              /* Sin `uppercase`: quien crea la categoría elige cómo se llama, y
+                 forzar mayúsculas se comía esa elección. */
+              className="flex w-full items-center gap-1 px-2 py-1 text-[0.72rem] font-semibold tracking-wide text-muted transition-colors hover:text-ink"
             >
               <ChevronDown size={12} className={`transition-transform ${collapsed[category.id] ? "-rotate-90" : ""}`} />
               <span className="truncate">{category.name}</span>
@@ -174,21 +232,6 @@ export function Sidebar({
           </button>
         ) : null}
       </nav>
-
-      <VoiceBar />
-
-      <div className="flex h-[var(--footer-h)] shrink-0 items-center gap-2 border-t border-line bg-raise px-3">
-        <Avatar name={user?.display_name ?? "?"} url={user?.avatar_url} id={user?.id} size={34} ring="online" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold">{user?.display_name}</span>
-          <span className="block truncate text-xs text-muted">
-            {user?.kind === "guest" ? t("members.guest") : `@${user?.username}`}
-          </span>
-        </span>
-        <IconButton label={t("settings.title")} onClick={onOpenSettings}>
-          <Gear size={17} />
-        </IconButton>
-      </div>
 
       <CreateChannel communityId={communityId} open={creating} onClose={() => setCreating(false)} />
       {confirmElement}

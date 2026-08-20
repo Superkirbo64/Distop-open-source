@@ -8,8 +8,8 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { PERMISSIONS, has } from "@distop/protocol";
-import type { ClientCommand, ServerEvent, Snowflake } from "@distop/protocol";
-import { authenticate } from "./auth.ts";
+import type { ClientCommand, ServerEvent, Snowflake, VoiceAction } from "@distop/protocol";
+import { authenticate, findUserById } from "./auth.ts";
 import { communitiesForUser, getChannel } from "./entities.ts";
 import { channelPermissions, memberState } from "./permissions.ts";
 import { instanceHealth } from "./instance.ts";
@@ -26,6 +26,9 @@ interface Client {
   audio: { frames: number; since: number };
 }
 
+/** Lo que el cliente puede pedir sobre otra persona en una sala. */
+const VOICE_ACTIONS: readonly VoiceAction[] = ["mute", "unmute", "deafen", "undeafen", "disconnect"];
+
 const clients = new Set<Client>();
 /* 64 KB bastaban para mandos y audio, pero un fotograma clave de pantalla
    compartida los pasa de largo. El límite de verdad lo pone LIMITS por tipo de
@@ -36,10 +39,18 @@ export function onlineCount(): number {
   return new Set([...clients].map((c) => c.userId)).size;
 }
 
+/**
+ * Quién figura conectado en una comunidad.
+ *
+ * Tener el socket abierto no basta: quien eligió `invisible` queda fuera de la
+ * lista aunque esté dentro leyendo. Se mira la base y no lo que dijo el cliente
+ * al conectarse, porque el estado se puede cambiar desde otro dispositivo
+ * mientras esta sesión sigue abierta.
+ */
 export function onlineIn(communityId: Snowflake): Snowflake[] {
   const ids = new Set<Snowflake>();
   for (const client of clients) if (client.subs.has(communityId)) ids.add(client.userId);
-  return [...ids];
+  return [...ids].filter((id) => findUserById(id)?.status !== "invisible");
 }
 
 function send(client: Client, event: ServerEvent): void {
@@ -144,6 +155,14 @@ function handleCommand(client: Client, raw: string): void {
       if (typeof channelId !== "string") return;
       if (source !== null && source !== "camera" && source !== "screen") return;
       if (voice.setVideo(channelId, client.userId, source)) announceVoice(channelId);
+      return;
+    }
+
+    case "VOICE_MODERATE": {
+      const { channel_id: channelId, user_id: target, action } = cmd.d ?? {};
+      if (typeof channelId !== "string" || typeof target !== "string") return;
+      if (!VOICE_ACTIONS.includes(action)) return;
+      if (voice.moderate(channelId, client.userId, target, action)) announceVoice(channelId);
       return;
     }
 

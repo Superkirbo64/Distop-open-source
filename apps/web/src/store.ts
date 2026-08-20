@@ -5,21 +5,26 @@
  * usuario ven exactamente lo mismo.
  */
 import { create } from "zustand";
+import { mentionsUser } from "@distop/protocol";
+import { BRAND } from "./brand.ts";
 import type {
   Category,
   Channel,
   Community,
+  CustomEmoji,
   InstanceHealth,
   Member,
   Message,
   Role,
   SelfUser,
   ServerEvent,
+  Unread,
   VoiceState,
 } from "@distop/protocol";
 import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
 import { connect, disconnect, onEvent, onStatus, sendCommand, type ConnectionStatus } from "./lib/gateway.ts";
 import { detectLocale, type Locale } from "./i18n.ts";
+import { notify, type NotifyLevel } from "./lib/notify.ts";
 import { configureVoice, handleSignal, resumeVoice, setVideoMode, syncPeers } from "./lib/voice.ts";
 
 export type ThemeChoice = "light" | "dark" | "system";
@@ -37,6 +42,12 @@ export interface CommunityData {
   permissions: string;
   /** Permisos ya resueltos canal por canal, con sus overwrites aplicados. */
   channel_permissions: Record<string, string>;
+  /** Emojis y stickers propios de esta comunidad (§10.3). */
+  emojis: CustomEmoji[];
+  /** Qué queda sin leer en cada canal, calculado por la instancia. */
+  unread: Record<string, Unread>;
+  /** Último mensaje leído por canal: es dónde va la línea de "mensajes nuevos". */
+  read_state: Record<string, string>;
 }
 
 export type FontChoice = "default" | "system" | "serif" | "mono";
@@ -52,7 +63,18 @@ interface Prefs {
   radius: number;
   font: FontChoice;
   backdrop: BackdropChoice;
+  /** URL de una imagen de fondo, o vacío. Es de este dispositivo, no de la cuenta. */
+  wallpaper: string;
+  /** Cuánto tapa el velo del tema, en %. A 0 la foto va limpia y el texto sufre. */
+  wallpaperVeil: number;
+  wallpaperBlur: number;
+  wallpaperBright: number;
+  wallpaperContrast: number;
+  wallpaperSaturate: number;
   motion: boolean;
+  /** Qué merece interrumpir: todo, solo lo que me nombra, o nada. */
+  notify: NotifyLevel;
+  sounds: boolean;
 }
 
 /** Pilas tipográficas locales: ninguna descarga nada ni delata al usuario. */
@@ -83,12 +105,36 @@ interface State {
   voice: Record<string, VoiceState[]>;
   /** Dirección pública de la instancia, para que los enlaces sirvan fuera de casa. */
   publicUrl: string;
+  /** El anfitrión configuró clave de Giphy. Sin esto la pestaña de GIF no se enseña. */
+  gifEnabled: boolean;
+  /** Y la de Klipy, que es la de la galería de stickers. Van por separado. */
+  stickerGalleryEnabled: boolean;
+  /** Gestión de la comunidad abierta. En el store y no en App porque el
+      selector de stickers también necesita poder llevarte ahí. */
+  manageOpen: boolean;
+  setManageOpen: (open: boolean) => void;
 
   communities: Community[];
   data: Record<string, CommunityData>;
   messages: Record<string, Message[]>;
   hasMore: Record<string, boolean>;
   typing: Record<string, Record<string, number>>;
+  /* Plano por canal y no por comunidad: la barra lateral, la de comunidades y el
+     título de la pestaña preguntan por lo mismo desde tres sitios distintos. */
+  unread: Record<string, Unread>;
+  lastRead: Record<string, string>;
+  /* Todo lo que puedo usar, de todas mis comunidades a la vez. Va plano y no por
+     comunidad porque el selector los enseña juntos y el renderizador solo tiene
+     un id: sin esta lista habría que adivinar de qué comunidad salió cada uno. */
+  expressions: CustomEmoji[];
+  /* Canal → comunidad. El contador es por canal, pero la barra de comunidades
+     necesita sumarlos, y un canal cuya comunidad no has abierto todavía no
+     aparece en ningún otro sitio del estado. */
+  channelOwner: Record<string, string>;
+  /* Dónde va la línea de "mensajes nuevos": se congela al abrir el canal y no
+     se mueve mientras estés dentro. Si siguiera a lastRead desaparecería en el
+     mismo instante en que abres, que es cuando hace falta. */
+  divider: Record<string, string | null>;
 
   activeCommunityId: string | null;
   activeChannelId: string | null;
@@ -104,9 +150,14 @@ interface State {
   loadOlder: (channelId: string) => Promise<void>;
   send: (channelId: string, content: string, attachmentIds: string[], replyToId: string | null) => Promise<void>;
   notifyTyping: (channelId: string) => void;
+  markRead: (channelId: string) => void;
+  loadExpressions: () => Promise<void>;
   reloadCommunities: () => Promise<void>;
 
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
+  /** Panel flotante de ajuste del fondo. No se guarda: es "lo tengo abierto ahora". */
+  tuner: boolean;
+  setTuner: (open: boolean) => void;
 }
 
 function loadPrefs(): Prefs {
@@ -117,8 +168,32 @@ function loadPrefs(): Prefs {
   const radius = Number(localStorage.getItem("distop.radius") ?? 14) || 14;
   const font = (localStorage.getItem("distop.font") as FontChoice | null) ?? "default";
   const backdrop = (localStorage.getItem("distop.backdrop") as BackdropChoice | null) ?? "plain";
+  const wallpaper = localStorage.getItem("distop.wallpaper") ?? "";
+  const num = (key: string, fallback: number) => Number(localStorage.getItem(`distop.${key}`) ?? fallback) || fallback;
   const motion = localStorage.getItem("distop.motion") !== "false";
-  return { theme, scale, density, accent, radius, font, backdrop, motion, locale: detectLocale() };
+  const notify = (localStorage.getItem("distop.notify") as NotifyLevel | null) ?? "mentions";
+  const sounds = localStorage.getItem("distop.sounds") !== "false";
+  return {
+    theme,
+    scale,
+    density,
+    accent,
+    radius,
+    font,
+    backdrop,
+    wallpaper,
+    // `num` descarta el 0 al caer en ||, y un velo a 0 es una elección válida:
+    // significa "la foto tal cual". Por eso este no pasa por ahí.
+    wallpaperVeil: Number(localStorage.getItem("distop.wallpaperVeil") ?? 78),
+    wallpaperBlur: Number(localStorage.getItem("distop.wallpaperBlur") ?? 0),
+    wallpaperBright: num("wallpaperBright", 100),
+    wallpaperContrast: num("wallpaperContrast", 100),
+    wallpaperSaturate: num("wallpaperSaturate", 100),
+    motion,
+    notify,
+    sounds,
+    locale: detectLocale(),
+  };
 }
 
 /**
@@ -156,6 +231,19 @@ export function applyPrefs(prefs: Prefs): void {
   }
 
   root.dataset.backdrop = prefs.backdrop;
+
+  // La URL acaba dentro de un url() de CSS, así que pasa por una lista blanca
+  // de caracteres: un `)` o unas comillas en la ruta cerrarían la función, y lo
+  // que viniera detrás lo leería el motor de estilos como declaraciones.
+  if (prefs.wallpaper) root.style.setProperty("--wallpaper", `url("${prefs.wallpaper.replace(/[^\w:/.\-?=&%~]/g, "")}")`);
+  else root.style.removeProperty("--wallpaper");
+  root.dataset.wallpaper = prefs.wallpaper ? "on" : "off";
+  root.style.setProperty("--wallpaper-veil", `${prefs.wallpaperVeil}%`);
+  root.style.setProperty("--wallpaper-blur", `${prefs.wallpaperBlur}px`);
+  root.style.setProperty(
+    "--wallpaper-filter",
+    `brightness(${prefs.wallpaperBright}%) contrast(${prefs.wallpaperContrast}%) saturate(${prefs.wallpaperSaturate}%)`,
+  );
   root.dataset.motion = prefs.motion ? "on" : "off";
 }
 
@@ -172,12 +260,22 @@ export const useStore = create<State>()((set, get) => ({
   setup: null,
   voice: {},
   publicUrl: "",
+  gifEnabled: false,
+  stickerGalleryEnabled: false,
+  manageOpen: false,
+  setManageOpen: (manageOpen) => set({ manageOpen }),
+  tuner: false,
 
   communities: [],
   data: {},
   messages: {},
   hasMore: {},
   typing: {},
+  unread: {},
+  lastRead: {},
+  expressions: [],
+  channelOwner: {},
+  divider: {},
 
   activeCommunityId: null,
   activeChannelId: null,
@@ -195,8 +293,15 @@ export const useStore = create<State>()((set, get) => ({
         ice_servers: RTCIceServer[];
         video: { mode: "host" | "direct"; quality: "low" | "medium" | "high" };
         public_url: string;
+        gif_enabled: boolean;
+        sticker_gallery_enabled: boolean;
       }>("GET", "/api/v1/info");
-      set({ setup: { required: info.setup_required, requiresCode: info.setup_requires_code }, publicUrl: info.public_url });
+      set({
+        setup: { required: info.setup_required, requiresCode: info.setup_requires_code },
+        publicUrl: info.public_url,
+        gifEnabled: Boolean(info.gif_enabled),
+        stickerGalleryEnabled: Boolean(info.sticker_gallery_enabled),
+      });
       iceServers = info.ice_servers ?? [];
       setVideoMode(info.video?.mode ?? "host", info.video?.quality ?? "medium");
     } catch {
@@ -257,7 +362,16 @@ export const useStore = create<State>()((set, get) => ({
     const voice: Record<string, VoiceState[]> = { ...get().voice };
     for (const channel of data.channels) if (channel.kind === "voice") voice[channel.id] = [];
     for (const state of data.voice_states) voice[state.channel_id] = [...(voice[state.channel_id] ?? []), state];
-    set((state) => ({ data: { ...state.data, [communityId]: data }, voice }));
+    set((state) => ({
+      data: { ...state.data, [communityId]: data },
+      voice,
+      unread: { ...state.unread, ...data.unread },
+      lastRead: { ...state.lastRead, ...data.read_state },
+      channelOwner: {
+        ...state.channelOwner,
+        ...Object.fromEntries(data.channels.map((channel) => [channel.id, communityId])),
+      },
+    }));
 
     const first = data.channels.find((channel) => channel.kind !== "voice") ?? data.channels[0];
     if (first) await get().openChannel(first.id);
@@ -266,13 +380,19 @@ export const useStore = create<State>()((set, get) => ({
 
   async openChannel(channelId) {
     set({ activeChannelId: channelId });
-    if (get().messages[channelId]) return;
 
-    const page = await api<Message[]>("GET", `/api/v1/channels/${channelId}/messages?limit=${MESSAGE_PAGE}`);
-    set((state) => ({
-      messages: { ...state.messages, [channelId]: page },
-      hasMore: { ...state.hasMore, [channelId]: page.length === MESSAGE_PAGE },
-    }));
+    if (!get().messages[channelId]) {
+      const page = await api<Message[]>("GET", `/api/v1/channels/${channelId}/messages?limit=${MESSAGE_PAGE}`);
+      set((state) => ({
+        messages: { ...state.messages, [channelId]: page },
+        hasMore: { ...state.hasMore, [channelId]: page.length === MESSAGE_PAGE },
+      }));
+    }
+
+    /* La línea de "mensajes nuevos" se dibuja con lo que había ANTES de abrir,
+       así que se guarda primero y se marca leído después. */
+    set((state) => ({ divider: { ...state.divider, [channelId]: state.lastRead[channelId] ?? null } }));
+    get().markRead(channelId);
   },
 
   async loadOlder(channelId) {
@@ -303,6 +423,36 @@ export const useStore = create<State>()((set, get) => ({
     sendCommand({ t: "TYPING", d: { channel_id: channelId } });
   },
 
+  async loadExpressions() {
+    try {
+      set({ expressions: await api<CustomEmoji[]>("GET", "/api/v1/expressions") });
+    } catch {
+      // Sin emojis propios la aplicación funciona igual: no es motivo de error.
+    }
+  },
+
+  /**
+   * Deja el canal al día hasta el último mensaje que hay cargado.
+   * El contador se apaga aquí sin esperar a la instancia —la barra lateral tiene
+   * que responder al instante—, y READ_UPDATE lo confirma para las demás pestañas.
+   */
+  markRead(channelId) {
+    const state = get();
+    const list = state.messages[channelId];
+    const last = list?.[list.length - 1];
+    if (!last) return;
+    if (state.lastRead[channelId] === last.id) return;
+
+    set({
+      lastRead: { ...state.lastRead, [channelId]: last.id },
+      unread: { ...state.unread, [channelId]: { count: 0, mentions: 0 } },
+    });
+    void api("POST", `/api/v1/channels/${channelId}/read`, { message_id: last.id }).catch(() => {
+      // Sin red se queda leído en local; al reconectar, el bootstrap manda.
+    });
+  },
+
+  setTuner: (open) => set({ tuner: open }),
   setPref(key, value) {
     const prefs = { ...get().prefs, [key]: value };
     set({ prefs });
@@ -331,7 +481,16 @@ onEvent((event: ServerEvent) => {
         instance: event.d.instance,
       });
       configureVoice(event.d.user.id, iceServers);
-      // Tras reconectar hay que rehacer la suscripción y refrescar lo perdido.
+
+      /* A TODAS las comunidades, no solo a la abierta: si solo llegaran los
+         mensajes de la que estás mirando, el resto de la barra jamás se
+         encendería y habría que entrar una por una para descubrir que hay algo.
+         La instancia sigue filtrando por canal, así que esto no enseña nada que
+         no se pudiera ver. */
+      for (const community of event.d.communities) sendCommand({ t: "SUBSCRIBE", d: { community_id: community.id } });
+      void useStore.getState().loadExpressions();
+
+      // Tras reconectar hay que refrescar lo que se perdió mientras no había socket.
       const active = state.activeCommunityId;
       if (active) void useStore.getState().openCommunity(active);
       // Y volver a anunciarse en la llamada: el servidor te dio por ido al caerse
@@ -341,17 +500,60 @@ onEvent((event: ServerEvent) => {
     }
 
     case "MESSAGE_CREATE": {
-      const list = state.messages[event.d.channel_id];
-      if (!list) return; // canal aún no abierto: se cargará entero al abrirlo
-      if (list.some((m) => m.id === event.d.id)) return;
+      const message = event.d;
+      const list = state.messages[message.channel_id];
+
+      /* Un canal sin abrir no guarda mensajes, pero sí tiene que contar: si no,
+         el único canal que avisa es el que ya estás mirando. */
+      if (list && !list.some((m) => m.id === message.id)) {
+        useStore.setState({
+          messages: { ...state.messages, [message.channel_id]: [...list, message] },
+          typing: {
+            ...state.typing,
+            [message.channel_id]: Object.fromEntries(
+              Object.entries(state.typing[message.channel_id] ?? {}).filter(([id]) => id !== message.author_id),
+            ),
+          },
+        });
+      } else if (list) {
+        return; // duplicado
+      }
+
+      if (message.author_id === state.user?.id) return;
+
+      // "Lo estoy viendo" es tener el canal abierto Y la ventana delante. Con la
+      // pestaña en segundo plano el mensaje sigue sin leerse, aunque el canal
+      // esté seleccionado.
+      const looking = state.activeChannelId === message.channel_id && !document.hidden;
+      if (looking) {
+        useStore.getState().markRead(message.channel_id);
+        return;
+      }
+
+      const mention = mentionsUser(message.content, state.user?.id ?? "") || message.mentions_everyone;
+      const previous = state.unread[message.channel_id] ?? { count: 0, mentions: 0 };
       useStore.setState({
-        messages: { ...state.messages, [event.d.channel_id]: [...list, event.d] },
-        typing: {
-          ...state.typing,
-          [event.d.channel_id]: Object.fromEntries(
-            Object.entries(state.typing[event.d.channel_id] ?? {}).filter(([id]) => id !== event.d.author_id),
-          ),
+        channelOwner: { ...state.channelOwner, [message.channel_id]: message.community_id },
+        unread: {
+          ...state.unread,
+          [message.channel_id]: {
+            count: previous.count + 1,
+            mentions: previous.mentions + (mention ? 1 : 0),
+          },
         },
+      });
+
+      const data = state.data[message.community_id];
+      const channel = data?.channels.find((c) => c.id === message.channel_id);
+      const author = data?.members.find((m) => m.user.id === message.author_id);
+      notify({
+        title: channel ? `#${channel.name}` : (data?.community.name ?? ""),
+        body: `${author?.nickname ?? author?.user.display_name ?? "…"}: ${message.content || "…"}`,
+        tag: message.channel_id,
+        mention,
+        level: state.prefs.notify,
+        sound: state.prefs.sounds,
+        onClick: () => void useStore.getState().openChannel(message.channel_id),
       });
       return;
     }
@@ -513,6 +715,31 @@ onEvent((event: ServerEvent) => {
       return;
     }
 
+    /* Otra sesión mía leyó ese canal: aquí solo se apaga el contador. No se
+       toca la línea de "mensajes nuevos" del canal abierto, porque estoy
+       leyéndolo y moverla me borraría el sitio por donde iba. */
+    case "READ_UPDATE": {
+      useStore.setState({
+        lastRead: { ...state.lastRead, [event.d.channel_id]: event.d.last_read_id },
+        unread: { ...state.unread, [event.d.channel_id]: { count: 0, mentions: 0 } },
+      });
+      return;
+    }
+
+    case "EMOJI_UPDATE": {
+      const data = state.data[event.d.community_id];
+      useStore.setState({
+        ...(data ? { data: { ...state.data, [event.d.community_id]: { ...data, emojis: event.d.emojis } } } : {}),
+        // La lista plana se rehace entera: mezclar a mano lo de una comunidad
+        // dentro de la mezcla de todas es justo donde aparecen los duplicados.
+        expressions: [
+          ...state.expressions.filter((e) => e.community_id !== event.d.community_id),
+          ...event.d.emojis,
+        ],
+      });
+      return;
+    }
+
     case "ROLE_DELETE": {
       const data = state.data[event.d.community_id];
       if (!data) return;
@@ -543,4 +770,30 @@ setInterval(() => {
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   const { prefs } = useStore.getState();
   if (prefs.theme === "system") applyPrefs(prefs);
+});
+
+/* ── el bulto sin leer, fuera de la aplicación ─────────────────────────
+   El título de la pestaña es el único sitio donde el aviso sobrevive a tener la
+   ventana tapada. Las menciones van entre paréntesis y el resto como punto,
+   porque no es lo mismo "hay movimiento" que "te están hablando". */
+
+function paintTitle(): void {
+  const { unread } = useStore.getState();
+  const totals = Object.values(unread).reduce(
+    (acc, entry) => ({ count: acc.count + entry.count, mentions: acc.mentions + entry.mentions }),
+    { count: 0, mentions: 0 },
+  );
+
+  const prefix = totals.mentions > 0 ? `(${totals.mentions}) ` : totals.count > 0 ? "• " : "";
+  document.title = `${prefix}${BRAND.name}`;
+}
+
+useStore.subscribe(paintTitle);
+
+/* Volver a la ventana con el canal abierto delante es haberlo leído. Sin esto,
+   el contador se queda encendido sobre mensajes que ya tienes a la vista. */
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  const { activeChannelId } = useStore.getState();
+  if (activeChannelId) useStore.getState().markRead(activeChannelId);
 });

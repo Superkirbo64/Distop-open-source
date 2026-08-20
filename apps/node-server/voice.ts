@@ -1,17 +1,18 @@
 /**
- * Señalización de voz (§9.4).
- * La instancia no toca el audio: guarda quién está en cada canal y reenvía las
- * ofertas SDP y los candidatos ICE entre pares. Eso significa que hospedar voz
- * no cuesta ancho de banda ni CPU de servidor, que es justo lo que hace que
- * esta plataforma pueda vivir en el PC de alguien (§3).
+ * Estado de las salas de voz (§9.4): quién está dentro de cada canal, cómo, y
+ * quién puede callar a quién.
  *
- * ponytail: malla entre pares, sin SFU. Cada persona manda su audio a cada
- * otra, así que el coste sube al cuadrado: por encima de ~6 por canal toca
- * meter un SFU (mediasoup o LiveKit self-hosted). El protocolo no cambia.
+ * Aquí NO pasa media. El audio lo reenvía `relayMedia` en gateway.ts, por el
+ * mismo socket que todo lo demás; el vídeo va directo entre navegadores y esta
+ * pieza solo reenvía su señalización. Este módulo es el registro: sin él nadie
+ * sabría a quién conectarse ni a quién dejar de escuchar.
+ *
+ * Vive en memoria a propósito: una llamada no sobrevive a que se apague el
+ * equipo anfitrión, así que guardarla en disco solo dejaría salas fantasma.
  */
 import { PERMISSIONS, has } from "@distop/protocol";
-import type { Snowflake, VideoSource, VoiceState } from "@distop/protocol";
-import { channelPermissions } from "./permissions.ts";
+import type { Snowflake, VideoSource, VoiceAction, VoiceState } from "@distop/protocol";
+import { canActOn, channelPermissions } from "./permissions.ts";
 import { getChannel } from "./entities.ts";
 
 interface Participant {
@@ -21,6 +22,14 @@ interface Participant {
   deafened: boolean;
   video: VideoSource | null;
   joinedAt: number;
+  /**
+   * Silenciado por un moderador, no por uno mismo.
+   * Va aparte de `muted` porque si fuera la misma bandera el propio cliente la
+   * quitaría con el botón de siempre, y un silencio que el silenciado puede
+   * deshacer no es moderación.
+   */
+  forceMuted: boolean;
+  forceDeafened: boolean;
 }
 
 /** canal → participantes. Vive en memoria: si la instancia cae, la llamada también. */
@@ -35,6 +44,8 @@ export function statesOf(channelId: Snowflake): VoiceState[] {
     community_id: p.communityId,
     muted: p.muted,
     deafened: p.deafened,
+    force_muted: p.forceMuted,
+    force_deafened: p.forceDeafened,
     video: p.video,
     joined_at: p.joinedAt,
   }));
@@ -94,6 +105,8 @@ export function join(channelId: Snowflake, userId: Snowflake): JoinResult | null
     deafened: false,
     video: null,
     joinedAt: Date.now(),
+    forceMuted: false,
+    forceDeafened: false,
   });
   rooms.set(channelId, room);
 
@@ -129,6 +142,12 @@ export function setMute(channelId: Snowflake, userId: Snowflake, muted: boolean,
   participant.deafened = deafened;
   // Ensordecer implica callar: escuchar a nadie mientras hablas confunde a todos.
   if (deafened) participant.muted = true;
+  // Y lo que impuso un moderador no se quita desde aquí.
+  if (participant.forceMuted) participant.muted = true;
+  if (participant.forceDeafened) {
+    participant.deafened = true;
+    participant.muted = true;
+  }
   return true;
 }
 
@@ -154,4 +173,70 @@ export function setVideo(channelId: Snowflake, userId: Snowflake, source: VideoS
 export function canSignal(channelId: Snowflake, from: Snowflake, to: Snowflake): boolean {
   const room = rooms.get(channelId);
   return Boolean(room?.has(from) && room.has(to));
+}
+
+/**
+ * Moderación dentro de una sala (§11, §23).
+ *
+ * El permiso se comprueba en el canal donde ocurre, no en la comunidad: un rol
+ * puede moderar la sala de reuniones y no la de charla. `canActOn` impide además
+ * lo que ningún permiso arregla —silenciar a alguien por encima de ti, o al
+ * dueño—, que es como un moderador se convertiría en administrador.
+ *
+ * Devuelve false cuando no cambia nada, para no anunciar estados iguales.
+ */
+export function moderate(
+  channelId: Snowflake,
+  actorId: Snowflake,
+  targetId: Snowflake,
+  action: VoiceAction,
+): boolean {
+  const participant = rooms.get(channelId)?.get(targetId);
+  if (!participant) return false;
+  if (actorId === targetId) return false;
+
+  const permissions = channelPermissions(channelId, actorId);
+  const needed =
+    action === "mute" || action === "unmute"
+      ? PERMISSIONS.MUTE_MEMBERS
+      : action === "deafen" || action === "undeafen"
+        ? PERMISSIONS.DEAFEN_MEMBERS
+        : PERMISSIONS.MOVE_MEMBERS;
+  if (!has(permissions, needed)) return false;
+  if (!canActOn(participant.communityId, actorId, targetId)) return false;
+
+  switch (action) {
+    case "mute":
+      if (participant.forceMuted) return false;
+      participant.forceMuted = true;
+      participant.muted = true;
+      return true;
+
+    case "unmute":
+      if (!participant.forceMuted) return false;
+      participant.forceMuted = false;
+      // No se le devuelve la voz a la fuerza: queda como si se hubiera callado
+      // solo, y decide con su propio botón. Salvo que siga sin permiso de hablar.
+      participant.muted = !has(channelPermissions(channelId, targetId), PERMISSIONS.SPEAK);
+      return true;
+
+    case "deafen":
+      if (participant.forceDeafened) return false;
+      participant.forceDeafened = true;
+      participant.deafened = true;
+      participant.muted = true;
+      return true;
+
+    case "undeafen":
+      if (!participant.forceDeafened) return false;
+      participant.forceDeafened = false;
+      participant.deafened = false;
+      participant.muted = participant.forceMuted || !has(channelPermissions(channelId, targetId), PERMISSIONS.SPEAK);
+      return true;
+
+    // Sacar de la llamada, no de la comunidad: puede volver a entrar. Es la
+    // herramienta para cortar un micro abierto, no un castigo.
+    case "disconnect":
+      return leave(channelId, targetId);
+  }
 }

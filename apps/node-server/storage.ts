@@ -9,7 +9,7 @@ import { uuidv7 } from "@distop/protocol";
 import type { Attachment } from "@distop/protocol";
 import { config } from "./config.ts";
 import { db } from "./db.ts";
-import { HttpError, notFound, type Ctx, HANDLED } from "./http.ts";
+import { HttpError, notFound, rateLimit, type Ctx, HANDLED } from "./http.ts";
 
 const ROOT = resolve(config.storagePath);
 mkdirSync(ROOT, { recursive: true });
@@ -47,6 +47,46 @@ export function saveUpload(opts: {
     filename: sanitizeName(opts.filename),
     content_type: opts.contentType,
     size: opts.data.length,
+    url: `/api/v1/files/${id}`,
+  };
+}
+
+/**
+ * Un GIF o sticker de la galería (§12, §22): nada en disco, solo la URL de
+ * origen. Se sirve por el mismo /api/v1/files/:id de siempre, que en este caso
+ * lo reenvía en cada vista en vez de leerlo de un fichero — así Giphy nunca ve
+ * la IP de quien lee el mensaje, solo la del servidor, y el disco del
+ * anfitrión no crece por cada sticker que alguien mande.
+ *
+ * A cambio, si Giphy borra ese contenido el mensaje queda roto para siempre:
+ * lo contrario de un archivo subido a mano, que sigue existiendo pase lo que
+ * pase con el tercero. Es la otra cara de no guardarlo (§29.3).
+ */
+export function saveRemoteAttachment(opts: {
+  ownerId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  sourceUrl: string;
+}): Attachment {
+  if (!config.allowedUploadTypes.includes(opts.contentType)) {
+    throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", `Tipo de archivo no permitido: ${opts.contentType}.`, {
+      allowed: config.allowedUploadTypes,
+    });
+  }
+
+  const id = uuidv7();
+  db.prepare(
+    `INSERT INTO attachments (id, message_id, owner_id, filename, content_type, size, path, source_url, created_at)
+     VALUES (?, NULL, ?, ?, ?, ?, '', ?, ?)`,
+  ).run(id, opts.ownerId, sanitizeName(opts.filename), opts.contentType, opts.size, opts.sourceUrl, Date.now());
+
+  return {
+    id,
+    message_id: null,
+    filename: sanitizeName(opts.filename),
+    content_type: opts.contentType,
+    size: opts.size,
     url: `/api/v1/files/${id}`,
   };
 }
@@ -90,11 +130,49 @@ export function linkAttachments(messageId: string, ids: string[], ownerId: strin
   for (const id of ids) claim.run(messageId, id, ownerId);
 }
 
-export function serveFile(ctx: Ctx, id: string): typeof HANDLED {
-  const row = db.prepare("SELECT filename, content_type, size, path FROM attachments WHERE id = ?").get(id) as
-    | { filename: string; content_type: string; size: number; path: string }
+/**
+ * Los unicos CDN de los que esta instancia reenvia algo.
+ *
+ * Exportada porque /api/v1/gifs/save valida contra esta MISMA lista: tenerla
+ * duplicada era pedir que un dia una aceptara un dominio que la otra rechaza, y
+ * entonces el adjunto se guarda y despues no se puede ver. Sin lista esto seria
+ * un SSRF de manual (§22).
+ */
+export const CDN_REENVIABLE = /^(media[0-9]?\.giphy\.com|i\.giphy\.com|static[0-9]?\.klipy\.com)$/;
+
+export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
+  const row = db
+    .prepare("SELECT filename, content_type, size, path, source_url FROM attachments WHERE id = ?")
+    .get(id) as
+    | { filename: string; content_type: string; size: number; path: string; source_url: string | null }
     | undefined;
   if (!row) throw notFound("Archivo no encontrado.");
+
+  if (row.source_url) {
+    /* Sin sesión, igual que /avatars/image: un <img src> no manda Authorization,
+       así que el límite que protege el ancho de banda del anfitrión es por IP. */
+    rateLimit(`file:${ctx.ip}`, 120, 60_000);
+
+    let origen: URL;
+    try {
+      origen = new URL(row.source_url);
+    } catch {
+      throw notFound("Archivo no encontrado.");
+    }
+    if (origen.protocol !== "https:" || !CDN_REENVIABLE.test(origen.hostname)) throw notFound("Archivo no encontrado.");
+
+    const res = await fetch(origen, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+    if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "El archivo no se pudo traer.");
+
+    ctx.res.writeHead(200, {
+      "content-type": row.content_type,
+      "cache-control": "public, max-age=31536000, immutable",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'; sandbox",
+    });
+    ctx.res.end(Buffer.from(await res.arrayBuffer()));
+    return HANDLED;
+  }
 
   const full = resolve(ROOT, row.path);
   if (!full.startsWith(ROOT) || !existsSync(full)) throw notFound("Archivo no encontrado.");
@@ -120,6 +198,8 @@ export function deleteAttachmentsOf(messageId: string): void {
     path: string;
   }[];
   for (const row of rows) {
+    // Reenviado (§22): sin fichero propio, path queda vacío y no hay nada que borrar.
+    if (!row.path) continue;
     const full = resolve(ROOT, row.path);
     if (full.startsWith(ROOT) && existsSync(full)) unlinkSync(full);
   }
@@ -137,6 +217,7 @@ export function deleteAttachmentsOwnedBy(userId: string): void {
     path: string;
   }[];
   for (const row of rows) {
+    if (!row.path) continue;
     const full = resolve(ROOT, row.path);
     if (full.startsWith(ROOT) && existsSync(full)) unlinkSync(full);
   }

@@ -6,8 +6,10 @@
  */
 import { useEffect, useRef, useState } from "react";
 import {
+  Lock,
   Maximize2,
   MicOff,
+  MoreVertical,
   Minimize2,
   MonitorUp,
   PhoneOff,
@@ -28,9 +30,10 @@ import {
   setMuted,
   setShareMuted,
   setVideoSource,
+  moderateVoice,
   type VoiceLocalState,
 } from "../lib/voice.ts";
-import { Avatar, ErrorNote, IconButton, useT } from "./ui.tsx";
+import { Avatar, ErrorNote, IconButton, Menu, MenuItem, useT } from "./ui.tsx";
 
 /**
  * Referencia estable para "no hay nada".
@@ -83,7 +86,9 @@ export function VoiceParticipants({ states, members }: { states: VoiceState[]; m
               <Avatar name={name} url={member?.user.avatar_url} id={state.user_id} size={22} />
             </span>
             <span className={`truncate text-xs ${speaking ? "text-ink" : "text-muted"}`}>{name}</span>
-            {state.deafened ? (
+            {state.force_deafened || state.force_muted ? (
+              <Lock size={12} className="ml-auto shrink-0 text-danger" />
+            ) : state.deafened ? (
               <VolumeX size={12} className="ml-auto shrink-0 text-danger" />
             ) : state.muted ? (
               <MicOff size={12} className="ml-auto shrink-0 text-danger" />
@@ -122,7 +127,9 @@ export function VoiceBar() {
   const canScreen = has(permissions, PERMISSIONS.STREAM) && canShareScreen();
 
   return (
-    <div className="flex flex-col gap-2 border-t border-line bg-raise px-3 py-2.5">
+    /* Sin tarjeta propia: los botones flotan como píldoras sueltas sobre el
+       fondo de la barra lateral, en vez de ir metidos en otro panel. */
+    <div className="flex flex-col gap-2 px-3 py-2.5">
       <div className="flex items-center gap-2">
         <Signal size={16} className="shrink-0 text-ok" />
         <span className="min-w-0 flex-1">
@@ -215,6 +222,76 @@ export function VoiceBar() {
         <p className="text-[0.65rem] text-muted">{t(local.route === "relay" ? "voice.viaRelay" : "voice.videoDirect")}</p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Lo que un moderador puede hacer con quien está en la sala (§11, §23).
+ *
+ * Solo aparece si esta persona tiene de verdad alguno de los tres permisos EN
+ * ESTE canal, y nunca sobre uno mismo. Un menú lleno de opciones que la
+ * instancia va a rechazar no es una interfaz, es una trampa: se pulsa, no pasa
+ * nada, y nadie sabe si falló el permiso o la conexión.
+ */
+function ModerateMenu({ channelId, state }: { channelId: string; state: VoiceState }) {
+  const t = useT();
+  const selfId = useStore((s) => s.user?.id);
+  const permissions = toBits(
+    useStore((s) => (s.activeCommunityId ? s.data[s.activeCommunityId]?.channel_permissions[channelId] : undefined)) ??
+      "0",
+  );
+
+  const canMute = has(permissions, PERMISSIONS.MUTE_MEMBERS);
+  const canDeafen = has(permissions, PERMISSIONS.DEAFEN_MEMBERS);
+  const canMove = has(permissions, PERMISSIONS.MOVE_MEMBERS);
+
+  if (state.user_id === selfId) return null;
+  if (!canMute && !canDeafen && !canMove) return null;
+
+  return (
+    <Menu
+      trigger={({ onClick }) => (
+        <IconButton label={t("voice.moderate")} onClick={onClick} className="h-7 w-7 bg-bg/70">
+          <MoreVertical size={14} />
+        </IconButton>
+      )}
+    >
+      {(close) => (
+        <>
+          {canMute ? (
+            <MenuItem
+              onClick={() => {
+                close();
+                moderateVoice(channelId, state.user_id, state.force_muted ? "unmute" : "mute");
+              }}
+            >
+              {state.force_muted ? t("voice.forceUnmute") : t("voice.forceMute")}
+            </MenuItem>
+          ) : null}
+          {canDeafen ? (
+            <MenuItem
+              onClick={() => {
+                close();
+                moderateVoice(channelId, state.user_id, state.force_deafened ? "undeafen" : "deafen");
+              }}
+            >
+              {state.force_deafened ? t("voice.forceUndeafen") : t("voice.forceDeafen")}
+            </MenuItem>
+          ) : null}
+          {canMove ? (
+            <MenuItem
+              danger
+              onClick={() => {
+                close();
+                moderateVoice(channelId, state.user_id, "disconnect");
+              }}
+            >
+              {t("voice.forceDisconnect")}
+            </MenuItem>
+          ) : null}
+        </>
+      )}
+    </Menu>
   );
 }
 
@@ -323,9 +400,15 @@ export function VoiceStage({ channelId }: { channelId: string }) {
             data-user={state.user_id}
             data-speaking={speaking}
             data-link={link ?? "none"}
-            className="relative grid aspect-video place-items-center overflow-hidden rounded-card border bg-surface transition-colors duration-150"
+            className="group relative grid aspect-video place-items-center overflow-hidden rounded-card border bg-surface transition-colors duration-150"
             style={{ borderColor: speaking ? "var(--ok)" : "var(--line)" }}
           >
+            {/* Arriba a la izquierda: la derecha ya la ocupa el botón de pantalla
+                completa cuando hay vídeo. */}
+            <div className="absolute top-2 left-2 z-10 hidden group-hover:block group-focus-within:block">
+              <ModerateMenu channelId={channelId} state={state} />
+            </div>
+
             {video ? (
               <>
                 <VideoTile stream={video} self={self && state.video === "camera"} />
@@ -340,7 +423,16 @@ export function VoiceStage({ channelId }: { channelId: string }) {
               </span>
             )}
             <figcaption className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg bg-bg/80 px-2 py-1 text-xs">
-              {state.deafened ? (
+              {/* Callado por decisión propia y callado por moderación se ven
+                  distinto: quien lo mira necesita saber si esa persona puede
+                  volver a hablar sola o no. */}
+              {state.force_deafened || state.force_muted ? (
+                <Lock
+                  size={12}
+                  className="text-danger"
+                  aria-label={t(state.force_deafened ? "voice.forcedDeafened" : "voice.forcedMuted")}
+                />
+              ) : state.deafened ? (
                 <VolumeX size={12} className="text-danger" />
               ) : state.muted ? (
                 <MicOff size={12} className="text-danger" />

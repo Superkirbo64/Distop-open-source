@@ -4,12 +4,12 @@
  * leer o escribir. La validación del cliente es cortesía, esta es la que cuenta.
  */
 import { randomBytes } from "node:crypto";
-import { PERMISSIONS, ALL_PERMISSIONS, has, toBits, uuidv7 } from "@distop/protocol";
+import { PERMISSIONS, ALL_PERMISSIONS, CUSTOM_EMOJI, EMOJI_KINDS, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import { publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
 import { iceServers, relayState, setRelay, videoMode } from "./ice.ts";
-import { audit, db, seedCommunity, uniqueSlug } from "./db.ts";
+import { audit, db, markCommunityRead, seedCommunity, uniqueSlug } from "./db.ts";
 import {
   authenticate,
   countOwners,
@@ -36,13 +36,17 @@ import {
   getMember,
   getMessage,
   getRole,
+  lastReadId,
   membersOf,
   messagesOf,
   rolesOf,
+  unreadOf,
 } from "./entities.ts";
+import { createEmoji, deleteEmoji, emojisAvailableTo, emojisOf, getEmoji, unusableEmojis } from "./expressions.ts";
 import { canActOn, channelPermissions, communityPermissions, highestRolePosition, memberState } from "./permissions.ts";
 import {
   HANDLED,
+  HttpError,
   badRequest,
   conflict,
   forbidden,
@@ -59,7 +63,7 @@ import {
   type Ctx,
 } from "./http.ts";
 import { instanceHealth, VERSION } from "./instance.ts";
-import { deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, saveUpload, serveFile } from "./storage.ts";
+import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, saveRemoteAttachment, saveUpload, serveFile } from "./storage.ts";
 import { disconnectSession, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import { statesOfCommunity } from "./voice.ts";
 
@@ -94,6 +98,11 @@ route("GET", "/api/v1/info", async (ctx) => ({
   public_discovery_enabled: config.publicDiscoveryEnabled,
   max_upload_mb: config.maxUploadMb,
   allowed_upload_types: config.allowedUploadTypes,
+  /* Booleano y nunca la clave: el cliente solo necesita saber si enseñar la
+     pestaña. La clave no sale de la instancia jamás (§13.3). */
+  gif_enabled: config.giphyApiKey !== "",
+  /** La galeria de stickers va por su cuenta: otra clave, otro servicio. */
+  sticker_gallery_enabled: config.klipyApiKey !== "",
   /** Dirección por la que llega la gente de fuera; vacía = solo local (§6).
       Si hay un túnel abierto desde la app, esa manda sobre la del .env. */
   public_url: publicUrl(),
@@ -307,9 +316,23 @@ route("PATCH", "/api/v1/users/me", async (ctx) => {
   if (accent !== undefined) fields.push(["accent_color", accent]);
   if (body.locale !== undefined) fields.push(["locale", v.oneOf(body, "locale", ["es", "pt-BR", "en"] as const)]);
   if (body.theme !== undefined) fields.push(["theme", v.oneOf(body, "theme", ["light", "dark", "system"] as const)]);
+  if (body.status !== undefined) fields.push(["status", v.oneOf(body, "status", USER_STATUSES)]);
+  /* Texto plano y corto. No se interpreta al pintarlo, así que no hay nada que
+     sanear aquí; el límite es para que no acabe siendo una segunda biografía. */
+  if (body.custom_status !== undefined) {
+    const frase = v.optionalString(body, "custom_status", { max: 120 });
+    fields.push(["custom_status", frase || null]);
+  }
   if (body.settings !== undefined) {
     if (typeof body.settings !== "object" || body.settings === null) throw badRequest('"settings" debe ser un objeto.');
     fields.push(["settings", JSON.stringify(body.settings)]);
+  }
+  /* Se normaliza antes de guardar, no se valida campo a campo: toProfileStyle
+     acepta cualquier cosa y devuelve algo válido, así que un id inventado se
+     cae solo al valor por defecto en vez de tumbar la petición entera. Lo que
+     entra en la base ya está limpio, y de ahí sale directo a una clase CSS (§22). */
+  if (body.profile_style !== undefined) {
+    fields.push(["profile_style", JSON.stringify(toProfileStyle(body.profile_style))]);
   }
   if (fields.length === 0) return toSelfUser(findUserById(user.id)!);
 
@@ -322,6 +345,11 @@ route("PATCH", "/api/v1/users/me", async (ctx) => {
   for (const community of communitiesForUser(user.id)) {
     const member = getMember(community.id, user.id);
     if (member) publish(community.id, { t: "MEMBER_UPDATE", d: member });
+    /* Ponerse invisible tiene que sacarte de la lista de conectados al momento.
+       MEMBER_UPDATE lleva el estado elegido, pero quién figura en línea va en
+       PRESENCE_UPDATE, y son dos listas distintas en el cliente. */
+    if (body.status !== undefined)
+      publish(community.id, { t: "PRESENCE_UPDATE", d: { community_id: community.id, online: onlineIn(community.id) } });
   }
   return updated;
 });
@@ -450,6 +478,12 @@ route("GET", "/api/v1/communities/:id/bootstrap", (ctx) => {
     permissions: communityPermissions(communityId, user.id).toString(),
     channel_permissions: channelPerms,
     voice_states: statesOfCommunity(communityId),
+    emojis: emojisOf(communityId),
+    unread: unreadOf(user.id, communityId, visible.map((channel) => channel.id)),
+    // Hasta dónde había leído en cada canal: es la línea de "mensajes nuevos".
+    read_state: Object.fromEntries(
+      visible.map((channel) => [channel.id, lastReadId(user.id, channel.id)]).filter(([, id]) => id !== null),
+    ),
   };
 });
 
@@ -730,11 +764,32 @@ route("POST", "/api/v1/channels/:id/messages", async (ctx) => {
   if (replyTo && !db.prepare("SELECT 1 FROM messages WHERE id = ? AND channel_id = ?").get(replyTo, channel.id))
     throw badRequest("El mensaje al que respondes no está en este canal.");
 
+  /* Emojis propios: dos comprobaciones distintas y las dos hacen falta.
+     El permiso dice si en ESTE canal se pueden usar; `unusableEmojis` dice si
+     los que ha puesto existen y salen de una comunidad suya. Lo segundo no es
+     un permiso configurable: es lo que impide referenciar el emoji de una
+     comunidad privada ajena y que la instancia lo sirva igualmente. */
+  if (CUSTOM_EMOJI.test(content)) {
+    CUSTOM_EMOJI.lastIndex = 0; // el flag /g deja el índice donde paró
+    requireChannelPerm(channel.id, user.id, PERMISSIONS.USE_CUSTOM_EMOJIS, "usar emojis personalizados");
+    const malos = unusableEmojis(content, user.id);
+    if (malos.length > 0)
+      throw badRequest(`No puedes usar estos emojis: ${malos.map((n) => `:${n}:`).join(", ")}.`, { emojis: malos });
+  }
+
+  /* "@everyone" avisa a toda la comunidad, así que es un permiso (§11). Sin él no
+     se rechaza el mensaje —prohibir escribir dos palabras sería absurdo—: se
+     guarda como texto normal y no interrumpe a nadie. Se decide aquí y se
+     archiva, porque editar el mensaje después no debe convertirlo en un aviso. */
+  const mentionsEveryone =
+    /(^|\s)@(everyone|todos)\b/.test(content) &&
+    has(channelPermissions(channel.id, user.id), PERMISSIONS.MENTION_EVERYONE);
+
   const id = uuidv7();
   db.prepare(
-    `INSERT INTO messages (id, channel_id, community_id, author_id, content, created_at, reply_to_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, channel.id, channel.community_id, user.id, content, Date.now(), replyTo);
+    `INSERT INTO messages (id, channel_id, community_id, author_id, content, created_at, reply_to_id, mentions_everyone)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, channel.id, channel.community_id, user.id, content, Date.now(), replyTo, mentionsEveryone ? 1 : 0);
   linkAttachments(id, attachmentIds, user.id);
 
   const message = getMessage(id)!;
@@ -797,6 +852,34 @@ route("GET", "/api/v1/channels/:id/pins", (ctx) => {
     ctx.params.id!,
   ) as { id: string }[];
   return rows.map((r) => getMessage(r.id)).filter(Boolean);
+});
+
+/**
+ * Marcar hasta dónde he leído en un canal.
+ *
+ * Lo manda el cliente con el id del último mensaje que tiene a la vista, y
+ * nunca retrocede: si otra pestaña ya leyó más allá, un mensaje que llega tarde
+ * desde esta no puede volver a marcar como nuevo lo ya leído.
+ */
+route("POST", "/api/v1/channels/:id/read", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const channelId = ctx.params.id!;
+  requireChannelPerm(channelId, user.id, PERMISSIONS.READ_HISTORY, "leer el historial");
+
+  const body = await readJson(ctx);
+  const messageId = v.string(body, "message_id", { max: 64 });
+
+  const current = lastReadId(user.id, channelId);
+  const furthest = current && current > messageId ? current : messageId;
+
+  db.prepare(
+    `INSERT INTO read_state (user_id, channel_id, last_read_id, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, channel_id) DO UPDATE SET last_read_id = excluded.last_read_id, updated_at = excluded.updated_at`,
+  ).run(user.id, channelId, furthest, Date.now());
+
+  // A las demás sesiones: leer en el móvil apaga el aviso del escritorio.
+  publishToUser(user.id, { t: "READ_UPDATE", d: { channel_id: channelId, last_read_id: furthest } });
+  return { channel_id: channelId, last_read_id: furthest };
 });
 
 route("GET", "/api/v1/channels/:id/search", (ctx) => {
@@ -1043,6 +1126,557 @@ route("GET", "/api/v1/communities/:id/audit", (ctx) => {
 
 /* ── invitaciones (§5) ─────────────────────────────────────────────── */
 
+/* ── emojis y stickers propios (§10.3) ─────────────────────────────── */
+
+route("GET", "/api/v1/communities/:id/emojis", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const communityId = ctx.params.id!;
+  requireMembership(communityId, user.id);
+  return emojisOf(communityId);
+});
+
+/**
+ * Todo lo que esta persona puede usar, de todas sus comunidades a la vez.
+ * El selector necesita esto de una sola petición: pedir comunidad por comunidad
+ * al abrir el panel deja la interfaz parpadeando mientras van llegando.
+ */
+route("GET", "/api/v1/expressions", (ctx) => {
+  const { user } = requireAuth(ctx);
+  return emojisAvailableTo(user.id);
+});
+
+route("POST", "/api/v1/communities/:id/emojis", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const communityId = ctx.params.id!;
+  requireMembership(communityId, user.id);
+  requirePerm(communityId, user.id, PERMISSIONS.MANAGE_COMMUNITY, "añadir emojis o stickers");
+
+  const body = await readJson(ctx);
+  const emoji = createEmoji({
+    communityId,
+    name: v.string(body, "name", { max: 32 }),
+    kind: v.oneOf(body, "kind", EMOJI_KINDS, "emoji"),
+    attachmentId: v.string(body, "attachment_id", { max: 64 }),
+    creatorId: user.id,
+  });
+
+  audit(communityId, user.id, "EMOJI_CREATE", emoji.id, { name: emoji.name, kind: emoji.kind });
+  publish(communityId, { t: "EMOJI_UPDATE", d: { community_id: communityId, emojis: emojisOf(communityId) } });
+  return emoji;
+});
+
+route("DELETE", "/api/v1/emojis/:id", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const emoji = getEmoji(ctx.params.id!);
+  if (!emoji) throw notFound("No encontrado.");
+  requirePerm(emoji.community_id, user.id, PERMISSIONS.MANAGE_COMMUNITY, "quitar emojis o stickers");
+
+  deleteEmoji(emoji.id);
+  audit(emoji.community_id, user.id, "EMOJI_DELETE", emoji.id, { name: emoji.name, kind: emoji.kind });
+  publish(emoji.community_id, {
+    t: "EMOJI_UPDATE",
+    d: { community_id: emoji.community_id, emojis: emojisOf(emoji.community_id) },
+  });
+  return { deleted: true };
+});
+
+/* ── importar stickers de Telegram (§10.3) ─────────────────────────────
+   Un paquete de Telegram se convierte en stickers PROPIOS de la comunidad:
+   se reutiliza createEmoji tal cual, así que se pintan, se borran y se listan
+   exactamente igual que uno subido a mano. Nada de un sistema paralelo.
+
+   MVP solo estáticos (WEBP): los animados de Telegram son .tgs, un Lottie
+   comprimido con gzip que aquí no se decodifica todavía — se filtran en la
+   propia lista para no dejar elegir uno que luego el servidor rechazaría.
+   ponytail: animados y de vídeo quedan fuera; el mismo lottie-web que ya
+   pinta los emoji animados (AnimatedEmoji.tsx) serviría para los .tgs el día
+   que haga falta. */
+
+interface TelegramSticker {
+  file_id: string;
+  emoji: string;
+  static: boolean;
+}
+
+function requireTelegram(): string {
+  if (!config.telegramBotToken) throw notFound("Esta instancia no tiene activada la importación de Telegram.");
+  return config.telegramBotToken;
+}
+
+/** `getFile` + descarga: dos peticiones a Telegram, porque el enlace final lleva el token. */
+async function telegramFile(fileId: string): Promise<{ data: Buffer; contentType: string }> {
+  const token = requireTelegram();
+  const corte = AbortSignal.timeout(8000);
+
+  const meta = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`, {
+    signal: corte,
+  })
+    .then((res) => res.json())
+    .catch(() => null);
+  const path = (meta as { result?: { file_path?: string } } | null)?.result?.file_path;
+  if (!path) throw new HttpError(502, "UPSTREAM_ERROR", "Telegram no encontró ese sticker.");
+
+  const res = await fetch(`https://api.telegram.org/file/bot${token}/${path}`, { signal: corte }).catch(() => null);
+  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "No se pudo traer el sticker.");
+
+  return { data: Buffer.from(await res.arrayBuffer()), contentType: res.headers.get("content-type") ?? "application/octet-stream" };
+}
+
+route("GET", "/api/v1/stickers", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const token = requireTelegram();
+  rateLimit(`stickers:${user.id}`, 20, 60_000);
+
+  // Solo lo que Telegram admite como nombre de paquete: letras, números y "_".
+  const pack = ctx.url.searchParams.get("pack")?.trim() ?? "";
+  if (!/^[a-zA-Z0-9_]{1,64}$/.test(pack)) throw badRequest("Nombre de paquete no válido.");
+
+  const res = await fetch(`https://api.telegram.org/bot${token}/getStickerSet?name=${encodeURIComponent(pack)}`, {
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+  const json = (await res?.json().catch(() => null)) as
+    | { ok?: boolean; result?: { title?: string; stickers?: unknown[] } }
+    | null;
+  if (!res?.ok || !json?.ok || !json.result) throw notFound("No se encontró ese paquete de stickers.");
+
+  const stickers: TelegramSticker[] = (json.result.stickers ?? []).flatMap((raw): TelegramSticker[] => {
+    const item = raw as { file_id?: string; emoji?: string; is_animated?: boolean; is_video?: boolean };
+    if (!item.file_id) return [];
+    return [{ file_id: item.file_id, emoji: item.emoji ?? "", static: !item.is_animated && !item.is_video }];
+  });
+
+  return { title: json.result.title ?? pack, stickers };
+});
+
+/** Igual que /api/v1/avatars/image: sin sesión, porque va en un `<img src>`. */
+route("GET", "/api/v1/stickers/image", async (ctx) => {
+  rateLimit(`stickerimg:${ctx.ip}`, 120, 60_000);
+
+  const fileId = ctx.url.searchParams.get("id") ?? "";
+  if (!/^[\w-]{1,200}$/.test(fileId)) throw badRequest("Sticker no válido.");
+
+  const { data, contentType } = await telegramFile(fileId);
+  if (!contentType.startsWith("image/")) throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Ese sticker no es una imagen estática.");
+
+  ctx.res.writeHead(200, {
+    "content-type": contentType,
+    "cache-control": "public, max-age=31536000, immutable",
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; sandbox",
+  });
+  ctx.res.end(data);
+  return HANDLED;
+});
+
+route("POST", "/api/v1/communities/:id/emojis/import-telegram", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const communityId = ctx.params.id!;
+  requireMembership(communityId, user.id);
+  requirePerm(communityId, user.id, PERMISSIONS.MANAGE_COMMUNITY, "añadir emojis o stickers");
+  rateLimit(`stickerimport:${user.id}`, 30, 60_000);
+
+  const body = await readJson(ctx);
+  const fileId = v.string(body, "file_id", { max: 200 });
+  const name = v.string(body, "name", { max: 32 });
+
+  const { data, contentType } = await telegramFile(fileId);
+  if (data.length > MAX_UPLOAD_BYTES)
+    throw new HttpError(413, "PAYLOAD_TOO_LARGE", `El sticker pasa del límite de ${config.maxUploadMb} MB de esta instancia.`);
+
+  const attachment = saveUpload({ ownerId: user.id, filename: "sticker.webp", contentType, data });
+  const emoji = createEmoji({ communityId, name, kind: "sticker", attachmentId: attachment.id, creatorId: user.id });
+
+  audit(communityId, user.id, "EMOJI_CREATE", emoji.id, { name: emoji.name, kind: emoji.kind, source: "telegram" });
+  publish(communityId, { t: "EMOJI_UPDATE", d: { community_id: communityId, emojis: emojisOf(communityId) } });
+  return emoji;
+});
+
+/* ── buscador de GIF (§12) ─────────────────────────────────────────────
+   La instancia hace de intermediaria: el navegador de cada miembro nunca habla
+   con Giphy, así que ni su IP ni lo que escribe salen de aquí. Y la respuesta se
+   recorta a lo que hace falta para pintar una rejilla, en vez de devolver el
+   JSON entero de un tercero a un cliente que solo necesita cuatro campos. */
+
+interface Gif {
+  id: string;
+  /** Lo que se manda al enviarlo: el archivo, no la página de Giphy. */
+  url: string;
+  /** Versión ligera para la rejilla; cargar 30 GIF a tamaño completo no. */
+  preview: string;
+  title: string;
+  width: number;
+  height: number;
+}
+
+/** `recurso` es "gifs" o "stickers": mismo endpoint de Giphy, mismo formato de
+ *  respuesta, así que es la única diferencia entre buscar uno u otro. */
+async function askGiphy(recurso: "gifs" | "stickers", path: string, params: Record<string, string>): Promise<Gif[]> {
+  if (!config.giphyApiKey) throw notFound("Esta instancia no tiene el buscador de GIF activado.");
+
+  const url = new URL(`https://api.giphy.com/v1/${recurso}/${path}`);
+  url.searchParams.set("api_key", config.giphyApiKey);
+  url.searchParams.set("rating", "pg-13");
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+
+  // Un tercero lento no puede dejar colgada una petición de la instancia.
+  const corte = AbortSignal.timeout(8000);
+  const res = await fetch(url, { signal: corte }).catch(() => null);
+  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "Giphy no respondió. Prueba otra vez en un momento.");
+
+  const json = (await res.json()) as { data?: unknown[] };
+  const lista = Array.isArray(json.data) ? json.data : [];
+
+  return lista.flatMap((raw): Gif[] => {
+    const item = raw as {
+      id?: string;
+      title?: string;
+      images?: Record<string, { url?: string; width?: string; height?: string }>;
+    };
+    const grande = item.images?.downsized_medium ?? item.images?.original;
+    const pequeno = item.images?.fixed_width_small ?? item.images?.preview_gif ?? grande;
+    if (!item.id || !grande?.url || !pequeno?.url) return [];
+    return [
+      {
+        id: item.id,
+        url: grande.url,
+        preview: pequeno.url,
+        title: typeof item.title === "string" ? item.title.slice(0, 120) : "",
+        width: Number(grande.width) || 0,
+        height: Number(grande.height) || 0,
+      },
+    ];
+  });
+}
+
+route("GET", "/api/v1/gifs", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  rateLimit(`gif:${user.id}`, 30, 60_000);
+
+  const consulta = ctx.url.searchParams.get("q")?.trim() ?? "";
+  const limite = String(Math.min(Number(ctx.url.searchParams.get("limit") ?? 24) || 24, 40));
+
+  // Sin texto se enseña lo que hay en portada, no una rejilla vacía.
+  return consulta
+    ? askGiphy("gifs", "search", { q: consulta.slice(0, 100), limit: limite })
+    : askGiphy("gifs", "trending", { limit: limite });
+});
+
+/**
+ * Galería de stickers (§10.3, §12), buscable como la de fondos o avatares —
+ * no un paquete concreto por nombre, sino "escribo y aparecen". Giphy tiene su
+ * propio catálogo de stickers (PNG/GIF con fondo transparente) detrás del
+ * mismo endpoint y la misma clave que ya usa el buscador de GIF: no hace falta
+ * ni una cuenta ni una clave nueva, es literalmente el mismo askGiphy con
+ * "stickers" en vez de "gifs".
+ *
+ * Al enviarlo se guarda igual que un GIF (/api/v1/gifs/save ya solo exige que
+ * la URL sea del CDN de Giphy, y este catálogo vive en el mismo CDN).
+ */
+/**
+ * Galeria de stickers, contra Klipy.
+ *
+ * Klipy y no Giphy: es gratis, esta pensado para stickers y devuelve PNG y WebP
+ * con transparencia, que es lo que distingue un sticker de un GIF cuadrado con
+ * fondo. Se queda en su propia funcion en vez de reusar askGiphy porque la
+ * respuesta no se parece en nada — la de Klipy anida los formatos por tamano.
+ *
+ * Formato de la respuesta (docs.klipy.com/stickers-api):
+ *   { result, data: { data: [ { slug, title, file: { hd|md|sm|xs: { webp|png|gif: { url, width, height } } } } ] } }
+ *
+ * Se piden webp y gif y nada mas: el mp4/webm no sirve para pegarlo en un
+ * mensaje, y pedir menos formatos baja mucho el tamano de la respuesta.
+ */
+async function askKlipy(path: "trending" | "search", params: Record<string, string>): Promise<Gif[]> {
+  if (!config.klipyApiKey) throw notFound("Esta instancia no tiene la galeria de stickers activada.");
+
+  // La clave va en la RUTA, no en la query: asi lo define Klipy.
+  const url = new URL(`https://api.klipy.com/api/v1/${encodeURIComponent(config.klipyApiKey)}/stickers/${path}`);
+  url.searchParams.set("format_filter", "webp,gif");
+  url.searchParams.set("content_filter", "medium");
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "Klipy no respondio. Prueba otra vez en un momento.");
+
+  interface Archivo {
+    url?: string;
+    width?: number;
+    height?: number;
+  }
+  type Tamano = Partial<Record<"webp" | "gif" | "png", Archivo>>;
+  const json = (await res.json()) as { data?: { data?: unknown[] } };
+  const lista = Array.isArray(json.data?.data) ? json.data.data : [];
+
+  return lista.flatMap((raw): Gif[] => {
+    const item = raw as { slug?: string; title?: string; file?: Partial<Record<"hd" | "md" | "sm" | "xs", Tamano>> };
+    // md para mandar y xs para la rejilla; si falta uno, se cae al siguiente.
+    const grande = elArchivo(item.file?.md ?? item.file?.hd ?? item.file?.sm);
+    const pequeno = elArchivo(item.file?.xs ?? item.file?.sm) ?? grande;
+    if (!item.slug || !grande?.url || !pequeno?.url) return [];
+    return [
+      {
+        id: item.slug,
+        url: grande.url,
+        preview: pequeno.url,
+        title: typeof item.title === "string" ? item.title.slice(0, 120) : "",
+        width: Number(grande.width) || 0,
+        height: Number(grande.height) || 0,
+      },
+    ];
+  });
+
+  /** webp primero: pesa la mitad que el gif y conserva la transparencia. */
+  function elArchivo(t: Tamano | undefined): Archivo | undefined {
+    return t?.webp ?? t?.gif ?? t?.png;
+  }
+}
+
+route("GET", "/api/v1/stickers/gallery", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  rateLimit(`stickergallery:${user.id}`, 30, 60_000);
+
+  const consulta = ctx.url.searchParams.get("q")?.trim() ?? "";
+  const porPagina = String(Math.min(Number(ctx.url.searchParams.get("limit") ?? 24) || 24, 50));
+
+  /* Klipy pide un PAIS (ISO 3166: br, us, ru), no un idioma, asi que solo se
+     manda cuando el idioma de la persona lleva region: "pt-BR" da "br", pero
+     "en" no es ningun pais y "es" seria decirle "España" a un mexicano. Sin
+     este parametro Klipy decide por su cuenta, que acierta mas que adivinar. */
+  const region = /-([A-Za-z]{2})$/.exec(user.locale)?.[1]?.toLowerCase();
+  const comun = { per_page: porPagina, ...(region ? { locale: region } : {}) };
+
+  return consulta ? askKlipy("search", { ...comun, q: consulta.slice(0, 100) }) : askKlipy("trending", comun);
+});
+
+/* ── buscador de fondos (§10.2) ────────────────────────────────────────
+   Mismo trato que los GIF: proxy en la instancia. Aquí además es obligatorio,
+   porque wallhaven.cc no manda cabeceras CORS y desde el navegador la petición
+   ni llega a salir. Se devuelven cuatro campos, no el JSON entero de un tercero. */
+
+interface Wallpaper {
+  id: string;
+  /** Resolución completa: lo que se pone de fondo al elegirlo. */
+  url: string;
+  /** Miniatura para la rejilla; cargar 24 imágenes de 4K no es una rejilla. */
+  preview: string;
+  resolution: string;
+}
+
+route("GET", "/api/v1/wallpapers", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  // ponytail: por usuario. Wallhaven corta a 45/min para toda la instancia, así
+  // que con muchos buscando a la vez el techo lo pone él; se verá como 502.
+  rateLimit(`wallpaper:${user.id}`, 20, 60_000);
+
+  const consulta = ctx.url.searchParams.get("q")?.trim().slice(0, 100) ?? "";
+  const pagina = Math.min(Math.max(Number(ctx.url.searchParams.get("page") ?? 1) || 1, 1), 20);
+
+  const url = new URL("https://wallhaven.cc/api/v1/search");
+  url.searchParams.set("q", consulta);
+  url.searchParams.set("purity", "100"); // solo SFW, y por eso la clave sobra
+  url.searchParams.set("categories", "111");
+  url.searchParams.set("atleast", "1920x1080"); // es un fondo, no una miniatura
+  url.searchParams.set("sorting", consulta ? "relevance" : "toplist");
+  url.searchParams.set("page", String(pagina));
+  if (config.wallhavenApiKey) url.searchParams.set("apikey", config.wallhavenApiKey);
+
+  const corte = AbortSignal.timeout(8000);
+  const res = await fetch(url, { signal: corte }).catch(() => null);
+  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "Wallhaven no respondió. Prueba otra vez en un momento.");
+
+  const json = (await res.json()) as { data?: unknown[] };
+  const lista = Array.isArray(json.data) ? json.data : [];
+
+  return lista.flatMap((raw): Wallpaper[] => {
+    const item = raw as { id?: string; path?: string; resolution?: string; thumbs?: { small?: string } };
+    if (!item.id || !item.path || !item.thumbs?.small) return [];
+    return [{ id: item.id, url: item.path, preview: item.thumbs.small, resolution: item.resolution ?? "" }];
+  });
+});
+
+/* ── galeria de avatares y banners (§10.1) ──────────────────────────────
+   Mismo patrón que los GIF y los fondos, y aquí el proxy no es opcional por dos
+   razones: nekos.best exige una cabecera User-Agent propia, y `User-Agent` es
+   una de las cabeceras que el navegador PROHÍBE fijar desde JavaScript. Sin
+   instancia por delante, la petición no se puede hacer.
+
+   La imagen se guarda como enlace, igual que un fondo. Quien la quiera para
+   siempre la baja y la sube: entonces vive en el disco del anfitrión. */
+
+interface Pfp {
+  id: string;
+  url: string;
+  /** No hay miniatura aparte: los ficheros ya son pequeños (200-500 px). */
+  preview: string;
+  /** De dónde sale, para poder dar crédito. */
+  source: string;
+  animated: boolean;
+}
+
+/** Se aprende una vez al arrancar y se reutiliza: no cambia entre peticiones. */
+let categorias: { name: string; animated: boolean }[] | null = null;
+
+async function nekos(path: string): Promise<unknown> {
+  const res = await fetch(`https://nekos.best/api/v2/${path}`, {
+    headers: { "user-agent": `Distop/${VERSION} (plataforma comunitaria open source)` },
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "La galería no respondió. Prueba otra vez en un momento.");
+  return res.json();
+}
+
+route("GET", "/api/v1/avatars/categories", async (ctx) => {
+  requireAuth(ctx);
+  if (!categorias) {
+    const raw = (await nekos("endpoints")) as Record<string, { format?: string }>;
+    categorias = Object.entries(raw)
+      .map(([name, meta]) => ({ name, animated: meta.format === "gif" }))
+      // Las animadas primero: son las que en otras plataformas se cobran.
+      .sort((a, b) => Number(b.animated) - Number(a.animated) || a.name.localeCompare(b.name));
+  }
+  return categorias;
+});
+
+/**
+ * Los bytes de la imagen también pasan por aquí, no solo el JSON.
+ *
+ * No es por privacidad: nekos.best responde 403 a cualquier User-Agent de
+ * navegador. Comprobado. Así que un <img src="https://nekos.best/..."> sale
+ * roto siempre, y la única forma de pintar la rejilla es que la instancia baje
+ * la imagen con su propia cabecera y la reenvíe.
+ *
+ * Por eso lo que se guarda en avatar_url es esta ruta y no la de nekos.best:
+ * si guardáramos la original, el avatar se vería roto para toda la comunidad.
+ *
+ * ponytail: reenvía en vez de guardar en disco. Menos código y la cache del
+ * navegador se lo come; si un día molesta depender de que nekos.best siga en
+ * pie, esto pasa a bajarlo una vez y guardarlo como adjunto.
+ */
+const GALERIA = "nekos.best";
+
+route("GET", "/api/v1/avatars/image", async (ctx) => {
+  /* Sin sesión, igual que /files/:id: un <img src> no manda la cabecera de
+     autorización, así que exigirla dejaba la rejilla entera en blanco. Lo que
+     sustituye a la sesión es el límite por IP: esto solo alcanza un host, pero
+     sigue siendo ancho de banda de quien hospeda. */
+  rateLimit(`pfpimg:${ctx.ip}`, 120, 60_000);
+
+  /* Protección SSRF (§22): el host va comparado entero contra una constante, no
+     con endsWith ni includes. `nekos.best.atacante.com` pasaría un endsWith. */
+  let origen: URL;
+  try {
+    origen = new URL(ctx.url.searchParams.get("u") ?? "");
+  } catch {
+    throw badRequest("Enlace no válido.");
+  }
+  if (origen.protocol !== "https:" || origen.hostname !== GALERIA) throw badRequest("Ese enlace no es de la galería.");
+
+  const res = await fetch(origen, {
+    headers: { "user-agent": `Distop/${VERSION} (plataforma comunitaria open source)` },
+    signal: AbortSignal.timeout(8000),
+  }).catch(() => null);
+
+  const tipo = res?.headers.get("content-type") ?? "";
+  if (!res?.ok || !tipo.startsWith("image/")) throw new HttpError(502, "UPSTREAM_ERROR", "La imagen no se pudo traer.");
+
+  ctx.res.writeHead(200, {
+    "content-type": tipo,
+    // Inmutable de verdad: cada imagen de la galería tiene su propio UUID.
+    "cache-control": "public, max-age=31536000, immutable",
+    "x-content-type-options": "nosniff",
+    "content-security-policy": "default-src 'none'; sandbox",
+  });
+  ctx.res.end(Buffer.from(await res.arrayBuffer()));
+  return HANDLED;
+});
+
+route("GET", "/api/v1/avatars", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  rateLimit(`pfp:${user.id}`, 20, 60_000);
+
+  // Solo letras: la categoría entra en la ruta de un tercero, y cualquier otra
+  // cosa sería dejar que el cliente componga la URL que pedimos.
+  const categoria = (ctx.url.searchParams.get("category") ?? "neko").toLowerCase();
+  if (!/^[a-z]{1,20}$/.test(categoria)) throw badRequest("Categoría no válida.");
+
+  const cantidad = Math.min(Math.max(Number(ctx.url.searchParams.get("amount") ?? 12) || 12, 1), 20);
+  const json = (await nekos(`${categoria}?amount=${cantidad}`)) as { results?: unknown[] };
+  const lista = Array.isArray(json.results) ? json.results : [];
+
+  return lista.flatMap((raw): Pfp[] => {
+    const item = raw as { url?: string; anime_name?: string; artist_name?: string };
+    if (!item.url) return [];
+    const porLaInstancia = `/api/v1/avatars/image?u=${encodeURIComponent(item.url)}`;
+    return [
+      {
+        id: item.url,
+        url: porLaInstancia,
+        preview: porLaInstancia,
+        source: item.anime_name ?? item.artist_name ?? "",
+        animated: item.url.endsWith(".gif"),
+      },
+    ];
+  });
+});
+
+/**
+ * Enviar un GIF o sticker de la galería no lo descarga ni lo guarda: queda
+ * como un adjunto que la instancia reenvía cada vez que alguien lo ve (§22),
+ * igual que la galería de avatares.
+ *
+ * Enlazarlo tal cual convertiría cada mensaje en una baliza: cada persona que
+ * abra el canal, hoy y dentro de un año, le pediría el archivo a Giphy y le
+ * entregaría su IP. Descargarlo entero costaría disco del anfitrión para
+ * siempre por algo que Giphy ya aloja. Esto es el punto medio: solo se pide la
+ * cabecera para saber tipo y tamaño, nunca el archivo completo, y cada vista
+ * futura vuelve a pasar por aquí — nunca por el navegador de quien lee.
+ *
+ * El precio de no guardarlo: si Giphy borra ese contenido, el mensaje queda
+ * roto para siempre. Eso no pasa con un archivo subido a mano (§29.3).
+ */
+route("POST", "/api/v1/gifs/save", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  rateLimit(`gifsave:${user.id}`, 20, 60_000);
+  // Sin ninguna galeria configurada no hay de donde sacar una de estas URL, asi
+  // que aceptarlas solo seria regalar ancho de banda del anfitrion.
+  if (!config.giphyApiKey && !config.klipyApiKey)
+    throw notFound("Esta instancia no tiene ninguna galeria activada.");
+
+  const body = await readJson(ctx);
+  const origen = v.string(body, "url", { max: 500 });
+
+  // Misma lista blanca con la que despues se reenvia el archivo. Sin ella esto
+  // seria un SSRF de manual, capaz de traerse cualquier URL interna que alcance
+  // el anfitrion (§22).
+  let destino: URL;
+  try {
+    destino = new URL(origen);
+  } catch {
+    throw badRequest("Dirección no válida.");
+  }
+  if (destino.protocol !== "https:" || !CDN_REENVIABLE.test(destino.hostname))
+    throw badRequest("Solo se aceptan archivos de las galerias de la instancia.");
+
+  const head = await fetch(destino, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (!head?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "No se pudo comprobar el archivo.");
+
+  const tipo = head.headers.get("content-type")?.split(";")[0]?.trim() ?? "image/gif";
+  const tamano = Number(head.headers.get("content-length")) || 0;
+  if (tamano > MAX_UPLOAD_BYTES)
+    throw new HttpError(413, "PAYLOAD_TOO_LARGE", `El GIF pasa del límite de ${config.maxUploadMb} MB de esta instancia.`);
+
+  /* El nombre sale del tipo real y no siempre "gif.gif": un sticker de Klipy es
+     un webp, y un adjunto llamado .gif que no lo es confunde al descargarlo. */
+  const extension = tipo === "image/webp" ? "webp" : tipo === "image/png" ? "png" : "gif";
+  return saveRemoteAttachment({
+    ownerId: user.id,
+    filename: `sticker.${extension}`,
+    contentType: tipo,
+    size: tamano,
+    sourceUrl: origen,
+  });
+});
+
 route("POST", "/api/v1/communities/:id/invites", async (ctx) => {
   const { user } = requireAuth(ctx);
   const communityId = ctx.params.id!;
@@ -1140,6 +1774,7 @@ route("POST", "/api/v1/invites/:code/join", (ctx) => {
       Date.now(),
     );
     db.prepare("UPDATE invites SET uses = uses + 1 WHERE code = ?").run(invite.code);
+    markCommunityRead(user.id, invite.community_id);
     audit(invite.community_id, user.id, "MEMBER_JOIN", user.id, { invite: invite.code });
     publish(invite.community_id, { t: "MEMBER_JOIN", d: getMember(invite.community_id, user.id)! });
   }

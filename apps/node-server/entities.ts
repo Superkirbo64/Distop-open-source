@@ -3,7 +3,7 @@
  * Todo lo que sale hacia el cliente pasa por aquí, para que no haya dos formas
  * distintas del mismo objeto según la ruta que lo devuelva.
  */
-import type { Category, Channel, Community, Member, Message, Reaction, Role } from "@distop/protocol";
+import type { Category, Channel, Community, Member, Message, Reaction, Role, Unread } from "@distop/protocol";
 import { db } from "./db.ts";
 import { toPublicUser, type UserRow } from "./auth.ts";
 import { attachmentsFor } from "./storage.ts";
@@ -158,6 +158,7 @@ interface MessageRow {
   edited_at: number | null;
   reply_to_id: string | null;
   pinned: number;
+  mentions_everyone: number;
 }
 
 function reactionsFor(messageIds: string[]): Map<string, Reaction[]> {
@@ -192,6 +193,7 @@ function hydrate(rows: MessageRow[]): Message[] {
   return rows.map((row) => ({
     ...row,
     pinned: row.pinned === 1,
+    mentions_everyone: row.mentions_everyone === 1,
     attachments: files.get(row.id) ?? [],
     reactions: reactions.get(row.id) ?? [],
   }));
@@ -213,4 +215,52 @@ export function messagesOf(channelId: string, opts: { before?: string | undefine
         .all(channelId, opts.limit) as MessageRow[]);
 
   return hydrate(rows.reverse());
+}
+
+/* ── estado de lectura (§9.2) ──────────────────────────────────────── */
+
+/**
+ * Qué le queda sin leer a alguien en cada canal de una comunidad.
+ *
+ * Una sola consulta para toda la comunidad, no una por canal: el número aparece
+ * en la barra lateral y se recalcula al abrir, así que no puede costar N viajes
+ * a la base. Los propios mensajes no cuentan —escribir algo no te deja algo
+ * pendiente— y los canales que la persona no puede ver se descartan después,
+ * porque el permiso se resuelve en TypeScript y no en SQL.
+ */
+export function unreadOf(userId: string, communityId: string, visibleChannelIds: string[]): Record<string, Unread> {
+  const out: Record<string, Unread> = {};
+  if (visibleChannelIds.length === 0) return out;
+
+  const rows = db
+    .prepare(
+      `SELECT m.channel_id,
+              COUNT(*) AS count,
+              SUM(CASE WHEN m.mentions_everyone = 1 OR m.content LIKE ? THEN 1 ELSE 0 END) AS mentions
+       FROM messages m
+       WHERE m.community_id = ?
+         AND m.author_id != ?
+         AND m.id > COALESCE(
+           (SELECT r.last_read_id FROM read_state r WHERE r.user_id = ? AND r.channel_id = m.channel_id), '')
+       GROUP BY m.channel_id`,
+    )
+    .all(`%<@${userId}>%`, communityId, userId, userId) as {
+    channel_id: string;
+    count: number;
+    mentions: number;
+  }[];
+
+  const visible = new Set(visibleChannelIds);
+  for (const row of rows) {
+    if (!visible.has(row.channel_id)) continue;
+    out[row.channel_id] = { count: row.count, mentions: row.mentions };
+  }
+  return out;
+}
+
+export function lastReadId(userId: string, channelId: string): string | null {
+  const row = db
+    .prepare("SELECT last_read_id FROM read_state WHERE user_id = ? AND channel_id = ?")
+    .get(userId, channelId) as { last_read_id: string } | undefined;
+  return row?.last_read_id ?? null;
 }

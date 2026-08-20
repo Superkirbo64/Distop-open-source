@@ -4,18 +4,22 @@
  * ni ningún aviso de "mejora tu plan".
  */
 import { useEffect, useState } from "react";
-import type { SelfUser } from "@distop/protocol";
+import { DEFAULT_PROFILE_STYLE, type SelfUser } from "@distop/protocol";
 import { ExternalLink, Pipette } from "lucide-react";
 import { useStore, type BackdropChoice, type Density, type FontChoice, type ThemeChoice } from "../store.ts";
 import { api } from "../lib/api.ts";
 import { probeNetwork, setIceServers, setVideoMode } from "../lib/voice.ts";
 import { LOCALES, LOCALE_LABELS } from "../i18n.ts";
 import { Avatar, Button, ErrorNote, Field, ImageField, Modal, Toggle, useT, useErrorText } from "../components/ui.tsx";
+import { WallpaperField, WallpaperPicker } from "../components/Wallpaper.tsx";
+import { Gallery } from "../components/Gallery.tsx";
+import { ProfileStyleEditor } from "../components/ProfileStyle.tsx";
+import { askNotifyPermission, notifyPermission, type NotifyLevel } from "../lib/notify.ts";
 
 /** Paleta de partida. Cualquier otro color sale del selector, sin cortapisas. */
 const ACCENTS = ["#4059e0", "#7b5cff", "#c2389c", "#d94f43", "#e08c2f", "#2f9e6f", "#2f8fd6", "#5b6472"];
 
-type Tab = "profile" | "appearance" | "voice" | "account";
+type Tab = "profile" | "appearance" | "alerts" | "voice" | "account";
 
 export function Settings({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT();
@@ -24,6 +28,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
   const tabs: Array<[Tab, string]> = [
     ["profile", t("settings.profile")],
     ["appearance", t("settings.appearance")],
+    ["alerts", t("settings.notifications")],
     ["voice", t("settings.voice")],
     ["account", t("settings.account")],
   ];
@@ -51,12 +56,27 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
 
         <div className="min-w-0">
           {tab === "profile" ? <ProfileTab /> : null}
-          {tab === "appearance" ? <AppearanceTab /> : null}
+          {tab === "appearance" ? <AppearanceTab onAdjust={onClose} /> : null}
+          {tab === "alerts" ? <AlertsTab /> : null}
           {tab === "voice" ? <VoiceTab /> : null}
           {tab === "account" ? <AccountTab onClose={onClose} /> : null}
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** Abre bajo demanda: montar la galería de entrada dispara peticiones que
+    nadie ha pedido, y son peticiones que salen de la instancia. */
+function Expander({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="space-y-2">
+      <Button onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        {label}
+      </Button>
+      {open ? children : null}
+    </div>
   );
 }
 
@@ -73,6 +93,7 @@ function ProfileTab() {
     avatar_url: user?.avatar_url ?? "",
     banner_url: user?.banner_url ?? "",
     accent_color: user?.accent_color ?? "#4059e0",
+    profile_style: user?.profile_style ?? DEFAULT_PROFILE_STYLE,
   });
   const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -93,12 +114,44 @@ function ProfileTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 rounded-[10px] border border-line p-3">
-        <Avatar name={form.display_name || "?"} url={form.avatar_url || null} id={user?.id} size={52} />
+        <Avatar name={form.display_name || "?"} url={form.avatar_url || null} id={user?.id} size={52} profile={form.profile_style} />
         <div className="min-w-0">
           <p className="display truncate font-bold">{form.display_name}</p>
           <p className="truncate text-sm text-muted">{form.pronouns || `@${user?.username}`}</p>
         </div>
       </div>
+
+      {/* Avatar y banner ARRIBA, y no al final tras el nombre y los pronombres:
+          es lo primero que se viene a cambiar, y enterrados al pie no se
+          encontraban. Tampoco se llaman ya "URL de...": el campo sube ficheros
+          además de aceptar enlaces, y el nombre viejo hacía pensar lo contrario. */}
+      <ImageField
+        label={t("settings.avatar")}
+        hint={t("settings.avatarHint")}
+        value={form.avatar_url}
+        onChange={(url) => setForm({ ...form, avatar_url: url })}
+        preview="round"
+      />
+
+      <Expander label={t("settings.galleryAvatar")}>
+        <Gallery current={form.avatar_url} onPick={(url) => setForm({ ...form, avatar_url: url })} />
+      </Expander>
+
+      <ImageField
+        label={t("settings.banner")}
+        hint={t("settings.bannerHint")}
+        value={form.banner_url}
+        onChange={(url) => setForm({ ...form, banner_url: url })}
+        preview="wide"
+      />
+
+      {/* Dos galerías para el banner porque son dos cosas distintas: paisajes de
+          Wallhaven, y arte animado de la galería de perfiles. */}
+      <Expander label={t("settings.galleryBanner")}>
+        <Gallery current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
+      </Expander>
+
+      <WallpaperPicker current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
 
       <Field label={t("settings.displayName")}>
         {(id) => (
@@ -150,20 +203,14 @@ function ProfileTab() {
         </Field>
       </div>
 
-      <ImageField
-        label={t("settings.avatar")}
-        hint={t("settings.avatarHint")}
-        value={form.avatar_url}
-        onChange={(url) => setForm({ ...form, avatar_url: url })}
-        preview="round"
-      />
-
-      <ImageField
-        label={t("settings.banner")}
-        hint={t("common.optional")}
-        value={form.banner_url}
-        onChange={(url) => setForm({ ...form, banner_url: url })}
-        preview="wide"
+      <ProfileStyleEditor
+        value={form.profile_style}
+        onChange={(patch) => setForm((prev) => ({ ...prev, profile_style: { ...prev.profile_style, ...patch } }))}
+        name={form.display_name}
+        avatarUrl={form.avatar_url}
+        bannerUrl={form.banner_url}
+        accent={form.accent_color}
+        userId={user?.id}
       />
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
@@ -175,7 +222,80 @@ function ProfileTab() {
   );
 }
 
-function AppearanceTab() {
+/**
+ * Avisos (§9.2, §8).
+ *
+ * Tres interruptores independientes en vez de uno con tres niveles, porque son
+ * tres decisiones distintas: qué merece avisar, si suena, y si el sistema
+ * operativo puede sacar una ventana. Nada de esto viaja a ninguna parte: se
+ * guarda en este dispositivo, igual que la escala o la densidad.
+ */
+function AlertsTab() {
+  const t = useT();
+  const prefs = useStore((s) => s.prefs);
+  const setPref = useStore((s) => s.setPref);
+  const [permission, setPermission] = useState(notifyPermission());
+
+  const levels: Array<[NotifyLevel, string]> = [
+    ["all", t("settings.notifyAll")],
+    ["mentions", t("settings.notifyMentions")],
+    ["off", t("settings.notifyOff")],
+  ];
+
+  return (
+    <div className="flex flex-col gap-5">
+      <fieldset className="flex flex-col gap-2">
+        <legend className="mb-1 text-sm font-medium">{t("settings.notifications")}</legend>
+        <div className="flex flex-wrap gap-2">
+          {levels.map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() => setPref("notify", value)}
+              aria-pressed={prefs.notify === value}
+              className={`btn ${prefs.notify === value ? "btn-primary" : "btn-ghost"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-muted">{t("settings.notifyHint")}</p>
+      </fieldset>
+
+      <Toggle
+        checked={prefs.sounds}
+        onChange={(value) => setPref("sounds", value)}
+        label={t("settings.sounds")}
+        hint={t("settings.soundsHint")}
+      />
+
+      <div className="flex flex-col gap-2 rounded-[10px] border border-line p-3">
+        <p className="text-sm font-medium">{t("settings.desktopNotifications")}</p>
+        <p className="text-xs text-muted">{t("settings.desktopHint")}</p>
+
+        {/* El permiso lo da el navegador y solo desde un clic real, así que aquí
+            hay un botón y no un interruptor: un interruptor prometería algo que
+            esta aplicación no puede cumplir por su cuenta. */}
+        {permission === "unsupported" ? (
+          <p className="text-xs text-warn">{t("settings.notifyUnsupported")}</p>
+        ) : permission === "granted" ? (
+          <p className="text-xs text-ok">{t("settings.notifyGranted")}</p>
+        ) : permission === "denied" ? (
+          <p className="text-xs text-warn">{t("settings.notifyDenied")}</p>
+        ) : (
+          <Button
+            variant="primary"
+            className="self-start"
+            onClick={() => void askNotifyPermission().then(setPermission)}
+          >
+            {t("settings.notifyAsk")}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AppearanceTab({ onAdjust }: { onAdjust: () => void }) {
   const t = useT();
   const prefs = useStore((s) => s.prefs);
   const setPref = useStore((s) => s.setPref);
@@ -206,8 +326,6 @@ function AppearanceTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="rounded-[10px] border border-line bg-raise px-3 py-2 text-xs text-muted">{t("settings.free")}</p>
-
       <fieldset>
         <legend className="mb-2 text-sm font-medium">{t("settings.theme")}</legend>
         <div className="flex flex-wrap gap-2">
@@ -304,6 +422,8 @@ function AppearanceTab() {
           ))}
         </div>
       </fieldset>
+
+      <WallpaperField onAdjust={onAdjust} />
 
       <Toggle
         checked={prefs.motion}

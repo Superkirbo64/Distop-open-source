@@ -4,8 +4,8 @@
  * de la base no entrega sesiones utilizables.
  */
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { uuidv7 } from "@distop/protocol";
-import type { PublicUser, SelfUser } from "@distop/protocol";
+import { USER_STATUSES, toProfileStyle, uuidv7 } from "@distop/protocol";
+import type { PublicUser, SelfUser, UserStatus } from "@distop/protocol";
 import { db } from "./db.ts";
 import { config } from "./config.ts";
 
@@ -146,6 +146,9 @@ export interface UserRow {
   locale: string;
   theme: string;
   settings: string;
+  status: string;
+  custom_status: string | null;
+  profile_style: string;
   created_at: number;
 }
 
@@ -160,6 +163,12 @@ export function toPublicUser(row: UserRow): PublicUser {
     pronouns: row.pronouns,
     accent_color: row.accent_color,
     kind: row.kind === "guest" ? "guest" : "local",
+    // Un valor viejo o corrupto en la base no debe pintar un estado inventado.
+    status: (USER_STATUSES as readonly string[]).includes(row.status) ? (row.status as UserStatus) : "online",
+    custom_status: row.custom_status,
+    // Normalizado aqui tambien, no solo al guardar: una fila vieja o tocada a
+    // mano en el fichero SQLite no puede colarse hasta el CSS del cliente.
+    profile_style: toProfileStyle(safeJson(row.profile_style)),
     created_at: row.created_at,
   };
 }
