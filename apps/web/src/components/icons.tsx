@@ -1,168 +1,335 @@
 /**
- * Iconos que reaccionan (§10.2).
- * Geometría y coreografía portadas de animate-ui (github.com/imskyleen/animate-ui,
- * MIT): el engranaje gira, las ondas del volumen laten, la gente da un saltito,
- * el panel empuja su línea. Allí cada icono es un componente de `motion`; aquí
- * los mismos movimientos son @keyframes de styles.css disparados por el :hover
- * del botón que los contiene, así no entra un motor de animación entero en el
- * paquete para mover seis trazos.
+ * Iconos animados de interacción.
  *
- * Cambiar a los componentes originales es instalar `motion` y sustituir este
- * archivo: el resto de la aplicación solo ve <Gear size={17} />.
+ * Geometría y coreografías portadas de Animate UI
+ * (MIT + Commons Clause; ver THIRD_PARTY_NOTICES.md):
+ * https://github.com/imskyleen/animate-ui/tree/main/apps/www/registry/icons
+ *
+ * Animate UI anima el propio SVG al recibir hover. En Distop el objetivo
+ * interactivo suele ser un botón bastante mayor que el dibujo, así que este
+ * adaptador dispara sus mismos variants desde el ancestro interactivo. También
+ * respeta prefers-reduced-motion y deja todos los iconos quietos en ese caso.
  */
+import { useEffect, useRef } from "react";
+import { motion, useAnimation, useReducedMotion, type Variants } from "motion/react";
 
 interface IconProps {
   size?: number;
   className?: string;
 }
 
-function Svg({ size = 18, className = "", children }: IconProps & { children: React.ReactNode }) {
+const svgProps = {
+  xmlns: "http://www.w3.org/2000/svg",
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  "aria-hidden": true,
+};
+
+/** Une la animación al botón completo, no solo a los 16 px del SVG. */
+function useInteractiveAnimation() {
+  const ref = useRef<SVGSVGElement>(null);
+  const controls = useAnimation();
+  const reduced = useReducedMotion();
+
+  useEffect(() => {
+    const svg = ref.current;
+    if (!svg) return;
+    if (reduced) {
+      controls.set("initial");
+      return;
+    }
+    const target = svg.closest("button, a, label, summary, [role='menuitem'], [role='button']") ?? svg;
+    let pointerInside = false;
+    let focusInside = false;
+    const sync = () => void controls.start(pointerInside || focusInside ? "animate" : "initial");
+    const enterPointer = () => {
+      pointerInside = true;
+      sync();
+    };
+    const leavePointer = () => {
+      pointerInside = false;
+      sync();
+    };
+    const enterFocus = () => {
+      focusInside = true;
+      sync();
+    };
+    const leaveFocus = () => {
+      focusInside = false;
+      sync();
+    };
+    target.addEventListener("pointerenter", enterPointer);
+    target.addEventListener("pointerleave", leavePointer);
+    target.addEventListener("focusin", enterFocus);
+    target.addEventListener("focusout", leaveFocus);
+    return () => {
+      target.removeEventListener("pointerenter", enterPointer);
+      target.removeEventListener("pointerleave", leavePointer);
+      target.removeEventListener("focusin", enterFocus);
+      target.removeEventListener("focusout", leaveFocus);
+    };
+  }, [controls, reduced]);
+
+  return { ref, controls, reduced };
+}
+
+/** Animate UI: settings. */
+const gearVariants: Variants = {
+  initial: { rotate: 0 },
+  animate: { rotate: [0, 90, 180], transition: { duration: 1.25, ease: "easeInOut" } },
+};
+
+export function Gear({ size = 18, className }: IconProps) {
+  const { ref, controls } = useInteractiveAnimation();
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className={`ai ${className}`}
-    >
-      {children}
-    </svg>
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.g variants={gearVariants} initial="initial" animate={controls}>
+        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+        <circle cx={12} cy={12} r={3} />
+      </motion.g>
+    </motion.svg>
   );
 }
 
-/** Engranaje que gira medio giro al pasar por encima. */
-export function Gear(props: IconProps) {
+/** Animate UI: users. */
+const peopleVariants = {
+  near: {
+    initial: { y: 0 },
+    animate: { y: [0, 2, -2, 0], transition: { duration: 0.6, ease: "easeInOut", delay: 0.1 } },
+  } satisfies Variants,
+  far: {
+    initial: { y: 0 },
+    animate: { y: [0, 4, -2, 0], transition: { duration: 0.6, ease: "easeInOut" } },
+  } satisfies Variants,
+};
+
+export function People({ size = 18, className }: IconProps) {
+  const { ref, controls } = useInteractiveAnimation();
   return (
-    <Svg {...props}>
-      <g className="ai-spin">
-        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-        <circle cx={12} cy={12} r={3} />
-      </g>
-    </Svg>
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" variants={peopleVariants.near} initial="initial" animate={controls} />
+      <motion.path d="M16 3.128a4 4 0 0 1 0 7.744" variants={peopleVariants.far} initial="initial" animate={controls} />
+      <motion.path d="M22 21v-2a4 4 0 0 0-3-3.87" variants={peopleVariants.far} initial="initial" animate={controls} />
+      <motion.circle cx={9} cy={7} r={4} variants={peopleVariants.near} initial="initial" animate={controls} />
+    </motion.svg>
+  );
+}
+
+/** Animate UI: X, animación `plus` invertida para que el estado base sea +. */
+const plusLineOne: Variants = {
+  initial: { rotate: 45, x1: 7.1, y1: 16.9, x2: 16.9, y2: 7.1 },
+  animate: { rotate: 0, x1: 6, y1: 18, x2: 18, y2: 6, transition: { duration: 0.3, ease: "easeInOut" } },
+};
+const plusLineTwo: Variants = {
+  initial: { rotate: 45, x1: 7.1, y1: 7.1, x2: 16.9, y2: 16.9 },
+  animate: { rotate: 0, x1: 6, y1: 6, x2: 18, y2: 18, transition: { duration: 0.3, ease: "easeInOut", delay: 0.1 } },
+};
+
+export function Cross({ size = 18, className }: IconProps) {
+  const { ref, controls } = useInteractiveAnimation();
+  return (
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.line variants={plusLineOne} initial="initial" animate={controls} />
+      <motion.line variants={plusLineTwo} initial="initial" animate={controls} />
+    </motion.svg>
+  );
+}
+
+/** Animate UI: volume-2 / volume-off. */
+const wave = (delay: number): Variants => ({
+  initial: { opacity: 1, scale: 1 },
+  animate: {
+    opacity: [1, 0, 1],
+    scale: [1, 0, 1],
+    transition: { duration: 0.6, ease: "easeInOut", delay },
+  },
+});
+const shake: Variants = {
+  initial: { x: 0 },
+  animate: { x: [0, "-7%", "7%", "-7%", "7%", 0], transition: { duration: 0.6, ease: "easeInOut" } },
+};
+
+export function Speaker({ muted = false, size = 18, className }: IconProps & { muted?: boolean }) {
+  const { ref, controls, reduced } = useInteractiveAnimation();
+  if (muted) {
+    return (
+      <motion.svg ref={ref} width={size} height={size} className={className} variants={shake} initial="initial" animate={controls} {...svgProps}>
+        <path d="M16 9a5 5 0 0 1 .95 2.293" />
+        <path d="M19.364 5.636a9 9 0 0 1 1.889 9.96" />
+        <motion.path d="m2 2 20 20" initial={reduced ? false : { opacity: 0, pathLength: 0 }} animate={{ opacity: 1, pathLength: 1 }} transition={{ duration: 0.6, ease: "easeInOut" }} />
+        <path d="m7 7-.587.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298V11" />
+        <path d="M9.828 4.172A.686.686 0 0 1 11 4.657v.686" />
+      </motion.svg>
+    );
+  }
+  return (
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.path d="M16 9a5 5 0 0 1 0 6" variants={wave(0)} initial="initial" animate={controls} />
+      <motion.path d="M19.364 18.364a9 9 0 0 0 0-12.728" variants={wave(0.2)} initial="initial" animate={controls} />
+      <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+    </motion.svg>
+  );
+}
+
+/** Animate UI: send. */
+const sendVariants: Variants = {
+  initial: { scale: 1, x: 0, y: 0 },
+  animate: {
+    scale: [1, 0.8, 1, 1, 1],
+    x: [0, "-10%", "100%", "-125%", 0],
+    y: [0, "10%", "-100%", "125%", 0],
+    transition: { duration: 1.2, ease: "easeInOut", times: [0, 0.25, 0.5, 0.5, 1] },
+  },
+};
+
+export function Send({ size = 18, className }: IconProps) {
+  const { ref, controls } = useInteractiveAnimation();
+  return (
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.g variants={sendVariants} initial="initial" animate={controls}>
+        <path d="M14.5,21.7c.1.3.4.4.7.3.1,0,.2-.2.3-.3L22,2.7c0-.3,0-.5-.3-.6-.1,0-.2,0-.3,0L2.3,8.5c-.3,0-.4.4-.3.6,0,.1.2.2.3.3l7.9,3.2c.5.2.9.6,1.1,1.1l3.2,7.9Z" />
+        <path d="M21.9,2.1l-10.9,10.9" />
+      </motion.g>
+    </motion.svg>
+  );
+}
+
+/** Animate UI: upload. */
+const uploadVariants: Variants = {
+  initial: { y: 0, transition: { duration: 0.3, ease: "easeInOut" } },
+  animate: { y: -2, transition: { duration: 0.3, ease: "easeInOut" } },
+};
+
+export function Upload({ size = 18, className }: IconProps) {
+  const { ref, controls } = useInteractiveAnimation();
+  return (
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.g variants={uploadVariants} initial="initial" animate={controls}>
+        <path d="M12 3v12" />
+        <path d="m17 8-5-5-5 5" />
+      </motion.g>
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    </motion.svg>
   );
 }
 
 /**
- * Panel lateral. Abierto, la banda va rellena; cerrado, vacía: el estado se ve
- * por la forma y no solo por el color (§31). Al pasar el ratón, la línea se
- * acerca al borde, que es justo lo que hará el panel al plegarse.
+ * Animate UI todavía no publica micrófono ni auriculares. Se conserva la
+ * geometría de Lucide que usa el resto de la aplicación y se aplica el patrón
+ * oficial `default-loop` + `off`: elevación en hover y tachado dibujado.
  */
-export function Panel({ side = "left", open = false, ...props }: IconProps & { side?: "left" | "right"; open?: boolean }) {
+const voiceLift: Variants = {
+  initial: { y: 0 },
+  animate: { y: [0, -2, 0], transition: { duration: 0.6, ease: "easeInOut" } },
+};
+
+function VoiceStrike({ reduced }: { reduced: boolean | null }) {
   return (
-    <Svg {...props} className={side === "right" ? "ai-flip" : ""}>
-      <rect width={18} height={18} x={3} y={3} rx={2} ry={2} />
-      {/* La banda llega hasta el centro de la línea divisoria (x=9) y no hasta
-          su borde (x=8): si no, el trazo de 2px de la línea y el relleno se
-          sumaban en un bloque grueso a la izquierda. El radio 1 de las esquinas
-          es el del marco (2) menos el medio trazo, así que encajan en vez de
-          dejar un escalón. */}
-      {open ? (
-        <path className="ai-slide" d="M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h4z" fill="currentColor" stroke="none" />
-      ) : null}
-      <line className="ai-slide" x1={9} y1={3} x2={9} y2={21} />
-    </Svg>
+    <motion.line
+      x1={3}
+      y1={3}
+      x2={21}
+      y2={21}
+      initial={reduced ? false : { opacity: 0, pathLength: 0 }}
+      animate={{ opacity: 1, pathLength: 1 }}
+      transition={{ duration: 0.6, ease: "easeInOut" }}
+    />
   );
 }
 
-/** Cada figura da su saltito, con un desfase entre ellas. */
-export function People(props: IconProps) {
+export function Microphone({ muted = false, size = 18, className }: IconProps & { muted?: boolean }) {
+  const { ref, controls, reduced } = useInteractiveAnimation();
   return (
-    <Svg {...props}>
-      <path className="ai-hop-1" d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle className="ai-hop-2" cx={9} cy={7} r={4} />
-      <path className="ai-hop-3" d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path className="ai-hop-4" d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </Svg>
-  );
-}
-
-/** El más y la equis son el mismo icono: girar 45° lo convierte en cerrar. */
-export function Cross({ open = false, ...props }: IconProps & { open?: boolean }) {
-  return (
-    <Svg {...props} className={open ? "ai-cross-open" : ""}>
-      <g className="ai-quarter">
-        <line x1={5} y1={12} x2={19} y2={12} />
-        <line x1={12} y1={5} x2={12} y2={19} />
-      </g>
-    </Svg>
-  );
-}
-
-/** Las ondas laten hacia fuera, una detrás de otra. */
-export function Speaker({ muted = false, ...props }: IconProps & { muted?: boolean }) {
-  return (
-    <Svg {...props}>
-      <path d="M11 5 6 9H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h3l5 4z" />
-      {muted ? (
-        <>
-          <line x1={22} y1={9} x2={16} y2={15} />
-          <line x1={16} y1={9} x2={22} y2={15} />
-        </>
-      ) : (
-        <>
-          <path className="ai-wave-1" d="M16 9a5 5 0 0 1 0 6" />
-          <path className="ai-wave-2" d="M19.4 6.3a9 9 0 0 1 0 11.4" />
-        </>
-      )}
-    </Svg>
-  );
-}
-
-/** El micrófono sube y baja un pelo; tachado, la barra se dibuja sola. */
-export function Microphone({ muted = false, ...props }: IconProps & { muted?: boolean }) {
-  return (
-    <Svg {...props}>
-      <g className="ai-lift">
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.g variants={voiceLift} initial="initial" animate={controls}>
         <rect x={9} y={2} width={6} height={11} rx={3} />
         <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
         <line x1={12} y1={19} x2={12} y2={22} />
-      </g>
-      {muted ? <line className="ai-strike" x1={3} y1={3} x2={21} y2={21} /> : null}
-    </Svg>
+      </motion.g>
+      {muted ? <VoiceStrike reduced={reduced} /> : null}
+    </motion.svg>
   );
 }
 
-export function Headset({ muted = false, ...props }: IconProps & { muted?: boolean }) {
+export function Headset({ muted = false, size = 18, className }: IconProps & { muted?: boolean }) {
+  const { ref, controls, reduced } = useInteractiveAnimation();
   return (
-    <Svg {...props}>
-      <path className="ai-lift" d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" />
-      {muted ? <line className="ai-strike" x1={3} y1={3} x2={21} y2={21} /> : null}
-    </Svg>
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.path
+        d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"
+        variants={voiceLift}
+        initial="initial"
+        animate={controls}
+      />
+      {muted ? <VoiceStrike reduced={reduced} /> : null}
+    </motion.svg>
   );
 }
 
-/** El avión sale disparado y vuelve. */
-export function Send(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <g className="ai-launch">
-        <path d="m3 3 3 9-3 9 19-9Z" />
-        <path d="M6 12h10" />
-      </g>
-    </Svg>
-  );
-}
+/** Animate UI: party-popper. */
+const popperCone: Variants = {
+  initial: { x: 0, y: 0 },
+  animate: { x: [-1.5, 0], y: [1.5, 0], transition: { duration: 0.7 } },
+};
+const popperDots: Variants = {
+  initial: { opacity: 1, scale: 1, x: 0, y: 0 },
+  animate: {
+    opacity: [0, 1],
+    scale: [0.5, 0.8, 1, 1.1, 1],
+    x: [-5, 0],
+    y: [5, 0],
+    transition: { duration: 0.7 },
+  },
+};
+const popperStreamers: Variants = {
+  initial: { opacity: 1, pathLength: 1, scale: 1, x: 0, y: 0 },
+  animate: {
+    opacity: [0, 1],
+    scale: [0.3, 0.8, 1, 1.1, 1],
+    pathLength: [0, 0.5, 1],
+    x: [-5, 0],
+    y: [5, 0],
+    transition: { duration: 0.7 },
+  },
+};
 
-/**
- * La flecha sube al pasar el ratón, como si el archivo acabara de salir.
- * Geometría y coreografía: icono "Upload" de animate-ui, mismo trazo que ya
- * traíamos con lucide-react bajo otro nombre (createLucideIcon("Upload", ...)).
- * El grupo que sube es la flecha; la bandeja de abajo se queda quieta.
- */
-export function Upload(props: IconProps) {
+export function PartyPopper({ size = 18, className }: IconProps) {
+  const { ref, controls } = useInteractiveAnimation();
   return (
-    <Svg {...props}>
-      <g className="ai-lift">
-        <path d="M12 3v12" />
-        <path d="m7 8 5-5 5 5" />
-      </g>
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-    </Svg>
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.path d="M5.8 11.3 2 22l10.7-3.79" variants={popperCone} initial="initial" animate={controls} />
+      <motion.path
+        d="M11 13c1.93 1.93 2.83 4.17 2 5-.83.83-3.07-.07-5-2-1.93-1.93-2.83-4.17-2-5 .83-.83 3.07.07 5 2Z"
+        variants={popperCone}
+        initial="initial"
+        animate={controls}
+      />
+      <motion.path d="M4 3h.01" variants={popperDots} initial="initial" animate={controls} />
+      <motion.path d="M22 8h.01" variants={popperDots} initial="initial" animate={controls} />
+      <motion.path d="M15 2h.01" variants={popperDots} initial="initial" animate={controls} />
+      <motion.path d="M22 20h.01" variants={popperDots} initial="initial" animate={controls} />
+      <motion.path
+        d="m14 10 1.21-1.06c.16-.84.9-1.44 1.76-1.44h.38c.88 0 1.55-.77 1.45-1.63a2.9 2.9 0 0 1 1.96-3.12L22 2"
+        variants={popperStreamers}
+        initial="initial"
+        animate={controls}
+      />
+      <motion.path
+        d="M17 15h.77c.71 0 1.32-.52 1.43-1.22.16-.91 1.12-1.45 1.98-1.11L22 13"
+        variants={popperStreamers}
+        initial="initial"
+        animate={controls}
+      />
+      <motion.path
+        d="M9 7V6.23c0-.71.52-1.33 1.22-1.43.91-.16 1.45-1.12 1.11-1.98L11 2"
+        variants={popperStreamers}
+        initial="initial"
+        animate={controls}
+      />
+    </motion.svg>
   );
 }

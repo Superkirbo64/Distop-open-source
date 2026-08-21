@@ -10,7 +10,7 @@
  * exista: el botón "Hospedar aquí" hace exactamente esta secuencia.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { connect } from "node:net";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,9 +37,36 @@ const envPath = join(root, ".env");
 
 /* ── 2. cliente compilado ────────────────────────────────────────────── */
 
-if (force || !existsSync(join(root, "apps", "web", "dist", "index.html"))) {
+const builtClient = join(root, "apps", "web", "dist", "index.html");
+if (force || clientNeedsBuild(builtClient)) {
   console.log("Compilando el cliente…\n");
   run(npm, ["run", "build"]);
+}
+
+/** El doble clic también se usa después de actualizar o editar el proyecto.
+    Servir un dist antiguo con un servidor nuevo crea fallos imposibles de ver:
+    ambos lados arrancan, pero hablan contratos distintos. */
+function clientNeedsBuild(output) {
+  if (!existsSync(output)) return true;
+  const builtAt = statSync(output).mtimeMs;
+  const inputs = [
+    join(root, "apps", "web", "src"),
+    join(root, "apps", "web", "public"),
+    join(root, "apps", "web", "index.html"),
+    join(root, "apps", "web", "vite.config.ts"),
+    join(root, "packages", "protocol", "src"),
+    join(root, "package-lock.json"),
+  ];
+  return inputs.some((input) => newestMtime(input) > builtAt);
+}
+
+function newestMtime(path) {
+  if (!existsSync(path)) return 0;
+  const info = statSync(path);
+  if (!info.isDirectory()) return info.mtimeMs;
+  let newest = info.mtimeMs;
+  for (const entry of readdirSync(path)) newest = Math.max(newest, newestMtime(join(path, entry)));
+  return newest;
 }
 
 /* ── 3. arrancar y abrir ─────────────────────────────────────────────── */

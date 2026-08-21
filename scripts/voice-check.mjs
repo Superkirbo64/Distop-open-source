@@ -186,6 +186,59 @@ for (const [i, page] of paginas.entries()) {
   if (!oye) mudos.push(`el navegador ${i + 1} no recibe la voz de ${otro}`);
 }
 
+/* Ensordecer y volver a oír (§9.4).
+   El estado de voz lo guarda la instancia, y quien deja de reenviar el audio es
+   ella: si al quitarse el ensordecimiento el cliente no se lo cuenta, la sala se
+   queda muda para siempre aunque el botón diga lo contrario. Solo se ve
+   probando el ciclo entero contra una llamada de verdad. */
+const PULSAR = (texto) => `(async () => {
+  const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(texto)});
+  if (!b) return 'sin botón';
+  b.click();
+  await new Promise(r => setTimeout(r, 1500));
+  return 'pulsado';
+})()`;
+
+{
+  const [page] = paginas;
+  const otro = gente[1].user.display_name;
+
+  console.log("ensordecer:", await evaluar(page, PULSAR("Ensordecer")));
+  if (await evaluar(page, ESCUCHAR(otro))) mudos.push(`ensordecido, el navegador 1 sigue oyendo a ${otro}`);
+
+  console.log("volver a oír:", await evaluar(page, PULSAR("Escuchar")));
+  if (await evaluar(page, ESCUCHAR(otro))) console.log(`voz: el navegador 1 vuelve a oír a ${otro}`);
+  else mudos.push(`tras quitar el ensordecimiento, el navegador 1 no vuelve a oír a ${otro}`);
+}
+
+/* El volumen de cada persona (§10.2). Es local: ni pide permiso ni viaja, así
+   que lo que hay que comprobar es que el mando existe para quien NO modera
+   —estos dos son invitados sin permisos— y que lo que se mueve se guarda. */
+const VOLUMEN = (otro) => `(async () => {
+  try {
+    const s = (ms) => new Promise(r => setTimeout(r, ms));
+    const figura = [...document.querySelectorAll('figure[data-user]')]
+      .find(f => f.querySelector('figcaption')?.innerText.startsWith(${JSON.stringify(otro)}));
+    if (!figura) return 'no encuentro su recuadro';
+    figura.querySelector('button')?.click();
+    await s(600);
+    const barra = document.querySelector('[role="menu"] input[type=range]');
+    if (!barra) return 'el menú no trae mando de volumen';
+    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    set.call(barra, '35');
+    barra.dispatchEvent(new Event('input', { bubbles: true }));
+    await s(400);
+    document.body.click();
+    return localStorage.getItem('distop.userVolumes') ?? 'no se guardó nada';
+  } catch (e) { return 'ERROR: ' + e.message; }
+})()`;
+
+{
+  const guardado = await evaluar(paginas[0], VOLUMEN(gente[1].user.display_name));
+  console.log("volumen por persona:", guardado);
+  if (!String(guardado).includes("0.35")) mudos.push(`el volumen por persona no quedó guardado: ${guardado}`);
+}
+
 /** Enciende cámara o pantalla. La cámara falsa de Chrome emite un patrón en movimiento. */
 const fuente = process.env.SHARE === "pantalla" ? "Pantalla" : "Cámara";
 const ENCENDER = `(async () => {

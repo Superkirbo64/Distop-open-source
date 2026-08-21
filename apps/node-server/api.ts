@@ -4,7 +4,7 @@
  * leer o escribir. La validación del cliente es cortesía, esta es la que cuenta.
  */
 import { randomBytes } from "node:crypto";
-import { PERMISSIONS, ALL_PERMISSIONS, CUSTOM_EMOJI, EMOJI_KINDS, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
+import { PERMISSIONS, ALL_PERMISSIONS, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import { publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
@@ -42,7 +42,17 @@ import {
   rolesOf,
   unreadOf,
 } from "./entities.ts";
-import { createEmoji, deleteEmoji, emojisAvailableTo, emojisOf, getEmoji, unusableEmojis } from "./expressions.ts";
+import {
+  MAX_SOUND_BYTES,
+  createEmoji,
+  deleteEmoji,
+  deleteExpressionAttachmentsOfCommunity,
+  emojisAvailableTo,
+  emojisOf,
+  getEmoji,
+  unusableEmojis,
+  validateSoundIcon,
+} from "./expressions.ts";
 import { canActOn, channelPermissions, communityPermissions, highestRolePosition, memberState } from "./permissions.ts";
 import {
   HANDLED,
@@ -408,6 +418,7 @@ route("DELETE", "/api/v1/users/me", async (ctx) => {
     publish(community.id, { t: "MEMBER_LEAVE", d: { community_id: community.id, user_id: user.id } });
   }
 
+  for (const community of owned) deleteExpressionAttachmentsOfCommunity(community.id);
   deleteAttachmentsOwnedBy(user.id);
   for (const community of owned) db.prepare("DELETE FROM communities WHERE id = ?").run(community.id);
 
@@ -527,6 +538,7 @@ route("DELETE", "/api/v1/communities/:id", (ctx) => {
   if (!community) throw notFound("Comunidad no encontrada.");
   if (community.owner_id !== user.id) throw forbidden("Solo quien creó la comunidad puede eliminarla.");
 
+  deleteExpressionAttachmentsOfCommunity(community.id);
   db.prepare("DELETE FROM communities WHERE id = ?").run(community.id);
   publish(community.id, { t: "MEMBER_LEAVE", d: { community_id: community.id, user_id: user.id } });
 });
@@ -1152,11 +1164,14 @@ route("POST", "/api/v1/communities/:id/emojis", async (ctx) => {
   requirePerm(communityId, user.id, PERMISSIONS.MANAGE_COMMUNITY, "añadir emojis o stickers");
 
   const body = await readJson(ctx);
+  const kind = v.oneOf(body, "kind", EMOJI_KINDS, "emoji");
   const emoji = createEmoji({
     communityId,
     name: v.string(body, "name", { max: 32 }),
-    kind: v.oneOf(body, "kind", EMOJI_KINDS, "emoji"),
+    kind,
     attachmentId: v.string(body, "attachment_id", { max: 64 }),
+    iconEmoji: v.optionalString(body, "icon_emoji", { max: 16 }),
+    iconAttachmentId: v.optionalString(body, "icon_attachment_id", { max: 64 }),
     creatorId: user.id,
   });
 
@@ -1268,6 +1283,90 @@ route("GET", "/api/v1/stickers/image", async (ctx) => {
   return HANDLED;
 });
 
+/* ── traer un sonido de la galeria (§10.3) ─────────────────────────────
+   Aqui es donde por fin se baja algo, y solo lo que alguien eligio: la rejilla
+   de /api/v1/sounds no gasta ni un byte de disco. El mp3 pasa a ser de la
+   comunidad —igual que un sticker de Telegram— asi que si MyInstants cierra
+   manana el sonido sigue sonando (§21).
+
+   No se usa saveRemoteAttachment (reenviar en cada escucha) sino saveUpload
+   (bajar una vez): un sonido de tabla se dispara muchisimas mas veces que un
+   sticker se mira, y son ~100 KB. Reenviarlo seria pagar la descarga entera
+   cada vez que alguien pulsa el boton. */
+
+async function readSoundBody(response: Response): Promise<Buffer> {
+  if (!response.body) return Buffer.alloc(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > MAX_SOUND_BYTES) {
+      await reader.cancel();
+      throw new HttpError(413, "PAYLOAD_TOO_LARGE", "El sonido pasa del límite de 5 MB.");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, total);
+}
+
+route("POST", "/api/v1/communities/:id/emojis/import-sound", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const communityId = ctx.params.id!;
+  requireMembership(communityId, user.id);
+  requirePerm(communityId, user.id, PERMISSIONS.MANAGE_COMMUNITY, "añadir sonidos");
+  rateLimit(`soundimport:${user.id}`, 30, 60_000);
+
+  const body = await readJson(ctx);
+  const origen = v.string(body, "url", { max: 300 });
+  const name = v.string(body, "name", { max: 32 });
+  const iconEmoji = v.optionalString(body, "icon_emoji", { max: 16 });
+  const iconAttachmentId = v.optionalString(body, "icon_attachment_id", { max: 64 });
+
+  // El icono se valida antes de descargar el MP3: una elección inválida no debe
+  // dejar un audio huérfano ocupando el disco de quien hospeda.
+  validateSoundIcon({ iconEmoji, iconAttachmentId, creatorId: user.id });
+
+  // El nombre se valida ANTES de bajar: si no, un nombre invalido deja el
+  // archivo ya escrito en disco y createEmoji reventando despues.
+  if (!EMOJI_NAME.test(name))
+    throw badRequest("El nombre admite letras, números y guion bajo, entre 2 y 32 caracteres.", { field: "name" });
+  if (!MYINSTANTS_MEDIA.test(origen)) throw badRequest("Ese sonido no viene de la galería.");
+
+  const res = await fetch(origen, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "No se pudo traer el sonido.");
+
+  // Antes de leer el cuerpo: lo que se anuncia grande no se llega a cargar en memoria.
+  const anunciado = Number(res.headers.get("content-length") ?? 0);
+  if (anunciado > MAX_SOUND_BYTES)
+    throw new HttpError(413, "PAYLOAD_TOO_LARGE", "El sonido pasa del límite de 5 MB.");
+
+  const contentType = (res.headers.get("content-type") ?? "").split(";")[0]!.trim();
+  if (!contentType.startsWith("audio/"))
+    throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Eso no es un archivo de audio.");
+
+  const data = await readSoundBody(res);
+  if (data.length === 0) throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "El sonido está vacío.");
+
+  const attachment = saveUpload({ ownerId: user.id, filename: `${name}.mp3`, contentType, data });
+  const emoji = createEmoji({
+    communityId,
+    name,
+    kind: "sound",
+    attachmentId: attachment.id,
+    iconEmoji,
+    iconAttachmentId,
+    creatorId: user.id,
+  });
+
+  audit(communityId, user.id, "EMOJI_CREATE", emoji.id, { name: emoji.name, kind: emoji.kind, source: "myinstants" });
+  publish(communityId, { t: "EMOJI_UPDATE", d: { community_id: communityId, emojis: emojisOf(communityId) } });
+  return emoji;
+});
+
 route("POST", "/api/v1/communities/:id/emojis/import-telegram", async (ctx) => {
   const { user } = requireAuth(ctx);
   const communityId = ctx.params.id!;
@@ -1355,6 +1454,14 @@ route("GET", "/api/v1/gifs", async (ctx) => {
   const consulta = ctx.url.searchParams.get("q")?.trim() ?? "";
   const limite = String(Math.min(Number(ctx.url.searchParams.get("limit") ?? 24) || 24, 40));
 
+  if (config.klipyApiKey) {
+    const region = /-([A-Za-z]{2})$/.exec(user.locale)?.[1]?.toLowerCase();
+    const comun = { per_page: limite, ...(region ? { locale: region } : {}) };
+    return consulta
+      ? askKlipy("gifs", "search", { ...comun, q: consulta.slice(0, 100) })
+      : askKlipy("gifs", "trending", comun);
+  }
+
   // Sin texto se enseña lo que hay en portada, no una rejilla vacía.
   return consulta
     ? askGiphy("gifs", "search", { q: consulta.slice(0, 100), limit: limite })
@@ -1386,11 +1493,11 @@ route("GET", "/api/v1/gifs", async (ctx) => {
  * Se piden webp y gif y nada mas: el mp4/webm no sirve para pegarlo en un
  * mensaje, y pedir menos formatos baja mucho el tamano de la respuesta.
  */
-async function askKlipy(path: "trending" | "search", params: Record<string, string>): Promise<Gif[]> {
-  if (!config.klipyApiKey) throw notFound("Esta instancia no tiene la galeria de stickers activada.");
+async function askKlipy(recurso: "gifs" | "stickers", path: "trending" | "search", params: Record<string, string>): Promise<Gif[]> {
+  if (!config.klipyApiKey) throw notFound(`Esta instancia no tiene la galeria de ${recurso} activada.`);
 
   // La clave va en la RUTA, no en la query: asi lo define Klipy.
-  const url = new URL(`https://api.klipy.com/api/v1/${encodeURIComponent(config.klipyApiKey)}/stickers/${path}`);
+  const url = new URL(`https://api.klipy.com/api/v1/${encodeURIComponent(config.klipyApiKey)}/${recurso}/${path}`);
   url.searchParams.set("format_filter", "webp,gif");
   url.searchParams.set("content_filter", "medium");
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
@@ -1445,7 +1552,7 @@ route("GET", "/api/v1/stickers/gallery", async (ctx) => {
   const region = /-([A-Za-z]{2})$/.exec(user.locale)?.[1]?.toLowerCase();
   const comun = { per_page: porPagina, ...(region ? { locale: region } : {}) };
 
-  return consulta ? askKlipy("search", { ...comun, q: consulta.slice(0, 100) }) : askKlipy("trending", comun);
+  return consulta ? askKlipy("stickers", "search", { ...comun, q: consulta.slice(0, 100) }) : askKlipy("stickers", "trending", comun);
 });
 
 /* ── buscador de fondos (§10.2) ────────────────────────────────────────
@@ -1491,6 +1598,61 @@ route("GET", "/api/v1/wallpapers", async (ctx) => {
     const item = raw as { id?: string; path?: string; resolution?: string; thumbs?: { small?: string } };
     if (!item.id || !item.path || !item.thumbs?.small) return [];
     return [{ id: item.id, url: item.path, preview: item.thumbs.small, resolution: item.resolution ?? "" }];
+  });
+});
+
+/* ── galeria de sonidos (§10.3) ────────────────────────────────────────
+   Mismo trato que los fondos, y el proxy vuelve a ser obligatorio: la API de
+   MyInstants no manda cabeceras CORS. Es API propia del sitio, publica y sin
+   clave — no hay nada que configurar para que funcione en cualquier instancia.
+
+   Solo se BUSCA aqui. El mp3 no se toca hasta que alguien elige uno, y
+   entonces baja ese y solo ese (/emojis/import-sound). Una rejilla de 20
+   resultados no puede costarle 20 descargas al disco del anfitrion.
+
+   OJO: el catalogo lo suben usuarios y no tiene filtro de contenido, al
+   contrario que Wallhaven con `purity`. Quien administra la comunidad es quien
+   decide que sonido entra, que es justo lo que pide el flujo de abajo. */
+
+interface GallerySound {
+  /** El slug de MyInstants: identifica la fila en la rejilla. */
+  id: string;
+  name: string;
+  /** mp3 directo, para escucharlo antes de decidir y para bajarlo al elegir. */
+  url: string;
+}
+
+/** De donde se acepta bajar un sonido. Sin esta lista la ruta de importar seria
+    un SSRF de manual: "bajame esta URL" apuntando a la red interna (§22).
+    El `(?!.*\.\.)` deja pasar nombres con punto —los hay, `evillaugh.swf.mp3`—
+    sin dejar pasar un `..` que se saliera de /media/sounds/. */
+export const MYINSTANTS_MEDIA = /^https:\/\/(?:www\.)?myinstants\.com\/media\/sounds\/(?!.*\.\.)[\w.-]+\.mp3$/;
+
+route("GET", "/api/v1/sounds", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  rateLimit(`sounds:${user.id}`, 20, 60_000);
+
+  const consulta = ctx.url.searchParams.get("q")?.trim().slice(0, 100) ?? "";
+  // MyInstants sirve de 10 en 10 y no admite page_size, asi que el "ver mas"
+  // de la rejilla se traduce en pedir la pagina siguiente.
+  const pagina = Math.min(Math.max(Number(ctx.url.searchParams.get("page") ?? 1) || 1, 1), 50);
+
+  const url = new URL("https://www.myinstants.com/api/v1/instants/");
+  // Sin `name` devuelve los mas sonados, que es mejor primera pantalla que un vacio.
+  if (consulta) url.searchParams.set("name", consulta);
+  url.searchParams.set("page", String(pagina));
+
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "MyInstants no respondió. Prueba otra vez en un momento.");
+
+  const json = (await res.json().catch(() => null)) as { results?: unknown[] } | null;
+  const lista = Array.isArray(json?.results) ? json.results : [];
+
+  return lista.flatMap((raw): GallerySound[] => {
+    const item = raw as { name?: string; slug?: string; sound?: string };
+    // El mismo filtro que la ruta de importar: lo que no se podria bajar no se enseña.
+    if (!item.slug || !item.name || !item.sound || !MYINSTANTS_MEDIA.test(item.sound)) return [];
+    return [{ id: item.slug, name: item.name, url: item.sound }];
   });
 });
 

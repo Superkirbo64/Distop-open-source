@@ -35,6 +35,10 @@ after(async () => {
   // siguen vivos aunque el servidor deje de aceptar conexiones nuevas.
   server.closeAllConnections();
   server.close();
+  /* Los cierres de socket se procesan en el tick siguiente y todavía tocan la
+     base: cerrarla aquí mismo hace saltar "database is not open" desde fuera de
+     cualquier prueba, y eso tumba la suite entera con todo en verde. */
+  await new Promise((r) => setTimeout(r, 150));
   const { db } = await import("./db.ts");
   db.close();
   rmSync(workdir, { recursive: true, force: true });
@@ -66,6 +70,10 @@ interface Client {
 
 const clients: Client[] = [];
 
+/** Cabecera ID3 suficiente para que el servidor lo reconozca como MP3 en esta
+    prueba de protocolo; la decodificación real se comprueba en el navegador. */
+const testMp3 = (label: string): Buffer => Buffer.concat([Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0]), Buffer.from(label)]);
+
 function open(token: string): Promise<Client> {
   const socket = new WebSocket(`${wsBase}?token=${encodeURIComponent(token)}`);
   const client: Client = { socket, inbox: [], audio: [] };
@@ -75,6 +83,20 @@ function open(token: string): Promise<Client> {
     else client.inbox.push(JSON.parse(String(raw)) as { t: string; d: any });
   });
 
+  return new Promise((resolve, reject) => {
+    socket.once("open", () => resolve(client));
+    socket.once("error", reject);
+  });
+}
+
+/** Canal dedicado de vídeo: no recibe READY ni eventos JSON, solo imagen binaria. */
+function openVideo(token: string): Promise<Client> {
+  const socket = new WebSocket(`${wsBase}?token=${encodeURIComponent(token)}&media=video`);
+  const client: Client = { socket, inbox: [], audio: [] };
+  clients.push(client);
+  socket.on("message", (raw, isBinary) => {
+    if (isBinary) client.audio.push(raw as Buffer);
+  });
   return new Promise((resolve, reject) => {
     socket.once("open", () => resolve(client));
     socket.once("error", reject);
@@ -265,6 +287,20 @@ test("la voz pasa por la instancia y solo llega a quien está en la sala", async
   await new Promise((r) => setTimeout(r, 400));
   assert.equal(bSock.audio.length, 1, "con la cámara encendida sí");
 
+  // La versión optimizada lleva vídeo por otro TCP y conserva el timestamp real.
+  // La voz y los controles no quedan detrás de un keyframe grande.
+  const aVideo = await openVideo(ana.access_token);
+  const bVideo = await openVideo(bea.access_token);
+  bSock.audio.length = 0;
+  const timestamp = Buffer.alloc(8);
+  timestamp.writeBigUInt64BE(16_666n);
+  aVideo.socket.send(Buffer.concat([Buffer.of(3), timestamp, datos]), { binary: true });
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(bVideo.audio.length, 1, "el vídeo nuevo llega por su conexión dedicada");
+  assert.equal(bSock.audio.length, 0, "y no bloquea la conexión de voz y controles");
+  assert.equal(bVideo.audio[0]![0], 3, "conserva el tipo con timestamp");
+  assert.deepEqual(bVideo.audio[0]!.subarray(17), Buffer.concat([timestamp, datos]), "conserva tiempo y contenido");
+
   // Silenciada, el servidor deja de reenviar su voz aunque su cliente siga mandando.
   bSock.audio.length = 0;
   aSock.socket.send(JSON.stringify({ t: "VOICE_MUTE", d: { channel_id: channel.id, muted: true, deafened: false } }));
@@ -274,7 +310,7 @@ test("la voz pasa por la instancia y solo llega a quien está en la sala", async
   await new Promise((r) => setTimeout(r, 400));
   assert.equal(bSock.audio.length, 0, "silenciada en el servidor es silenciada de verdad");
 
-  for (const client of [aSock, bSock, eSock]) client.socket.close();
+  for (const client of [aSock, bSock, eSock, aVideo, bVideo]) client.socket.close();
 });
 
 test("volver a entrar en la misma sala renueva la hora de entrada", async () => {
@@ -343,4 +379,192 @@ test("un canal sin permiso de lectura no se emite a quien no lo ve", async () =>
   assert.ok(!visible.channels.some((c: any) => c.id === channel.id), "y el canal tampoco aparece en su lista");
 
   clientNino.socket.close();
+});
+
+test("un sonido de la tabla llega a la sala, y solo a la sala", async () => {
+  /* Por el socket viaja el id, no el audio: cada cliente pide el archivo a la
+     instancia y lo suena a calidad original. Lo que el servidor tiene que
+     garantizar es a quién se lo reenvía, porque el id lo escribe el cliente y
+     un cliente lo escribe cualquiera. */
+  const zoe = await call("POST", "/api/v1/auth/register", { body: { username: "zoes", password: "contrasena-larga-s1" } });
+  const ian = await call("POST", "/api/v1/auth/register", { body: { username: "ians", password: "contrasena-larga-s2" } });
+  const noa = await call("POST", "/api/v1/auth/register", { body: { username: "noas", password: "contrasena-larga-s3" } });
+
+  const community = await call("POST", "/api/v1/communities", { token: zoe.access_token, body: { name: "Tabla" } });
+  const invite = await call("POST", `/api/v1/communities/${community.id}/invites`, { token: zoe.access_token, body: {} });
+  for (const quien of [ian, noa]) await call("POST", `/api/v1/invites/${invite.code}/join`, { token: quien.access_token });
+
+  const boot = await call("GET", `/api/v1/communities/${community.id}/bootstrap`, { token: zoe.access_token });
+  const channel = boot.channels.find((c: any) => c.kind === "voice");
+
+  // Un sonido de la comunidad, por el mismo camino que uno subido a mano.
+  const subida = await fetch(`${base}/api/v1/uploads`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${zoe.access_token}`,
+      "content-type": "audio/mpeg",
+      "x-filename": "bocina.mp3",
+    },
+    body: testMp3("bocina"),
+  }).then((r) => r.json() as Promise<any>);
+  const subidaIcono = await fetch(`${base}/api/v1/uploads`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${zoe.access_token}`,
+      "content-type": "image/png",
+      "x-filename": "bocina.png",
+    },
+    body: Buffer.from("89504e470d0a1a0a", "hex"),
+  }).then((r) => r.json() as Promise<any>);
+  const sonido = await call("POST", `/api/v1/communities/${community.id}/emojis`, {
+    token: zoe.access_token,
+    body: { name: "bocina", kind: "sound", attachment_id: subida.id, icon_attachment_id: subidaIcono.id },
+  });
+  assert.equal(sonido.kind, "sound");
+  assert.equal(sonido.icon_emoji, null);
+  assert.equal(sonido.icon_url, `/api/v1/files/${subidaIcono.id}`);
+
+  // Un sonido de OTRA comunidad, para comprobar que no se puede colar.
+  const otra = await call("POST", "/api/v1/communities", { token: zoe.access_token, body: { name: "Ajena" } });
+  const subidaAjena = await fetch(`${base}/api/v1/uploads`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${zoe.access_token}`, "content-type": "audio/mpeg", "x-filename": "otra.mp3" },
+    body: testMp3("otra comunidad"),
+  }).then((r) => r.json() as Promise<any>);
+  const sonidoAjeno = await call("POST", `/api/v1/communities/${otra.id}/emojis`, {
+    token: zoe.access_token,
+    body: { name: "ajeno", kind: "sound", attachment_id: subidaAjena.id, icon_emoji: "🐸" },
+  });
+  assert.equal(sonidoAjeno.icon_emoji, "🐸");
+  assert.equal(sonidoAjeno.icon_url, null);
+
+  const catalogoPropio = await call("GET", `/api/v1/communities/${community.id}/emojis`, { token: zoe.access_token });
+  const catalogoAjeno = await call("GET", `/api/v1/communities/${otra.id}/emojis`, { token: zoe.access_token });
+  assert.deepEqual(catalogoPropio.map((item: any) => item.id), [sonido.id], "cada comunidad lista únicamente sus sonidos");
+  assert.deepEqual(catalogoAjeno.map((item: any) => item.id), [sonidoAjeno.id], "el segundo catálogo permanece separado");
+
+  const entrar = async (quien: any, dentro: boolean) => {
+    const client = await open(quien.access_token);
+    await waitFor(client, "READY");
+    client.socket.send(JSON.stringify({ t: "SUBSCRIBE", d: { community_id: community.id } }));
+    if (dentro) {
+      client.socket.send(JSON.stringify({ t: "VOICE_JOIN", d: { channel_id: channel.id } }));
+      await waitFor(client, "VOICE_STATE_UPDATE", (d) => d.states.some((s: any) => s.user_id === quien.user.id));
+    }
+    return client;
+  };
+
+  const clientZoe = await entrar(zoe, true);
+  const clientIan = await entrar(ian, true);
+  const clientNoa = await entrar(noa, false); // en la comunidad, fuera de la sala
+
+  clientZoe.socket.send(JSON.stringify({ t: "VOICE_SOUND", d: { channel_id: channel.id, sound_id: sonido.id } }));
+
+  // Le llega a la sala entera, incluida quien lo dispara: así todos lo oyen a la vez.
+  const paraIan = await waitFor(clientIan, "VOICE_SOUND");
+  assert.equal(paraIan.sound_id, sonido.id);
+  assert.equal(paraIan.user_id, zoe.user.id);
+  assert.equal((await waitFor(clientZoe, "VOICE_SOUND")).sound_id, sonido.id);
+
+  await new Promise((r) => setTimeout(r, 300));
+  assert.ok(!clientNoa.inbox.some((e) => e.t === "VOICE_SOUND"), "quien no está en la sala no lo recibe");
+
+  // Un sonido de otra comunidad no suena aquí aunque el cliente mande su id.
+  clientZoe.socket.send(JSON.stringify({ t: "VOICE_SOUND", d: { channel_id: channel.id, sound_id: sonidoAjeno.id } }));
+  assert.equal((await waitFor(clientZoe, "VOICE_SOUND_ERROR")).reason, "not_available");
+  // Y un id que no es de ningún sonido, tampoco.
+  clientZoe.socket.send(JSON.stringify({ t: "VOICE_SOUND", d: { channel_id: channel.id, sound_id: channel.id } }));
+  assert.equal((await waitFor(clientZoe, "VOICE_SOUND_ERROR")).reason, "not_available");
+  await new Promise((r) => setTimeout(r, 400));
+  assert.ok(
+    !clientIan.inbox.some((e) => e.t === "VOICE_SOUND"),
+    "ni el sonido de otra comunidad ni un id inventado se reenvían",
+  );
+
+  // Silenciado es silenciado: tampoco se puede hacer ruido con la tabla.
+  clientZoe.socket.send(
+    JSON.stringify({ t: "VOICE_MUTE", d: { channel_id: channel.id, muted: true, deafened: false } }),
+  );
+  await waitFor(clientZoe, "VOICE_STATE_UPDATE", (d) => d.states.some((s: any) => s.user_id === zoe.user.id && s.muted));
+  clientZoe.socket.send(JSON.stringify({ t: "VOICE_SOUND", d: { channel_id: channel.id, sound_id: sonido.id } }));
+  assert.equal((await waitFor(clientZoe, "VOICE_SOUND_ERROR")).reason, "muted");
+  await new Promise((r) => setTimeout(r, 400));
+  assert.ok(!clientIan.inbox.some((e) => e.t === "VOICE_SOUND"), "silenciado no dispara sonidos");
+
+  clientZoe.socket.send(
+    JSON.stringify({ t: "VOICE_MUTE", d: { channel_id: channel.id, muted: false, deafened: false } }),
+  );
+  await waitFor(clientZoe, "VOICE_STATE_UPDATE", (d) => d.states.some((s: any) => s.user_id === zoe.user.id && !s.muted));
+  // El primero ya gastó una de las cinco acciones de esta ventana.
+  for (let i = 0; i < 4; i++) {
+    clientZoe.socket.send(JSON.stringify({ t: "VOICE_SOUND", d: { channel_id: channel.id, sound_id: sonido.id } }));
+    await waitFor(clientZoe, "VOICE_SOUND");
+  }
+  clientZoe.socket.send(JSON.stringify({ t: "VOICE_SOUND", d: { channel_id: channel.id, sound_id: sonido.id } }));
+  assert.equal((await waitFor(clientZoe, "VOICE_SOUND_ERROR")).reason, "rate_limited");
+
+  await call("DELETE", `/api/v1/emojis/${sonido.id}`, { token: zoe.access_token });
+  assert.equal((await fetch(`${base}${sonido.url}`)).status, 404, "borrar el sonido borra también su archivo");
+  assert.equal((await fetch(`${base}${sonido.icon_url}`)).status, 404, "y borra también la imagen propia del sonido");
+
+  /* Se sale de la sala ANTES de cerrar. Un socket que se cae estando dentro
+     dispara el anuncio de salida, que toca la base; si eso ocurre mientras el
+     `after` ya la ha cerrado, la suite muere en el desmontaje y no por lo que
+     se estaba probando. */
+  for (const client of [clientZoe, clientIan]) {
+    client.socket.send(JSON.stringify({ t: "VOICE_LEAVE", d: { channel_id: channel.id } }));
+  }
+  await waitFor(clientIan, "VOICE_STATE_UPDATE", (d) => d.states.length === 0);
+  for (const client of [clientZoe, clientIan, clientNoa]) client.socket.close();
+  await new Promise((r) => setTimeout(r, 200));
+});
+
+test("salirse de la carrera no cierra la que está corriendo", async () => {
+  /* Salir y volver a entrar montaba OTRA partida: si quien la abrió se iba, la
+     sala se borraba entera y el siguiente que pulsaba abría una carrera nueva
+     con otra semilla. Se puede salir, pero la carrera de los demás sigue y al
+     volver se entra en ESA, no en una distinta. */
+  const leo = await call("POST", "/api/v1/auth/register", { body: { username: "leor", password: "contrasena-larga-r1" } });
+  const mia = await call("POST", "/api/v1/auth/register", { body: { username: "miar", password: "contrasena-larga-r2" } });
+
+  const community = await call("POST", "/api/v1/communities", { token: leo.access_token, body: { name: "Carreras" } });
+  const invite = await call("POST", `/api/v1/communities/${community.id}/invites`, { token: leo.access_token, body: {} });
+  await call("POST", `/api/v1/invites/${invite.code}/join`, { token: mia.access_token });
+
+  const boot = await call("GET", `/api/v1/communities/${community.id}/bootstrap`, { token: leo.access_token });
+  const channel = boot.channels.find((c: any) => c.kind === "voice");
+
+  const abrir = async (quien: any) => {
+    const client = await open(quien.access_token);
+    await waitFor(client, "READY");
+    client.socket.send(JSON.stringify({ t: "SUBSCRIBE", d: { community_id: community.id } }));
+    client.socket.send(JSON.stringify({ t: "VOICE_JOIN", d: { channel_id: channel.id } }));
+    return client;
+  };
+  const lSock = await abrir(leo);
+  const mSock = await abrir(mia);
+  await waitFor(mSock, "VOICE_STATE_UPDATE", (d) => d.states.length === 2);
+
+  lSock.socket.send(JSON.stringify({ t: "RACE_OPEN", d: { channel_id: channel.id } }));
+  await waitFor(mSock, "RACE_UPDATE", (d) => d.lobby?.host_id === leo.user.id);
+  mSock.socket.send(JSON.stringify({ t: "RACE_OPEN", d: { channel_id: channel.id } }));
+  await waitFor(mSock, "RACE_UPDATE", (d) => d.lobby?.members.length === 2);
+
+  lSock.socket.send(JSON.stringify({ t: "RACE_START", d: { channel_id: channel.id } }));
+  const corriendo = await waitFor(mSock, "RACE_UPDATE", (d) => d.lobby?.seed !== null);
+
+  // Se va quien la abrió: la carrera sigue, con el testigo en la otra persona.
+  lSock.socket.send(JSON.stringify({ t: "RACE_LEAVE", d: { channel_id: channel.id } }));
+  const sinLeo = await waitFor(mSock, "RACE_UPDATE", (d) => d.lobby?.members.length === 1);
+  assert.equal(sinLeo.lobby.host_id, mia.user.id, "el testigo pasa a quien queda");
+  assert.equal(sinLeo.lobby.seed, corriendo.lobby.seed, "sigue siendo la misma carrera");
+
+  // Y al volver, se entra en esa misma carrera: ni semilla ni salida nuevas.
+  lSock.socket.send(JSON.stringify({ t: "RACE_OPEN", d: { channel_id: channel.id } }));
+  const vuelta = await waitFor(mSock, "RACE_UPDATE", (d) => d.lobby?.members.length === 2);
+  assert.equal(vuelta.lobby.seed, corriendo.lobby.seed, "no se abre otra partida al volver");
+  assert.equal(vuelta.lobby.started_at, corriendo.lobby.started_at, "la salida es la misma");
+  assert.equal(vuelta.lobby.host_id, mia.user.id, "volver no devuelve el testigo");
+
+  for (const client of [lSock, mSock]) client.socket.close();
 });

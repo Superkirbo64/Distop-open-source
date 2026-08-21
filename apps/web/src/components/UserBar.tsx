@@ -17,7 +17,7 @@ import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
 import { Gear, Headset, Microphone } from "./icons.tsx";
 import { Avatar, DisplayName, IconButton, Menu, StatusDot, useT, type PresenceRing } from "./ui.tsx";
-import { cardBackground, effectClass } from "./ProfileStyle.tsx";
+import { cardBackground, effectClass, profileSurfaceBackground } from "./ProfileStyle.tsx";
 import { setDeafened, setMuted } from "../lib/voice.ts";
 import { useVoiceLocal } from "./Voice.tsx";
 
@@ -65,7 +65,7 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: () => void }) {
          recortarla lo dejaba invisible —existía y medía 304×582, pero no se
          pintaba ni un píxel—. Para el fondo no hacía falta: un background-image
          ya lo recorta el propio `rounded-card`. */
-      className="relative flex h-[var(--footer-h)] shrink-0 items-center gap-1 rounded-card bg-raise px-2 shadow-[var(--shadow)]"
+      className="relative flex h-[var(--footer-h)] shrink-0 items-center gap-1 rounded-card border border-line/60 bg-raise/55 px-2 shadow-[var(--shadow)] backdrop-blur-md"
       style={
         user.banner_url
           ? {
@@ -105,21 +105,37 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: () => void }) {
 
       {/* Micro y auriculares viven aquí y no solo dentro de la llamada: callarse
           es lo primero que se busca, y buscarlo dentro de otro panel es tarde. */}
+      {/* Se pinta el estado REAL: si calla la instancia —moderación o falta de
+          permiso para hablar— el botón no puede seguir enseñando el micro abierto. */}
       <IconButton
-        label={local.muted ? t("voice.unmute") : t("voice.mute")}
-        pressed={local.muted}
+        label={
+          local.forcedMuted
+            ? t("voice.cannotSpeak")
+            : local.muted
+              ? t("voice.unmute")
+              : t("voice.mute")
+        }
+        pressed={local.muted || local.forcedMuted}
+        disabled={local.forcedMuted}
         onClick={() => setMuted(!local.muted)}
-        className={local.muted ? "text-danger" : ""}
+        className={local.muted || local.forcedMuted ? "text-danger" : ""}
       >
-        <Microphone size={16} muted={local.muted} />
+        <Microphone size={16} muted={local.muted || local.forcedMuted} />
       </IconButton>
       <IconButton
-        label={local.deafened ? t("voice.undeafen") : t("voice.deafen")}
-        pressed={local.deafened}
+        label={
+          local.forcedDeafened
+            ? t("voice.forcedDeafened")
+            : local.deafened
+              ? t("voice.undeafen")
+              : t("voice.deafen")
+        }
+        pressed={local.deafened || local.forcedDeafened}
+        disabled={local.forcedDeafened}
         onClick={() => setDeafened(!local.deafened)}
-        className={local.deafened ? "text-danger" : ""}
+        className={local.deafened || local.forcedDeafened ? "text-danger" : ""}
       >
-        <Headset size={16} muted={local.deafened} />
+        <Headset size={16} muted={local.deafened || local.forcedDeafened} />
       </IconButton>
       <IconButton label={t("settings.title")} onClick={onOpenSettings}>
         <Gear size={16} />
@@ -170,31 +186,34 @@ function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: () => void; cl
   };
 
   return (
-    <div className="w-[19rem] max-w-[92vw] overflow-hidden">
+    <div
+      className="w-[21rem] max-w-[92vw] overflow-hidden"
+      style={{ background: profileSurfaceBackground(user.profile_style, user.accent_color) }}
+    >
       {/* Portada: la imagen de quien la tenga, y si no su color de acento. Nunca
           un hueco gris, que es lo que hace que un perfil parezca incompleto. */}
-      <div className="h-16 w-full" style={{ background: cardBackground(user.profile_style, user.accent_color, user.banner_url) }}>
+      <div className="h-20 w-full" style={{ background: cardBackground(user.profile_style, user.accent_color, user.banner_url) }}>
         {/* El efecto va en un hijo a pantalla completa y no en el propio div de
             la portada: `overflow: hidden` sobre el que lleva el fondo recortaria
             tambien el avatar, que sube por encima del borde a proposito. */}
         <div className={`h-full w-full ${effectClass(user.profile_style)}`} />
       </div>
 
-      <div className="-mt-8 px-3">
+      <div className="-mt-10 px-4">
         <span className="inline-block">
           <Avatar
             name={user.display_name}
             url={user.avatar_url}
             id={user.id}
-            size={64}
+            size={84}
             ring={ringOf(user.status, connection === "online")}
             profile={user.profile_style}
             cutout={4}
           />
         </span>
 
-        <p className="mt-1 truncate text-base font-bold">
-          <DisplayName name={user.display_name} style={user.profile_style} accent={user.accent_color} />
+        <p className="mt-2 truncate text-lg font-bold">
+          <DisplayName name={user.display_name} style={user.profile_style} accent={null} />
         </p>
         <p className="flex items-center gap-1.5 truncate text-xs text-muted">
           {user.kind === "guest" ? t("members.guest") : `@${user.username}`}

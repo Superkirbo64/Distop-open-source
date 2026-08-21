@@ -5,6 +5,7 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { KLIPY_API_KEY } from "./klipy-key.ts";
 
 function str(key: string, fallback: string): string {
   const v = process.env[key];
@@ -176,7 +177,7 @@ export const config = {
    * por hora; sin clave, la galeria no aparece y los stickers propios de la
    * comunidad siguen funcionando igual.
    */
-  klipyApiKey: str("KLIPY_API_KEY", ""),
+  klipyApiKey: KLIPY_API_KEY,
 
   /**
    * Buscador de fondos de pantalla (§10.2), contra la API de Wallhaven.

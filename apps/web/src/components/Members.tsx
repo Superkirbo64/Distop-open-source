@@ -9,7 +9,7 @@ import { PERMISSIONS, has, toBits, type Member } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
 import { Avatar, DisplayName, IconButton, Menu, MenuItem, Modal, useConfirm, useLocale, useT } from "./ui.tsx";
-import { cardBackground, effectClass } from "./ProfileStyle.tsx";
+import { cardBackground, effectClass, profileSurfaceBackground } from "./ProfileStyle.tsx";
 import { formatDate } from "../i18n.ts";
 
 /**
@@ -255,11 +255,14 @@ function ProfileCard({ member, onClose, color }: { member: Member | null; onClos
 
   return (
     <Modal open onClose={onClose} title={user.display_name} chrome={false}>
-      <div className="flex min-h-full flex-col">
+      <div
+        className="flex min-h-full flex-col"
+        style={{ background: profileSurfaceBackground(user.profile_style, user.accent_color) }}
+      >
         {/* Portada a sangre: el diálogo ya recorta las esquinas, así que la
             imagen llega al borde sin redondearla otra vez aquí. */}
         <div
-          className="relative h-32 shrink-0"
+          className="relative h-36 shrink-0"
           style={{ background: cardBackground(user.profile_style, user.accent_color, user.banner_url) }}
         >
           {/* El efecto se pinta sobre la portada, y lleva pointer-events:none en
@@ -278,7 +281,7 @@ function ProfileCard({ member, onClose, color }: { member: Member | null; onClos
           </button>
         </div>
 
-        <div className="-mt-12 flex flex-col items-center px-5 text-center">
+        <div className="-mt-14 flex flex-col items-center px-5 text-center">
           {/* `relative` no es decorativo: el <img> de la portada es contenido
               en línea y se pinta después que el fondo de un bloque hermano, así
               que sin posicionarlo la foto se comía el avatar. El recorte contra
@@ -288,18 +291,18 @@ function ProfileCard({ member, onClose, color }: { member: Member | null; onClos
               name={member.nickname ?? user.display_name}
               url={user.avatar_url}
               id={user.id}
-              size={88}
+              size={112}
               ring={isOnline ? "online" : "offline"}
               profile={user.profile_style}
               cutout={6}
             />
           </span>
 
-          <h3 className="display mt-3 flex flex-wrap items-center justify-center gap-1.5 text-xl font-bold">
+          <h3 className="display mt-4 flex flex-wrap items-center justify-center gap-1.5 text-xl font-bold">
             <DisplayName
               name={member.nickname ?? user.display_name}
               style={user.profile_style}
-              accent={user.accent_color}
+              accent={null}
               roleColor={color}
             />
             <code className="rounded-md bg-sunken px-1.5 py-0.5 font-body text-[0.72rem] font-medium text-accent">

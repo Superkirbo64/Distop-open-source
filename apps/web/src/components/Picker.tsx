@@ -166,7 +166,7 @@ export function Picker({
         </button>
       </div>
 
-      <div className="border-b border-line p-2">
+      <div className="border-b border-line p-2 flex flex-col">
         <div className="flex items-center gap-2 rounded-[10px] border border-line bg-bg px-2 py-1.5 focus-within:border-accent">
           <Search size={14} className="shrink-0 text-muted" />
           <input
@@ -177,6 +177,24 @@ export function Picker({
             className="min-w-0 flex-1 bg-transparent text-sm outline-none"
           />
         </div>
+        {tab === "gif" ? (
+          <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+            {["Tendencias", "LOL", "OMG", "Angry", "Sad", "Dance", "Fail"].map((cat) => {
+              const active = query.toLowerCase() === (cat === "Tendencias" ? "" : cat.toLowerCase());
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setQuery(cat === "Tendencias" ? "" : cat)}
+                  className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                    active ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:border-accent hover:text-ink"
+                  }`}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
@@ -250,15 +268,23 @@ export function Picker({
               // Dos columnas y altura libre: un GIF o sticker apaisado recortado
               // a cuadrado deja de contar el chiste que lo hacía elegible.
               <div className="columns-2 gap-2">
-                {gifs.map((gif) => (
-                  <button
-                    key={gif.id}
-                    onClick={() => onPickGif(gif)}
-                    className="mb-2 block w-full overflow-hidden rounded-[10px] border border-line hover:border-accent"
-                  >
-                    <img src={gif.preview} alt={gif.title} loading="lazy" className="w-full" />
-                  </button>
-                ))}
+                {gifs.flatMap((gif, i) => {
+                  const node = (
+                    <button
+                      key={gif.id}
+                      onClick={() => onPickGif(gif)}
+                      className="mb-2 block w-full overflow-hidden rounded-[10px] border border-line hover:border-accent"
+                    >
+                      <img src={gif.preview} alt={gif.title} loading="lazy" className="w-full" />
+                    </button>
+                  );
+                  const ad = (i + 1) % 8 === 0 ? (
+                    <div key={`ad-${i}`} className="mb-2 flex aspect-video w-full items-center justify-center rounded-[10px] border border-accent bg-accent-soft p-2 text-center text-[0.65rem] font-bold text-accent uppercase">
+                      Anuncio Promocionado
+                    </div>
+                  ) : null;
+                  return ad ? [node, ad] : [node];
+                })}
               </div>
             )}
           </>

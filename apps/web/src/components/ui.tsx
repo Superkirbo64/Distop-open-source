@@ -3,7 +3,17 @@
  * Los diálogos usan <dialog> nativo: trampa de foco, Escape y fondo modal ya
  * vienen resueltos por el navegador, sin librería de por medio.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import { Image as ImageIcon } from "lucide-react";
 import { RINGS, type ProfileStyle } from "@distop/protocol";
 import { translate, type MessageKey } from "../i18n.ts";
@@ -13,7 +23,8 @@ import { RequestError, upload } from "../lib/api.ts";
 export function useT() {
   const locale = useStore((s) => s.prefs.locale);
   return useCallback(
-    (key: MessageKey, vars?: Record<string, string | number>) => translate(locale, key, vars),
+    (key: MessageKey, vars?: Record<string, string | number>) =>
+      translate(locale, key, vars),
     [locale],
   );
 }
@@ -34,7 +45,8 @@ export function useErrorText() {
     (err: unknown): string => {
       if (!(err instanceof RequestError)) return t("error.generic");
       if (err.code === "NETWORK") return t("error.network");
-      if (err.code === "INSTANCE_UNREACHABLE") return t("error.unreachable", { status: err.status });
+      if (err.code === "INSTANCE_UNREACHABLE")
+        return t("error.unreachable", { status: err.status });
       return err.message;
     },
     [t],
@@ -47,7 +59,11 @@ type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: "primary" | "ghost" | "danger";
 };
 
-export function Button({ variant = "ghost", className = "", ...props }: ButtonProps) {
+export function Button({
+  variant = "ghost",
+  className = "",
+  ...props
+}: ButtonProps) {
   return <button {...props} className={`btn btn-${variant} ${className}`} />;
 }
 
@@ -58,7 +74,11 @@ export function IconButton({
   className = "",
   pressed,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: string; children: ReactNode; pressed?: boolean }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string;
+  children: ReactNode;
+  pressed?: boolean;
+}) {
   return (
     <button
       {...props}
@@ -71,7 +91,9 @@ export function IconButton({
       // en flex `justify-items` no hace nada — el icono se quedaba pegado al
       // borde izquierdo. `items-center justify-center` centra en los dos casos.
       className={`icon-btn flex h-9 w-9 items-center justify-center rounded-[10px] ${
-        pressed ? "bg-accent-soft text-accent" : "text-muted hover:bg-raise hover:text-ink"
+        pressed
+          ? "bg-accent-soft text-accent"
+          : "text-muted hover:bg-raise hover:text-ink"
       } ${className}`}
     >
       {children}
@@ -122,14 +144,21 @@ export function ImageField({
     }
   }
 
-  const shape = preview === "round" ? "h-16 w-16 rounded-full" : preview === "wide" ? "h-16 w-28 rounded-[10px]" : "h-16 w-16 rounded-[10px]";
+  const shape =
+    preview === "round"
+      ? "h-16 w-16 rounded-full"
+      : preview === "wide"
+        ? "h-16 w-28 rounded-[10px]"
+        : "h-16 w-16 rounded-[10px]";
 
   return (
     <div className="flex flex-col gap-1.5">
       <span className="text-sm font-medium text-ink">{label}</span>
 
       <div className="flex items-center gap-3">
-        <span className={`grid shrink-0 place-items-center overflow-hidden border border-line bg-sunken ${shape}`}>
+        <span
+          className={`grid shrink-0 place-items-center overflow-hidden border border-line bg-sunken ${shape}`}
+        >
           {value ? (
             <img src={value} alt="" className="h-full w-full object-cover" />
           ) : (
@@ -142,7 +171,9 @@ export function ImageField({
             <Button onClick={() => input.current?.click()} disabled={busy}>
               {busy ? t("common.uploading") : t("common.chooseFile")}
             </Button>
-            {value ? <Button onClick={() => onChange("")}>{t("common.remove")}</Button> : null}
+            {value ? (
+              <Button onClick={() => onChange("")}>{t("common.remove")}</Button>
+            ) : null}
           </div>
           {hint ? <p className="text-xs text-muted">{hint}</p> : null}
         </div>
@@ -283,14 +314,29 @@ export function Modal({
               {/* El nombre accesible no puede ser "×": un lector de pantalla lo lee
                   como "por" o "times", que no dice qué hace el botón. */}
               <IconButton label={t("common.close")} onClick={onClose}>
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="18"
+                  height="18"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
                   <path d="M18 6 6 18M6 6l12 12" />
                 </svg>
               </IconButton>
             </header>
           ) : null}
-          <div className={`min-h-0 flex-1 overflow-y-auto ${chrome ? "px-5 py-4" : ""}`}>{children}</div>
-          {footer ? <footer className="flex justify-end gap-2 border-t border-line px-5 py-3">{footer}</footer> : null}
+          <div
+            className={`min-h-0 flex-1 overflow-y-auto ${chrome ? "px-5 py-4" : ""}`}
+          >
+            {children}
+          </div>
+          {footer ? (
+            <footer className="flex justify-end gap-2 border-t border-line px-5 py-3">
+              {footer}
+            </footer>
+          ) : null}
         </div>
       ) : null}
     </dialog>
@@ -299,11 +345,15 @@ export function Modal({
 
 /** Confirmación explícita para lo irreversible (§28.5). */
 export function useConfirm() {
-  const [state, setState] = useState<{ message: string; resolve: (ok: boolean) => void } | null>(null);
+  const [state, setState] = useState<{
+    message: string;
+    resolve: (ok: boolean) => void;
+  } | null>(null);
   const t = useT();
 
   const confirm = useCallback(
-    (message: string) => new Promise<boolean>((resolve) => setState({ message, resolve })),
+    (message: string) =>
+      new Promise<boolean>((resolve) => setState({ message, resolve })),
     [],
   );
 
@@ -351,15 +401,51 @@ export function Menu({
   children,
   /** Sin relleno: para contenido que llega al borde, como una portada o una rejilla. */
   flush,
+  /** Sale del contexto de apilamiento y se centra respecto al disparador. */
+  floating,
 }: {
   trigger: (props: { onClick: () => void }) => ReactNode;
   children: (close: () => void) => ReactNode;
   flush?: boolean;
+  floating?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [up, setUp] = useState(false);
   const [left, setLeft] = useState(false);
+  const [floatingPosition, setFloatingPosition] = useState<{ left: number; top: number } | null>(null);
   const box = useRef<HTMLDivElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+
+  const positionFloating = useCallback(() => {
+    if (!floating) return;
+    const menu = popup.current;
+    const anchor = box.current?.getBoundingClientRect();
+    if (!menu || !anchor) return;
+
+    /* Un disparador escondido mide 0×0. Pasa con los controles que solo salen al
+       pasar el ratón por encima: al mover el ratón hacia el menú —o al enfocar
+       algo de dentro— el botón desaparece, y recolocar respecto a un rectángulo
+       vacío mandaría el menú a la esquina de la pantalla en mitad de un arrastre.
+       Se queda donde se abrió. */
+    if (anchor.width === 0 && anchor.height === 0) return;
+
+    const margin = 8;
+    const gap = 8;
+    const width = menu.offsetWidth;
+    const height = menu.offsetHeight;
+    const availableAbove = anchor.top - gap - margin;
+    const availableBelow = window.innerHeight - anchor.bottom - gap - margin;
+    const above = height <= availableAbove || availableAbove >= availableBelow;
+    const idealLeft = anchor.left + anchor.width / 2 - width / 2;
+    const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+    const idealTop = above ? anchor.top - gap - height : anchor.bottom + gap;
+    const maxTop = Math.max(margin, window.innerHeight - height - margin);
+
+    setFloatingPosition({
+      left: Math.min(maxLeft, Math.max(margin, idealLeft)),
+      top: Math.min(maxTop, Math.max(margin, idealTop)),
+    });
+  }, [floating]);
 
   /**
    * Abrir hacia arriba cuando abajo no cabe.
@@ -370,9 +456,15 @@ export function Menu({
    */
   useLayoutEffect(() => {
     if (!open) return;
-    const menu = box.current?.querySelector<HTMLElement>('[role="menu"]');
+    const menu = popup.current;
     const anchor = box.current?.getBoundingClientRect();
     if (!menu || !anchor) return;
+
+    if (floating) {
+      setFloatingPosition(null);
+      positionFloating();
+      return;
+    }
 
     const alto = menu.offsetHeight;
     const cabeAbajo = anchor.bottom + alto + 8 <= window.innerHeight;
@@ -385,13 +477,29 @@ export function Menu({
        al lado izquierdo de la ventana —la barra de usuario— eso deja medio menú
        fuera de la pantalla. */
     const ancho = menu.offsetWidth;
-    setLeft(anchor.right - ancho < 8 && anchor.left + ancho + 8 <= window.innerWidth);
-  }, [open]);
+    setLeft(
+      anchor.right - ancho < 8 && anchor.left + ancho + 8 <= window.innerWidth,
+    );
+  }, [open, floating, positionFloating]);
+
+  useEffect(() => {
+    if (!open || !floating) return;
+    const observer = new ResizeObserver(positionFloating);
+    if (popup.current) observer.observe(popup.current);
+    window.addEventListener("resize", positionFloating);
+    window.addEventListener("scroll", positionFloating, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", positionFloating);
+      window.removeEventListener("scroll", positionFloating, true);
+    };
+  }, [open, floating, positionFloating]);
 
   useEffect(() => {
     if (!open) return;
     const away = (event: MouseEvent) => {
-      if (!box.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!box.current?.contains(target) && !popup.current?.contains(target)) setOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
@@ -404,19 +512,35 @@ export function Menu({
     };
   }, [open]);
 
+  const content = (
+    <div
+      ref={popup}
+      role="menu"
+      style={
+        floating
+          ? {
+              left: floatingPosition?.left ?? 0,
+              top: floatingPosition?.top ?? 0,
+              zIndex: 1000,
+              visibility: floatingPosition ? "visible" : "hidden",
+              maxHeight: "calc(100vh - 16px)",
+            }
+          : undefined
+      }
+      className={`card min-w-52 overflow-hidden text-sm ${
+        floating
+          ? "fixed"
+          : `absolute z-30 ${left ? "left-0" : "right-0"} ${up ? "bottom-full mb-1" : "mt-1"}`
+      } ${flush ? "" : "p-1"}`}
+    >
+      {children(() => setOpen(false))}
+    </div>
+  );
+
   return (
     <div ref={box} className="relative">
       {trigger({ onClick: () => setOpen((v) => !v) })}
-      {open ? (
-        <div
-          role="menu"
-          className={`card absolute z-30 min-w-52 overflow-hidden text-sm ${left ? "left-0" : "right-0"} ${
-            flush ? "" : "p-1"
-          } ${up ? "bottom-full mb-1" : "mt-1"}`}
-        >
-          {children(() => setOpen(false))}
-        </div>
-      ) : null}
+      {open ? (floating ? createPortal(content, document.body) : content) : null}
     </div>
   );
 }
@@ -453,9 +577,10 @@ export function MenuItem({
  * personas del mismo color. La luminosidad y el croma son fijos, así que el
  * texto blanco encima contrasta igual en todos los tonos.
  */
-function hueOf(seed: string): number {
+export function hueOf(seed: string): number {
   let hash = 0;
-  for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  for (let i = 0; i < seed.length; i++)
+    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
   return Math.abs(hash) % 360;
 }
 
@@ -478,7 +603,13 @@ export function StatusDot({
   className?: string;
 }) {
   const color =
-    status === "online" ? "var(--ok)" : status === "idle" ? "var(--warn)" : status === "dnd" ? "var(--danger)" : "var(--muted)";
+    status === "online"
+      ? "var(--ok)"
+      : status === "idle"
+        ? "var(--warn)"
+        : status === "dnd"
+          ? "var(--danger)"
+          : "var(--muted)";
 
   return (
     // Nunca se posiciona a sí mismo: quien lo usa decide dónde va. Ponerle
@@ -492,7 +623,13 @@ export function StatusDot({
       {status === "idle" ? (
         <span
           className="block rounded-full"
-          style={{ width: "70%", height: "70%", background: "var(--surface)", marginLeft: "-8%", marginTop: "-8%" }}
+          style={{
+            width: "70%",
+            height: "70%",
+            background: "var(--surface)",
+            marginLeft: "-8%",
+            marginTop: "-8%",
+          }}
         />
       ) : null}
       {/* Barra central, como el símbolo de prohibido. */}
@@ -554,37 +691,65 @@ export function Avatar({
 }) {
   const hue = hueOf(id ?? name);
   const initials = name.trim().slice(0, 2).toUpperCase();
-  const aro = profile?.avatar_ring ? RINGS.find((r) => r.id === profile.avatar_ring) : undefined;
+  const aro = profile?.avatar_ring
+    ? RINGS.find((r) => r.id === profile.avatar_ring)
+    : undefined;
 
   /* `scale` y no width/height: la caja de maquetacion sigue midiendo `size`, asi
      que una fila de la lista no se descuadra porque alguien se ponga un aro. */
   const cara: CSSProperties = {
     ...(aro ? { scale: String(CARA_CON_ARO) } : {}),
-    ...(cutout && !aro ? { boxShadow: `0 0 0 ${cutout}px var(--surface)` } : {}),
+    ...(cutout && !aro
+      ? { boxShadow: `0 0 0 ${cutout}px var(--surface)` }
+      : {}),
   };
   /* El punto de estado va pegado al borde de la cara, y la cara ha crecido:
      0.7 ≈ cos 45°, que es por donde lo cruza la diagonal de la esquina. */
   const desborde = aro ? (size * (CARA_CON_ARO - 1)) / 2 : 0;
 
   return (
-    <span className="relative inline-block shrink-0" style={{ width: size, height: size }}>
+    <span
+      className="relative inline-block shrink-0"
+      style={{ width: size, height: size }}
+    >
       {url ? (
         <img
           src={url}
           alt=""
-          className="h-full w-full rounded-full object-cover"
+          className="relative z-[1] h-full w-full rounded-full object-cover"
           loading="lazy"
           style={cara}
         />
       ) : (
         <span
           aria-hidden="true"
-          className="grid h-full w-full place-items-center rounded-full font-semibold text-white"
-          style={{ ...cara, background: `oklch(0.55 0.13 ${hue})`, fontSize: size * 0.36 }}
+          className="relative z-[1] grid h-full w-full place-items-center rounded-full font-semibold text-white"
+          style={{
+            ...cara,
+            background: `oklch(0.55 0.13 ${hue})`,
+            fontSize: size * 0.36,
+          }}
         >
           {initials}
         </span>
       )}
+      {/* No todas las piezas del catálogo son círculos completos: algunas son
+          alas, cascos o personajes apoyados en un lado. Este asiento continuo
+          garantiza que sigan leyéndose como aro y tapa la unión con la cara;
+          la ilustración animada se pinta encima en la capa siguiente. */}
+      {aro ? (
+        <span
+          aria-hidden="true"
+          className="avatar-ring-seat"
+          style={
+            {
+              "--avatar-ring-a": profile?.theme_a ?? profile?.name_color ?? "var(--accent)",
+              "--avatar-ring-b": profile?.theme_b ?? profile?.theme_a ?? profile?.name_color ?? "var(--accent)",
+              "--avatar-ring-width": `${Math.max(1.5, size * 0.045)}px`,
+            } as CSSProperties
+          }
+        />
+      ) : null}
       {/* Aro del catalogo: tres capas del mismo atlas (base, acentos,
           particulas). Un solo fichero descargado y tres animaciones distintas
           encima, en vez de un GIF por aro.
@@ -597,7 +762,9 @@ export function Avatar({
           aria-hidden="true"
           className="ring-stack"
           data-ring={aro.motion}
-          style={{ "--ring-texture": `url("/rings/${aro.id}.png")` } as CSSProperties}
+          style={
+            { "--ring-texture": `url("/rings/${aro.id}.png")` } as CSSProperties
+          }
         >
           <span className="ring-layer ring-base" />
           <span className="ring-layer ring-accents" />
@@ -614,16 +781,19 @@ export function Avatar({
           alt=""
           aria-hidden="true"
           loading="lazy"
-          className="pointer-events-none absolute top-1/2 left-1/2 max-w-none -translate-x-1/2 -translate-y-1/2"
+          className="pointer-events-none absolute top-1/2 left-1/2 z-[4] max-w-none -translate-x-1/2 -translate-y-1/2"
           style={{ width: size * 1.32, height: size * 1.32 }}
         />
       ) : null}
       {ring ? (
         <span
-          className="absolute block"
+          className="absolute z-[5] block"
           style={{ right: -2 - desborde * 0.7, bottom: -2 - desborde * 0.7 }}
         >
-          <StatusDot status={ring} size={Math.max(10, Math.round(size * 0.3))} />
+          <StatusDot
+            status={ring}
+            size={Math.max(10, Math.round(size * 0.3))}
+          />
         </span>
       ) : null}
     </span>
@@ -665,7 +835,11 @@ export function DisplayName({
 
   /* Un efecto de degradado necesita pintar el texto transparente, y con el
      color del rol encima eso lo dejaría invisible. Con rol, efecto plano. */
-  const effect = roleColor && (style.name_effect === "gradient" || style.name_effect === "animated") ? "plain" : style.name_effect;
+  const effect =
+    roleColor &&
+    (style.name_effect === "gradient" || style.name_effect === "animated")
+      ? "plain"
+      : style.name_effect;
 
   return (
     <span
@@ -684,14 +858,25 @@ export function DisplayName({
 
 export function Spinner({ label }: { label: string }) {
   return (
-    <div className="flex items-center justify-center gap-3 p-8 text-sm text-muted" role="status">
+    <div
+      className="flex items-center justify-center gap-3 p-8 text-sm text-muted"
+      role="status"
+    >
       <span className="h-4 w-4 animate-spin rounded-full border-2 border-line border-t-accent" />
       {label}
     </div>
   );
 }
 
-export function EmptyState({ title, hint, action }: { title: string; hint?: string; action?: ReactNode }) {
+export function EmptyState({
+  title,
+  hint,
+  action,
+}: {
+  title: string;
+  hint?: string;
+  action?: ReactNode;
+}) {
   return (
     <div className="m-auto flex max-w-sm flex-col items-center gap-3 px-6 py-12 text-center">
       <h3 className="display text-lg font-bold">{title}</h3>
@@ -704,7 +889,10 @@ export function EmptyState({ title, hint, action }: { title: string; hint?: stri
 /** Mensajes de error del servidor tal cual: ocultarlos solo alarga el problema (§26). */
 export function ErrorNote({ children }: { children: ReactNode }) {
   return (
-    <p role="alert" className="rounded-[10px] border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+    <p
+      role="alert"
+      className="rounded-[10px] border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger"
+    >
       {children}
     </p>
   );

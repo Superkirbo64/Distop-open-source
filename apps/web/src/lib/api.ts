@@ -136,7 +136,7 @@ export async function api<T>(method: string, path: string, body?: unknown, retry
   return parse<T>(res);
 }
 
-export async function upload(file: File): Promise<{ id: string; url: string; filename: string; size: number }> {
+export async function upload(file: File): Promise<{ id: string; url: string; filename: string; size: number; content_type: string }> {
   const res = await fetch("/api/v1/uploads", {
     method: "POST",
     headers: {

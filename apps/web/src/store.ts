@@ -15,6 +15,7 @@ import type {
   InstanceHealth,
   Member,
   Message,
+  RaceLobby,
   Role,
   SelfUser,
   ServerEvent,
@@ -25,7 +26,8 @@ import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
 import { connect, disconnect, onEvent, onStatus, sendCommand, type ConnectionStatus } from "./lib/gateway.ts";
 import { detectLocale, type Locale } from "./i18n.ts";
 import { notify, type NotifyLevel } from "./lib/notify.ts";
-import { configureVoice, handleSignal, resumeVoice, setVideoMode, syncPeers } from "./lib/voice.ts";
+import { configureVoice, currentChannel, handleSignal, resumeVoice, setSoundError, setVideoMode, syncPeers } from "./lib/voice.ts";
+import { playClip } from "./lib/relay.ts";
 
 export type ThemeChoice = "light" | "dark" | "system";
 export type Density = "compact" | "cozy";
@@ -103,6 +105,8 @@ interface State {
   setup: { required: boolean; requiresCode: boolean } | null;
   /** Quién está en cada canal de voz, por canal. */
   voice: Record<string, VoiceState[]>;
+  /** canal → sala de la carrera de canicas, o ausente si no hay ninguna (§9.4). */
+  races: Record<string, RaceLobby | null>;
   /** Dirección pública de la instancia, para que los enlaces sirvan fuera de casa. */
   publicUrl: string;
   /** El anfitrión configuró clave de Giphy. Sin esto la pestaña de GIF no se enseña. */
@@ -113,6 +117,10 @@ interface State {
       selector de stickers también necesita poder llevarte ahí. */
   manageOpen: boolean;
   setManageOpen: (open: boolean) => void;
+  /** Vista de gravedad de la sala de voz. En el store porque el interruptor
+      vive en la cabecera del canal y el lienzo dentro de la sala. */
+  gravity: boolean;
+  setGravity: (on: boolean) => void;
 
   communities: Community[];
   data: Record<string, CommunityData>;
@@ -259,11 +267,14 @@ export const useStore = create<State>()((set, get) => ({
   instance: null,
   setup: null,
   voice: {},
+  races: {},
   publicUrl: "",
   gifEnabled: false,
   stickerGalleryEnabled: false,
   manageOpen: false,
   setManageOpen: (manageOpen) => set({ manageOpen }),
+  gravity: false,
+  setGravity: (gravity) => set({ gravity }),
   tuner: false,
 
   communities: [],
@@ -600,8 +611,50 @@ onEvent((event: ServerEvent) => {
       return;
     }
 
+    /* La sala de la carrera llega entera: quién está apuntado, qué mundo, y la
+       semilla en cuanto arranca. Con eso cada cliente calcula la misma carrera
+       sin que la instancia simule nada. */
+    case "RACE_UPDATE": {
+      useStore.setState({ races: { ...state.races, [event.d.channel_id]: event.d.lobby } });
+      return;
+    }
+
     case "VOICE_SIGNAL": {
       void handleSignal(event.d.from_user_id, event.d.payload);
+      return;
+    }
+
+    /* Un sonido de la tabla. Llega el id, no el audio: el archivo se pide a la
+       instancia y se guarda decodificado, asi que pulsarlo diez veces cuesta una
+       sola descarga. A quien esta ensordecido el servidor ya no se lo manda. */
+    case "VOICE_SOUND": {
+      // El servidor emite a todas las sesiones de una persona. Solo la pestaña
+      // que está realmente en esta sala debe reproducirlo.
+      if (currentChannel() !== event.d.channel_id) return;
+      void (async () => {
+        let sonido = useStore.getState().expressions.find((e) => e.id === event.d.sound_id && e.kind === "sound");
+        if (!sonido) {
+          // Cubre una reconexión o un EMOJI_UPDATE que llegó justo después: el
+          // evento no se pierde solo porque el catálogo local iba un paso atrás.
+          await useStore.getState().loadExpressions();
+          sonido = useStore.getState().expressions.find((e) => e.id === event.d.sound_id && e.kind === "sound");
+        }
+        if (currentChannel() !== event.d.channel_id) return;
+        if (!sonido) {
+          setSoundError("not_available");
+          return;
+        }
+
+        const result = await playClip(sonido.url);
+        if (currentChannel() !== event.d.channel_id) return;
+        if (result.ok) setSoundError(null);
+        else if (result.reason !== "deafened") setSoundError(result.reason);
+      })();
+      return;
+    }
+
+    case "VOICE_SOUND_ERROR": {
+      if (currentChannel() === event.d.channel_id) setSoundError(event.d.reason);
       return;
     }
 

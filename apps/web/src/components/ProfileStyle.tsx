@@ -29,9 +29,25 @@ import { Avatar, DisplayName, ImageField, useT } from "./ui.tsx";
  * degradado, luego acento— habría que acertarlo tres veces.
  */
 export function cardBackground(style: ProfileStyle, accent: string | null, bannerUrl: string | null): string {
-  if (bannerUrl) return `center/cover url(${JSON.stringify(bannerUrl)})`;
-  if (style.theme_a && style.theme_b) return `linear-gradient(135deg, ${style.theme_a}, ${style.theme_b})`;
-  return style.theme_a ?? accent ?? "var(--accent)";
+  const gradient = profileGradient(style, accent);
+  if (!bannerUrl) return gradient;
+  const a = style.theme_a ?? accent ?? "var(--accent)";
+  const b = style.theme_b ?? accent ?? "var(--accent)";
+  const center = `color-mix(in oklab, ${a} 50%, ${b})`;
+  return `linear-gradient(${style.theme_angle}deg, color-mix(in srgb, ${a} 28%, transparent) 0%, color-mix(in srgb, ${center} 38%, transparent) ${style.theme_balance}%, color-mix(in srgb, ${b} 42%, transparent) 100%), center/cover no-repeat url(${JSON.stringify(bannerUrl)})`;
+}
+
+/** El gradiente base, compartido por portada, cuerpo y vista previa. */
+export function profileGradient(style: ProfileStyle, accent: string | null): string {
+  const a = style.theme_a ?? accent ?? "var(--accent)";
+  const b = style.theme_b ?? accent ?? "var(--accent)";
+  const center = `color-mix(in oklab, ${a} 50%, ${b})`;
+  return `linear-gradient(${style.theme_angle}deg, ${a} 0%, ${center} ${style.theme_balance}%, ${b} 100%)`;
+}
+
+/** Gradiente oscurecido para que el texto siga siendo legible sobre cualquier color. */
+export function profileSurfaceBackground(style: ProfileStyle, accent: string | null): string {
+  return `linear-gradient(color-mix(in srgb, var(--surface) 62%, transparent), color-mix(in srgb, var(--surface) 76%, transparent)), ${profileGradient(style, accent)}`;
 }
 
 /** Clase del efecto de tarjeta, o cadena vacía. Misma razón que cardBackground. */
@@ -67,17 +83,20 @@ export function ProfileStyleEditor({
 
       {/* Vista previa arriba del todo: cada fila de abajo cambia esto en directo,
           que es lo que evita ir probando a ciegas y guardar para ver el resultado. */}
-      <div className="overflow-hidden rounded-[10px] border border-line">
-        <div className="h-20 w-full" style={{ background: cardBackground(value, accent, bannerUrl || null) }}>
+      <div
+        className="overflow-hidden rounded-[10px] border border-line"
+        style={{ background: profileSurfaceBackground(value, accent) }}
+      >
+        <div className="h-24 w-full" style={{ background: cardBackground(value, accent, bannerUrl || null) }}>
           <div className={`h-full w-full ${effectClass(value)}`} />
         </div>
-        <div className="-mt-7 px-3 pb-3">
-          <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={52} profile={value} cutout={4} />
-          <p className="mt-1 truncate text-base font-bold">
-            <DisplayName name={name || "?"} style={value} accent={accent} />
+        <div className="-mt-10 px-4 pb-4">
+          <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={80} profile={value} cutout={5} />
+          <p className="mt-2 truncate text-lg font-bold">
+            <DisplayName name={name || "?"} style={value} accent={null} />
           </p>
           {/* Cómo se ve en la lista de miembros, que es donde vive la placa. */}
-          <div className={`mt-2 flex items-center gap-2 rounded-[10px] px-2 py-1.5 plate plate-${value.nameplate}`}>
+          <div className={`mt-2 flex items-center gap-2 rounded-[10px] border border-line bg-surface/75 px-2 py-1.5 backdrop-blur-sm plate plate-${value.nameplate}`}>
             <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={24} />
             <span className="truncate text-sm font-medium">
               <DisplayName name={name || "?"} style={value} accent={accent} />
@@ -182,12 +201,71 @@ export function ProfileStyleEditor({
         )}
       />
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-1">
         <ColorSlot label={t("profileStyle.nameColor")} value={value.name_color} fallback={accent} onChange={(name_color) => onChange({ name_color })} />
+      </div>
+
+      <GradientControls value={value} accent={accent} onChange={onChange} />
+    </section>
+  );
+}
+
+function GradientControls({
+  value,
+  accent,
+  onChange,
+}: {
+  value: ProfileStyle;
+  accent: string;
+  onChange: (patch: Partial<ProfileStyle>) => void;
+}) {
+  const t = useT();
+  return (
+    <fieldset className="flex flex-col gap-3 rounded-[10px] border border-line bg-sunken/40 p-3">
+      <legend className="px-1 text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
+        {t("profileStyle.gradient")}
+      </legend>
+      <p className="text-xs text-muted">{t("profileStyle.gradientHint")}</p>
+      <div
+        className="h-16 rounded-[10px] border border-line"
+        style={{ background: profileGradient(value, accent) }}
+        aria-label={t("profileStyle.gradientPreview")}
+      />
+      <div className="grid gap-3 sm:grid-cols-2">
         <ColorSlot label={t("profileStyle.themeA")} value={value.theme_a} fallback={accent} onChange={(theme_a) => onChange({ theme_a })} />
         <ColorSlot label={t("profileStyle.themeB")} value={value.theme_b} fallback={accent} onChange={(theme_b) => onChange({ theme_b })} />
       </div>
-    </section>
+      <label className="flex flex-col gap-1.5">
+        <span className="flex items-center justify-between text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
+          {t("profileStyle.gradientAngle")}
+          <output>{value.theme_angle}°</output>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={360}
+          step={1}
+          value={value.theme_angle}
+          onChange={(event) => onChange({ theme_angle: Number(event.target.value) })}
+          className="w-full accent-[var(--accent)]"
+        />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="flex items-center justify-between text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
+          {t("profileStyle.gradientBalance")}
+          <output>{value.theme_balance}%</output>
+        </span>
+        <input
+          type="range"
+          min={10}
+          max={90}
+          step={1}
+          value={value.theme_balance}
+          onChange={(event) => onChange({ theme_balance: Number(event.target.value) })}
+          className="w-full accent-[var(--accent)]"
+        />
+      </label>
+    </fieldset>
   );
 }
 

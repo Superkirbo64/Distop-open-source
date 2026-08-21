@@ -16,6 +16,26 @@ mkdirSync(ROOT, { recursive: true });
 
 const SAFE_EXT = /^\.[a-z0-9]{1,8}$/i;
 
+/** Rechaza el caso común de renombrar cualquier byte como audio. La decodificación
+    definitiva sigue correspondiendo al navegador, pero un MIME inventado no llega
+    a convertirse en un botón roto para toda la comunidad. */
+export function hasAudioSignature(contentType: string, data: Uint8Array): boolean {
+  if (contentType === "audio/mpeg") {
+    const id3 = data.length >= 3 && data[0] === 0x49 && data[1] === 0x44 && data[2] === 0x33;
+    const frame = data.length >= 2 && data[0] === 0xff && (data[1]! & 0xe0) === 0xe0;
+    return id3 || frame;
+  }
+  if (contentType === "audio/ogg")
+    return data.length >= 4 && data[0] === 0x4f && data[1] === 0x67 && data[2] === 0x67 && data[3] === 0x53;
+  if (contentType === "audio/wav" || contentType === "audio/x-wav")
+    return (
+      data.length >= 12 &&
+      data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46 &&
+      data[8] === 0x57 && data[9] === 0x41 && data[10] === 0x56 && data[11] === 0x45
+    );
+  return true;
+}
+
 export function saveUpload(opts: {
   ownerId: string;
   filename: string;
@@ -26,6 +46,9 @@ export function saveUpload(opts: {
     throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", `Tipo de archivo no permitido: ${opts.contentType}.`, {
       allowed: config.allowedUploadTypes,
     });
+  }
+  if (opts.contentType.startsWith("audio/") && !hasAudioSignature(opts.contentType, opts.data)) {
+    throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "El contenido no coincide con el formato de audio indicado.");
   }
 
   const id = uuidv7();
@@ -190,6 +213,18 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
   });
   createReadStream(full).pipe(ctx.res);
   return HANDLED;
+}
+
+/** Borra una pieza de almacenamiento y su fila. Las referencias con ON DELETE
+    CASCADE desaparecen en la misma operación; el fichero nunca queda huérfano. */
+export function deleteStoredAttachment(id: string): void {
+  const row = db.prepare("SELECT path FROM attachments WHERE id = ?").get(id) as { path: string } | undefined;
+  if (!row) return;
+  if (row.path) {
+    const full = resolve(ROOT, row.path);
+    if (full.startsWith(ROOT) && existsSync(full)) unlinkSync(full);
+  }
+  db.prepare("DELETE FROM attachments WHERE id = ?").run(id);
 }
 
 export function deleteAttachmentsOf(messageId: string): void {

@@ -14,8 +14,11 @@ type StatusHandler = (status: ConnectionStatus) => void;
 type MediaHandler = (userId: string, kind: number, payload: Uint8Array) => void;
 
 let socket: WebSocket | null = null;
+/** Vídeo en otro TCP: un fotograma grande no puede ponerse delante de la voz o de un botón. */
+let videoSocket: WebSocket | null = null;
 let retries = 0;
 let reconnectTimer: number | undefined;
+let videoReconnectTimer: number | undefined;
 let closedOnPurpose = false;
 
 const eventHandlers = new Set<EventHandler>();
@@ -31,6 +34,37 @@ function readSender(bytes: Uint8Array): string {
   let hex = "";
   for (const byte of bytes) hex += byte.toString(16).padStart(2, "0");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function receiveMedia(data: ArrayBuffer): void {
+  if (!mediaHandler || data.byteLength <= 17) return;
+  const bytes = new Uint8Array(data);
+  mediaHandler(readSender(bytes.subarray(1, 17)), bytes[0]!, bytes.subarray(17));
+}
+
+/**
+ * El vídeo usa una conexión dedicada. WebSocket va sobre TCP: sin esta separación,
+ * un keyframe de cientos de KB bloquea detrás de sí audio, presencia y controles.
+ * El servidor conserva la ruta antigua como respaldo durante actualizaciones.
+ */
+function connectVideo(token: string): void {
+  if (closedOnPurpose || videoSocket || socket?.readyState !== WebSocket.OPEN) return;
+  const protocol = location.protocol === "https:" ? "wss" : "ws";
+  const media = new WebSocket(
+    `${protocol}://${location.host}/realtime?token=${encodeURIComponent(token)}&media=video`,
+  );
+  videoSocket = media;
+  media.binaryType = "arraybuffer";
+  media.onmessage = (raw) => {
+    if (raw.data instanceof ArrayBuffer) receiveMedia(raw.data);
+  };
+  media.onerror = () => media.close();
+  media.onclose = () => {
+    if (videoSocket === media) videoSocket = null;
+    if (closedOnPurpose || socket?.readyState !== WebSocket.OPEN) return;
+    clearTimeout(videoReconnectTimer);
+    videoReconnectTimer = window.setTimeout(() => connectVideo(token), 1000);
+  };
 }
 
 function emitStatus(status: ConnectionStatus): void {
@@ -60,6 +94,7 @@ export function connect(): void {
   socket.onopen = () => {
     retries = 0;
     emitStatus("online");
+    connectVideo(tokens.access_token);
   };
 
   // Los paquetes de voz llegan en binario por este mismo socket; no hay que
@@ -68,9 +103,7 @@ export function connect(): void {
 
   socket.onmessage = (raw) => {
     if (raw.data instanceof ArrayBuffer) {
-      if (!mediaHandler || raw.data.byteLength <= 17) return;
-      const bytes = new Uint8Array(raw.data);
-      mediaHandler(readSender(bytes.subarray(1, 17)), bytes[0]!, bytes.subarray(17));
+      receiveMedia(raw.data);
       return;
     }
 
@@ -87,6 +120,9 @@ export function connect(): void {
 
   socket.onclose = () => {
     socket = null;
+    clearTimeout(videoReconnectTimer);
+    videoSocket?.close();
+    videoSocket = null;
     if (closedOnPurpose) {
       emitStatus("offline");
       return;
@@ -102,7 +138,10 @@ export function connect(): void {
 export function disconnect(): void {
   closedOnPurpose = true;
   clearTimeout(reconnectTimer);
+  clearTimeout(videoReconnectTimer);
   retries = 0;
+  videoSocket?.close();
+  videoSocket = null;
   socket?.close();
   socket = null;
   emitStatus("offline");
@@ -112,10 +151,20 @@ export function sendCommand(command: ClientCommand): void {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(command));
 }
 
-/** Un paquete de voz o imagen. Se descarta si el socket va justo: lo viejo no sirve. */
-export function sendMedia(frame: ArrayBuffer): void {
-  if (socket?.readyState !== WebSocket.OPEN || socket.bufferedAmount > 524_288) return;
-  socket.send(frame);
+/**
+ * Envía voz o imagen e informa si entró en la cola. El codificador de vídeo usa
+ * el `false` para pedir inmediatamente otro fotograma clave: seguir mandando
+ * deltas que dependen de uno descartado solo gastaría red en una imagen rota.
+ */
+export function sendMedia(frame: ArrayBuffer): boolean {
+  const kind = new Uint8Array(frame, 0, 1)[0];
+  const video = kind !== 0;
+  const dedicated = videoSocket?.readyState === WebSocket.OPEN ? videoSocket : null;
+  const target = video && dedicated ? dedicated : socket;
+  const maxBuffered = video && dedicated ? 2_097_152 : 524_288;
+  if (target?.readyState !== WebSocket.OPEN || target.bufferedAmount > maxBuffered) return false;
+  target.send(frame);
+  return true;
 }
 
 /** Volver a la pestaña con la instancia caída no debería costar 15 s de espera. */

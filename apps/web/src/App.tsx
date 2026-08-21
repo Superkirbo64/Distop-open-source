@@ -9,7 +9,7 @@ import { CreateCommunity, JoinCommunity, Rail } from "./components/Rail.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { VoiceBar } from "./components/Voice.tsx";
 import { UserBar } from "./components/UserBar.tsx";
-import { Chat } from "./components/Chat.tsx";
+import { Chat, VoiceChatPanel } from "./components/Chat.tsx";
 import { Members } from "./components/Members.tsx";
 import { Auth } from "./views/Auth.tsx";
 import { Setup } from "./views/Setup.tsx";
@@ -103,6 +103,8 @@ export function App() {
   const boot = useStore((s) => s.boot);
   const communities = useStore((s) => s.communities);
   const activeCommunityId = useStore((s) => s.activeCommunityId);
+  const activeChannelId = useStore((s) => s.activeChannelId);
+  const activeData = useStore((s) => (activeCommunityId ? s.data[activeCommunityId] : undefined));
   const openCommunity = useStore((s) => s.openCommunity);
 
   const [settings, setSettings] = useState(false);
@@ -117,13 +119,20 @@ export function App() {
   const [mobilePane, setMobilePane] = useState<"nav" | "main" | "members">("main");
   const [membersOpen, setMembersOpen] = usePanel("members", true);
   const isMobile = useIsMobile();
+  const activeChannel = activeData?.channels.find((channel) => channel.id === activeChannelId);
+  const voiceChat = activeChannel?.kind === "voice";
+
+  // Al cambiar a una sala de voz, el lateral se convierte en su chat y se abre
+  // una vez. Si la persona lo cierra después, se respeta hasta cambiar de canal.
+  useEffect(() => {
+    if (voiceChat && !isMobile) setMembersOpen(true);
+  }, [activeChannelId, voiceChat, isMobile, setMembersOpen]);
 
   useEffect(() => {
     void boot();
   }, [boot]);
 
-  // Ctrl/⌘+U para los miembros: plegar sin ratón. El de canales se fue con su
-  // botón: la lista de canales ya no se pliega, siempre está.
+  // Ctrl/⌘+U pliega el lateral derecho sin ratón: miembros en texto, chat en voz.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
@@ -167,6 +176,7 @@ export function App() {
       className="app-grid"
       data-mobile={mobilePane}
       data-members={membersOpen ? "on" : "off"}
+      data-right={voiceChat ? "voice-chat" : "members"}
     >
       <Rail onNavigate={() => setMobilePane("main")} onCreate={() => setCreating(true)} onJoin={() => setJoining(true)} />
 
@@ -184,9 +194,13 @@ export function App() {
         onJoinCommunity={() => setJoining(true)}
       />
 
-      {/* Siempre montado: plegarlo anima su columna, y desmontarlo daría el salto
-          que estamos quitando. En móvil lo esconde la rejilla, no React. */}
-      <Members onClose={() => (isMobile ? setMobilePane("main") : setMembersOpen(false))} />
+      {/* Siempre hay un lateral montado: plegarlo anima su columna y evita saltos.
+          En móvil lo esconde la rejilla, no React. */}
+      {voiceChat ? (
+        <VoiceChatPanel onClose={() => (isMobile ? setMobilePane("main") : setMembersOpen(false))} />
+      ) : (
+        <Members onClose={() => (isMobile ? setMobilePane("main") : setMembersOpen(false))} />
+      )}
 
       {/* Fuera del panel de canales y en su propia fila: así la barra de perfil
           cruza por debajo de la columna de comunidades en vez de terminar donde

@@ -182,6 +182,10 @@ export interface ProfileStyle {
   /** Degradado de la tarjeta de perfil. null = se usa `accent_color`. */
   theme_a: string | null;
   theme_b: string | null;
+  /** Dirección del degradado CSS, en grados. */
+  theme_angle: number;
+  /** Punto en que ambos colores quedan mezclados por igual, de 10 a 90 %. */
+  theme_balance: number;
 }
 
 export const DEFAULT_PROFILE_STYLE: ProfileStyle = {
@@ -194,6 +198,8 @@ export const DEFAULT_PROFILE_STYLE: ProfileStyle = {
   profile_effect: "none",
   theme_a: null,
   theme_b: null,
+  theme_angle: 135,
+  theme_balance: 50,
 };
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -217,6 +223,10 @@ export function toProfileStyle(raw: unknown): ProfileStyle {
     const value = source[key];
     return typeof value === "string" && HEX_COLOR.test(value) ? value : null;
   };
+  const integer = (key: string, min: number, max: number, fallback: number): number => {
+    const value = source[key];
+    return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max ? value : fallback;
+  };
 
   /* Acaba en un <img src>, asi que solo pasan rutas de esta instancia o enlaces
      http(s). Se descartan `data:` y `javascript:` por lista blanca y no por
@@ -237,6 +247,8 @@ export function toProfileStyle(raw: unknown): ProfileStyle {
     profile_effect: pick("profile_effect", PROFILE_EFFECTS, "none"),
     theme_a: color("theme_a"),
     theme_b: color("theme_b"),
+    theme_angle: integer("theme_angle", 0, 360, 135),
+    theme_balance: integer("theme_balance", 10, 90, 50),
   };
 }
 
@@ -356,13 +368,19 @@ export interface Unread {
   mentions: number;
 }
 
-/* ── emojis y stickers propios (§10.3) ─────────────────────────────────
+/* ── emojis, stickers y sonidos propios (§10.3) ────────────────────────
    No hay tope por suscripción: el límite es el disco de quien hospeda, y eso
    se dice claro en vez de inventar un número. Un sticker es lo mismo que un
    emoji con otro tamaño de pintado, así que comparten tabla y comparten sintaxis
-   en el texto: `<:nombre:id>`. */
+   en el texto: `<:nombre:id>`.
 
-export const EMOJI_KINDS = ["emoji", "sticker"] as const;
+   Un sonido de la tabla de sonidos es el mismo registro con otro tipo de
+   archivo. Cabe aquí y no en una tabla propia porque es exactamente lo mismo:
+   un archivo con nombre que pertenece a una comunidad, se sube o se importa,
+   se lista y se borra igual. Lo único que cambia es con qué etiqueta se pinta.
+   Los sonidos NO entran en CUSTOM_EMOJI: no se escriben dentro de un mensaje. */
+
+export const EMOJI_KINDS = ["emoji", "sticker", "sound"] as const;
 export type EmojiKind = (typeof EMOJI_KINDS)[number];
 
 export interface CustomEmoji {
@@ -371,6 +389,9 @@ export interface CustomEmoji {
   name: string;
   kind: EmojiKind;
   url: string;
+  /** Identidad visual opcional de un sonido. Solo uno de estos dos se guarda. */
+  icon_emoji: string | null;
+  icon_url: string | null;
   creator_id: Snowflake;
   created_at: number;
 }
@@ -447,6 +468,10 @@ export interface VoiceSignal {
   payload: unknown;
 }
 
+/** Motivo concreto por el que la instancia rechazó un sonido de la sala. */
+export const VOICE_SOUND_REJECT_REASONS = ["not_in_voice", "muted", "rate_limited", "not_available"] as const;
+export type VoiceSoundRejectReason = (typeof VOICE_SOUND_REJECT_REASONS)[number];
+
 export interface AuditLogEntry {
   id: Snowflake;
   community_id: Snowflake;
@@ -512,6 +537,8 @@ export const GATEWAY_EVENTS = [
   "TYPING_START",
   "VOICE_STATE_UPDATE",
   "VOICE_SIGNAL",
+  "VOICE_SOUND",
+  "VOICE_SOUND_ERROR",
   "ROLE_UPDATE",
   "ROLE_DELETE",
   "READ_UPDATE",
@@ -547,6 +574,19 @@ export type ServerEvent =
   | { t: "TYPING_START"; d: { channel_id: Snowflake; user_id: Snowflake; until: number } }
   | { t: "VOICE_STATE_UPDATE"; d: { channel_id: Snowflake; community_id: Snowflake; states: VoiceState[] } }
   | { t: "VOICE_SIGNAL"; d: VoiceSignal }
+  /* Tabla de sonidos (§9.4): NO viaja el audio, viaja el id. Cada cliente ya
+     puede pedir el archivo a la instancia y lo reproduce a su calidad original,
+     en vez de meterlo por el micrófono —donde la cancelación de eco y la
+     supresión de ruido, que existen para una voz, lo destrozarían. */
+  | { t: "VOICE_SOUND"; d: { channel_id: Snowflake; user_id: Snowflake; sound_id: Snowflake } }
+  | {
+      t: "VOICE_SOUND_ERROR";
+      d: { channel_id: Snowflake; sound_id: Snowflake; reason: VoiceSoundRejectReason };
+    }
+  /* La sala de la carrera entera y no el cambio: son cinco campos y así no hay
+     dos maneras de tenerla desincronizada. `lobby` en null es "aquí ya no hay
+     carrera", que es lo que ve quien llega cuando el anfitrión la cerró. */
+  | { t: "RACE_UPDATE"; d: { channel_id: Snowflake; lobby: RaceLobby | null } }
   | { t: "ROLE_UPDATE"; d: Role }
   | { t: "ROLE_DELETE"; d: { id: Snowflake; community_id: Snowflake } }
   /* Va a todas TUS sesiones: leer en el móvil tiene que apagar el aviso del escritorio. */
@@ -556,6 +596,35 @@ export type ServerEvent =
   | { t: "EMOJI_UPDATE"; d: { community_id: Snowflake; emojis: CustomEmoji[] } }
   | { t: "ERROR"; d: ApiError }
   | { t: "PONG"; d: { at: number } };
+
+/**
+ * Una carrera de canicas en una sala de voz (§9.4).
+ *
+ * La instancia no simula nada: reparte la semilla y quién corre, y cada cliente
+ * calcula la misma carrera con eso. La física es determinista, así que con la
+ * misma semilla y la misma lista sale exactamente el mismo resultado en todas
+ * las pantallas — sin mandar posiciones sesenta veces por segundo.
+ *
+ * `seed` en null significa que la sala está esperando gente; en cuanto tiene
+ * número, la carrera ya arrancó.
+ */
+export interface RaceLobby {
+  channel_id: Snowflake;
+  /** Quien la abrió: es quien elige mundo y da la salida. */
+  host_id: Snowflake;
+  /** Apuntados, en orden de llegada. */
+  members: Snowflake[];
+  /**
+   * La parrilla de la carrera en marcha, congelada al dar la salida.
+   * Va aparte de `members` porque quien se apunta a mitad tiene que ver la
+   * carrera que ya corre, no una distinta con una canica de más.
+   * El orden importa: entra en el sorteo de las posiciones de salida.
+   */
+  runners: Snowflake[];
+  world: number;
+  seed: number | null;
+  started_at: number;
+}
 
 /** Lo que un moderador puede hacerle a alguien dentro de una sala de voz (§11). */
 export type VoiceAction = "mute" | "unmute" | "deafen" | "undeafen" | "disconnect";
@@ -570,6 +639,13 @@ export type ClientCommand =
   | { t: "VOICE_VIDEO"; d: { channel_id: Snowflake; source: VideoSource | null } }
   | { t: "VOICE_SIGNAL"; d: { channel_id: Snowflake; to_user_id: Snowflake; payload: unknown } }
   | { t: "VOICE_MODERATE"; d: { channel_id: Snowflake; user_id: Snowflake; action: VoiceAction } }
+  | { t: "VOICE_SOUND"; d: { channel_id: Snowflake; sound_id: Snowflake } }
+  /* Abrir es también apuntarse: quien pulsa el botón cuando ya hay una sala
+     abierta se une a esa, no crea una segunda. */
+  | { t: "RACE_OPEN"; d: { channel_id: Snowflake } }
+  | { t: "RACE_LEAVE"; d: { channel_id: Snowflake } }
+  | { t: "RACE_WORLD"; d: { channel_id: Snowflake; world: number } }
+  | { t: "RACE_START"; d: { channel_id: Snowflake } }
   | { t: "PING"; d?: undefined };
 
 /* ─────────────────────────── Errores tipados (§30) ─────────────────────────── */

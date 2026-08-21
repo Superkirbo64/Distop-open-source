@@ -1,11 +1,9 @@
 /**
  * Por dónde se conectan dos navegadores (§9.4, §6).
  *
- * La voz y el vídeo NO pasan por la instancia ni por el túnel: van directos de un
- * navegador a otro. El túnel solo lleva la aplicación y los mensajes de "quién
- * está en la sala". Por eso se puede estar los dos en la misma sala, verse en la
- * lista, y no oírse: eso último viaja por otro camino, y ese camino puede no
- * existir.
+ * La voz siempre pasa por la instancia y usa la misma ruta de la aplicación.
+ * Esta configuración solo decide el camino del vídeo cuando está en modo directo:
+ * cámara y pantalla van de un navegador a otro, con TURN como respaldo opcional.
  *
  * Cuándo no existe, en la práctica:
  *   · Los dos en la misma casa, si el router no deja hablarse a dos aparatos
@@ -14,8 +12,7 @@
  *     perforar.
  *   · Redes de oficina o universidad que solo dejan salir por 80 y 443.
  *
- * Y entonces no falla "el vídeo": fallan a la vez audio, cámara y pantalla, que
- * es la señal de que el problema es la ruta.
+ * Si esa ruta no existe, falla el vídeo directo; la voz continúa por la instancia.
  *
  * Tres cosas distintas, y solo la tercera cuesta ancho de banda a alguien:
  *   STUN  — responde "esta es tu dirección pública". Gratis e ilimitado.

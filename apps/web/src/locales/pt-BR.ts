@@ -22,7 +22,8 @@ export const ptBR: Record<keyof typeof es, string> = {
   "common.none": "Nenhuma",
   "common.back": "Voltar",
 
-  "auth.tagline": "Sua comunidade, no seu servidor, sem recursos trancados atrás de assinatura.",
+  "auth.tagline":
+    "Sua comunidade, no seu servidor, sem recursos trancados atrás de assinatura.",
   "auth.login": "Entrar",
   "auth.register": "Criar conta",
   "auth.guest": "Entrar como convidado",
@@ -34,23 +35,30 @@ export const ptBR: Record<keyof typeof es, string> = {
   "auth.noAccount": "Ainda sem conta?",
   "auth.haveAccount": "Já tem conta?",
   "auth.guestTitle": "Sem conta",
-  "auth.guestHint": "Você faz exatamente o mesmo que com conta: criar comunidades, canais, convidar e falar. Coloque senha quando quiser, sem perder nada.",
-  "auth.guestEqual": "Sem senha você faz o mesmo; ela só serve para voltar de outro dispositivo.",
+  "auth.guestHint":
+    "Você faz exatamente o mesmo que com conta: criar comunidades, canais, convidar e falar. Coloque senha quando quiser, sem perder nada.",
+  "auth.guestEqual":
+    "Sem senha você faz o mesmo; ela só serve para voltar de outro dispositivo.",
   "auth.recoverTitle": "Você é quem hospeda esta instância?",
-  "auth.recoverHint": "Estas contas não têm senha e têm comunidade própria. Como você está no equipamento que hospeda, pode entrar direto.",
+  "auth.recoverHint":
+    "Estas contas não têm senha e têm comunidade própria. Como você está no equipamento que hospeda, pode entrar direto.",
   "auth.registrationClosed": "Esta instância está com o cadastro fechado.",
   "auth.guestClosed": "Esta instância não aceita convidados.",
 
   "setup.title": "Esta instância é sua",
-  "setup.subtitle": "Acabou de ser instalada e ainda não tem dono. Coloque seu nome e o da sua comunidade: não precisa criar conta.",
+  "setup.subtitle":
+    "Acabou de ser instalada e ainda não tem dono. Coloque seu nome e o da sua comunidade: não precisa criar conta.",
   "setup.yourName": "Seu nome",
   "setup.communityName": "Nome da sua comunidade",
   "setup.password": "Senha",
-  "setup.passwordHint": "Opcional por ora. Sem ela você entra só neste dispositivo; dá para definir quando quiser em Configurações.",
+  "setup.passwordHint":
+    "Opcional por ora. Sem ela você entra só neste dispositivo; dá para definir quando quiser em Configurações.",
   "setup.code": "Código de instalação",
-  "setup.codeHint": "Está impresso no terminal onde você subiu a instância. É pedido porque você está reivindicando de outra máquina.",
+  "setup.codeHint":
+    "Está impresso no terminal onde você subiu a instância. É pedido porque você está reivindicando de outra máquina.",
   "setup.start": "Colocar no ar",
-  "setup.noPasswordWarning": "Sem senha, esta conta vive só neste navegador. Se limpar, perde o acesso de administração.",
+  "setup.noPasswordWarning":
+    "Sem senha, esta conta vive só neste navegador. Se limpar, perde o acesso de administração.",
 
   "instance.connecting": "Conectando…",
   "instance.online": "On-line",
@@ -62,23 +70,33 @@ export const ptBR: Record<keyof typeof es, string> = {
   "instance.storage": "Armazenamento",
   "instance.users": "Pessoas conectadas",
   "instance.version": "Versão",
-  "instance.offlineHelp": "A comunidade vive na máquina de quem hospeda. Se ela estiver desligada, não há serviço até voltar.",
+  "instance.offlineHelp":
+    "A comunidade vive na máquina de quem hospeda. Se ela estiver desligada, não há serviço até voltar.",
 
   "share.title": "Compartilhar sua instância",
   "share.address": "Endereço para convidar",
-  "share.localOnly": "Agora sua instância só existe neste computador. Um link com este endereço não vai funcionar para mais ninguém.",
-  "share.howTo": "Dois caminhos para abrir ao mundo: um túnel (mais fácil, sem mexer no roteador) ou abrir a porta e apontar um domínio.",
+  "share.localOnly":
+    "Agora sua instância só existe neste computador. Um link com este endereço não vai funcionar para mais ninguém.",
+  "share.howTo":
+    "Dois caminhos para abrir ao mundo: um túnel (mais fácil, sem mexer no roteador) ou abrir a porta e apontar um domínio.",
   "share.tunnel": "Túnel rápido com Cloudflare, sem conta nem configuração:",
-  "share.thenSet": "Copie a URL devolvida e coloque em PUBLIC_URL no seu .env. A partir daí os convites já saem com esse endereço.",
-  "share.ready": "Sua instância está acessível de fora. Os convites já usam este endereço.",
+  "share.thenSet":
+    "Copie a URL devolvida e coloque em PUBLIC_URL no seu .env. A partir daí os convites já saem com esse endereço.",
+  "share.ready":
+    "Sua instância está acessível de fora. Os convites já usam este endereço.",
   "share.createLink": "Criar link público",
-  "share.createLinkHint": "Abre um túnel e dá um endereço https que funciona fora da sua casa. Sem conta e sem mexer no roteador.",
+  "share.createLinkHint":
+    "Abre um túnel e dá um endereço https que funciona fora da sua casa. Sem conta e sem mexer no roteador.",
   "share.closeLink": "Fechar o link público",
   "share.opening": "Abrindo o túnel…",
-  "share.linkTemporary": "Este link vive enquanto a instância estiver ligada. Ao reiniciar, o endereço é outro.",
-  "share.needsCloudflared": "Falta o cloudflared neste equipamento. Instale pelo site da Cloudflare e tente de novo.",
-  "share.failed": "Não deu para abrir o túnel. Verifique sua conexão com a internet.",
-  "share.hostReminder": "Enquanto este computador estiver ligado, sua comunidade está no ar. Quando desligar, não está.",
+  "share.linkTemporary":
+    "Este link vive enquanto a instância estiver ligada. Ao reiniciar, o endereço é outro.",
+  "share.needsCloudflared":
+    "Falta o cloudflared neste equipamento. Instale pelo site da Cloudflare e tente de novo.",
+  "share.failed":
+    "Não deu para abrir o túnel. Verifique sua conexão com a internet.",
+  "share.hostReminder":
+    "Enquanto este computador estiver ligado, sua comunidade está no ar. Quando desligar, não está.",
 
   "community.yours": "Suas comunidades",
   "community.create": "Criar comunidade",
@@ -89,7 +107,8 @@ export const ptBR: Record<keyof typeof es, string> = {
   "community.empty": "Você ainda não está em nenhuma comunidade",
   "community.emptyHint": "Crie a sua ou entre com um link de convite.",
   "community.leave": "Sair da comunidade",
-  "community.leaveConfirm": "Você perde o acesso até ser convidado de novo. Sair?",
+  "community.leaveConfirm":
+    "Você perde o acesso até ser convidado de novo. Sair?",
   "community.manage": "Configurações da comunidade",
   "community.invite": "Convidar gente",
   "community.members": "Membros",
@@ -98,18 +117,24 @@ export const ptBR: Record<keyof typeof es, string> = {
   "invite.check": "Verificar se funciona",
   "invite.checking": "Verificando…",
   "invite.reachable": "Responde. O link serve para compartilhar.",
-  "invite.unreachable": "Não responde. Quem receber o link não vai conseguir entrar.",
+  "invite.unreachable":
+    "Não responde. Quem receber o link não vai conseguir entrar.",
   "invite.localOnly": "É um endereço local: só funciona neste equipamento.",
-  "invite.tunnelHere": "Abre um link público e refaz o convite com ele. Não fica salvo em nenhum arquivo: vive enquanto a instância estiver ligada.",
+  "invite.tunnelHere":
+    "Abre um link público e refaz o convite com ele. Não fica salvo em nenhum arquivo: vive enquanto a instância estiver ligada.",
   "invite.asSomeoneElse": "Entrar como outra pessoa",
-  "invite.asSomeoneElseHint": "Encerra a sessão de {name} neste navegador e deixa você entrar com outro nome.",
+  "invite.asSomeoneElseHint":
+    "Encerra a sessão de {name} neste navegador e deixa você entrar com outro nome.",
   "settings.deleteAccount": "Excluir minha conta",
-  "settings.deleteAccountHint": "Apaga sua conta do banco de dados: perfil, mensagens, arquivos enviados e as comunidades das quais você é dono, com tudo dentro. Não há cópia nem lixeira.",
+  "settings.deleteAccountHint":
+    "Apaga sua conta do banco de dados: perfil, mensagens, arquivos enviados e as comunidades das quais você é dono, com tudo dentro. Não há cópia nem lixeira.",
   "settings.deleteConfirmLabel": "Escreva {username} para confirmar",
   "settings.deleteForever": "Excluir para sempre",
-  "invite.fixHint": "Abra um link público em Estado da instância e crie o convite de novo.",
+  "invite.fixHint":
+    "Abra um link público em Estado da instância e crie o convite de novo.",
   "community.joinLabel": "Link ou código de convite",
-  "community.joinHint": "Cole o link inteiro ou só o código: os dois funcionam.",
+  "community.joinHint":
+    "Cole o link inteiro ou só o código: os dois funcionam.",
   "community.joinAction": "Entrar",
 
   "channel.create": "Criar canal",
@@ -122,10 +147,12 @@ export const ptBR: Record<keyof typeof es, string> = {
   "channel.voice": "Voz",
   "channel.announcement": "Avisos",
   "channel.delete": "Excluir canal",
-  "channel.deleteConfirm": "Isso apaga o canal e todas as mensagens. Não tem volta.",
+  "channel.deleteConfirm":
+    "Isso apaga o canal e todas as mensagens. Não tem volta.",
   "channel.none": "Nenhum canal visível",
   "channel.noneHint": "Peça acesso à administração ou crie um.",
-  "channel.voiceSoon": "Canais de voz chegam na fase 3. O canal já existe e mantém as permissões.",
+  "channel.voiceSoon":
+    "Canais de voz chegam na fase 3. O canal já existe e mantém as permissões.",
 
   "message.placeholder": "Escreva em {channel}",
   "message.send": "Enviar",
@@ -155,6 +182,26 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.invite": "Convidar para a chamada",
   "voice.connected": "Voz conectada",
   "voice.disconnect": "Desligar",
+  "voice.soundboard": "Sons",
+  "voice.soundboardEmpty":
+    "Esta comunidade ainda não tem sons. Você os adiciona em Configurações da comunidade → Emojis, stickers e sons.",
+  "voice.soundboardMuted": "Ative o microfone para usar os sons da sala.",
+  "voice.soundboardSearch": "Encontre o som perfeito",
+  "voice.soundboardNoResults": "Nenhum som corresponde à busca.",
+  "voice.soundboardFrequent": "Usados com frequência",
+  "voice.soundboardCommunity": "Sons de {name}",
+  "voice.chatTitle": "Chat de voz",
+  "voice.chatEmpty": "O chat de voz está vazio",
+  "voice.chatEmptyHint": "Escreva sem sair da chamada.",
+  "voice.soundError.not_in_voice": "A instância não reconhece mais você nesta sala. Saia e entre novamente.",
+  "voice.soundError.muted": "Você não pode tocar sons enquanto o microfone estiver silenciado.",
+  "voice.soundError.rate_limited": "Você tocou sons demais em sequência. Aguarde alguns segundos.",
+  "voice.soundError.not_available": "Esse som não está mais disponível nesta comunidade.",
+  "voice.soundError.unsupported": "Este navegador não consegue reproduzir os sons da sala.",
+  "voice.soundError.blocked": "O navegador bloqueou o áudio. Interaja com a página e tente novamente.",
+  "voice.soundError.download": "Não foi possível baixar o som da instância.",
+  "voice.soundError.decode": "O arquivo não contém um áudio que este navegador consiga reproduzir.",
+  "voice.soundError.too_long": "O som tem mais de 30 segundos e não pode ser usado como efeito.",
   "voice.mute": "Silenciar",
   "voice.unmute": "Falar",
   "voice.deafen": "Ensurdecer",
@@ -170,29 +217,75 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.shareMute": "Silenciar som da tela",
   "voice.shareUnmute": "Ativar som da tela",
   "voice.quality": "Qualidade máxima do vídeo",
-  "voice.qualityHint": "Sem limite pago: isto é a subida de quem hospeda, multiplicada por cada pessoa assistindo.",
-  "voice.qualityLow": "Econômica — 1,5 Mbit/s, 24 fps",
-  "voice.qualityMedium": "Equilibrada — 4 Mbit/s, 30 fps",
-  "voice.qualityHigh": "Máxima — 8 Mbit/s, 60 fps",
+  "voice.qualityHint":
+    "Sem limite pago: isto é a subida de quem hospeda, multiplicada por cada pessoa assistindo.",
+  "voice.qualityLow": "Econômica — até 30 fps · câmera 1,5 / tela 3 Mbit/s",
+  "voice.qualityMedium": "Equilibrada — até 60 fps · câmera 4 / tela 8 Mbit/s",
+  "voice.qualityHigh": "Máxima — até 120 fps · câmera 12 / tela 24 Mbit/s",
   "voice.link.new": "conectando",
   "voice.link.connecting": "conectando",
   "voice.link.disconnected": "sem conexão",
   "voice.link.failed": "não conecta",
   "voice.link.closed": "desconectado",
-  "voice.needsStun": "Não deu para descobrir o endereço público de vocês, então o vídeo não chega. A voz continua funcionando.",
+  "voice.needsStun":
+    "Não deu para descobrir o endereço público de vocês, então o vídeo não chega. A voz continua funcionando.",
   "voice.needsTurn":
     "As redes de vocês não permitem conexão direta, então o vídeo não chega. A voz continua funcionando: só o vídeo precisa desse caminho.",
-  "voice.viaRelay": "O vídeo vai por um relé: não havia rota direta. Segue cifrado ponta a ponta.",
-  "voice.videoDenied": "Você não liberou a câmera, ou cancelou a janela de compartilhar tela.",
+  "voice.viaRelay":
+    "O vídeo vai por um relé: não havia rota direta. Segue cifrado ponta a ponta.",
+  "voice.videoDenied":
+    "Você não liberou a câmera, ou cancelou a janela de compartilhar tela.",
+  "voice.videoUnsupported":
+    "Este navegador não consegue codificar vídeo pela instância. Tente o modo direto ou um navegador Chromium atualizado.",
   "voice.noCamera": "Nenhuma câmera encontrada. Conecte uma e tente de novo.",
   "voice.emptyRoom": "Sala de voz vazia",
   "voice.emptyRoomHint": "Entre primeiro: quem chegar depois te ouve na hora.",
-  "voice.denied": "Você não liberou o microfone. Ative no cadeado da barra de endereço e entre de novo.",
+  "voice.fun": "Jogos da sala",
+  "voice.gravity": "Gravidade",
+
+  "race.open": "Corrida",
+  "race.join": "Entrar ({count})",
+  "race.start": "Começar",
+  "race.leave": "Sair da corrida",
+  "race.host": "anfitrião",
+  "race.lobbyTitle": "Esperando gente · {count} inscritos",
+  "race.lobbyHostHint": "Você abriu a corrida: escolha o mundo e dê a largada quando todos estiverem.",
+  "race.lobbyGuestHint": "{name} dá a largada quando a sala estiver pronta.",
+  "race.waiting": "A corrida começa quando quem abriu mandar.",
+  "race.nextRound": "Você entrou com a corrida rolando: corre na próxima.",
+  "race.title": "Corrida de bolinhas",
+  "race.again": "De novo",
+  "race.running": "Correndo… ganha quem cruzar a linha primeiro.",
+  "race.world.pegs": "Pinos",
+  "race.world.ramps": "Rampas",
+  "race.world.spinners": "Hélices",
+
+  "voice.audioTitle": "Microfone e som",
+  "voice.audioIntro": "Deste aparelho e só para você: mais ninguém percebe o que mudar aqui.",
+  "voice.outputDevice": "Saída de som",
+  "voice.deviceUnnamed": "Microfone {n}",
+  "voice.deviceUnnamedOut": "Saída {n}",
+  "voice.deviceNames": "Os nomes dos aparelhos só aparecem se você permitir o microfone.",
+  "voice.deviceAllow": "Ver os nomes",
+  "voice.micVolume": "Volume do microfone",
+  "voice.micVolumeHint": "Aplicado antes de enviar. Acima de 100% amplifica e pode distorcer.",
+  "voice.outVolume": "Volume da chamada",
+  "voice.outVolumeHint": "Afeta as vozes e os sons da sala, não o resto do computador.",
+  "voice.outputFixed": "Este navegador não deixa escolher por onde o som sai: usa a saída do sistema.",
+  "voice.noMedia":
+    "O navegador só dá acesso ao microfone em https ou em localhost. Abra a instância por https para escolher o aparelho.",
+  "voice.userVolume": "Volume — {value}%",
+  "voice.userVolumeHint": "Só para você. Mais ninguém percebe.",
+  "voice.denied":
+    "Você não liberou o microfone. Ative no cadeado da barra de endereço e entre de novo.",
   "voice.noDevice": "Nenhum microfone encontrado. Conecte um e tente de novo.",
-  "voice.peerToPeer": "Áudio direto com {count} pessoa(s). Não passa pelo servidor.",
-  "voice.throughHost": "Voz pela instância com {count} pessoa(s). Funciona enquanto ela estiver ligada.",
+  "voice.peerToPeer":
+    "Áudio direto com {count} pessoa(s). Não passa pelo servidor.",
+  "voice.throughHost":
+    "Voz pela instância com {count} pessoa(s). Funciona enquanto ela estiver ligada.",
   "voice.videoDirect": "O vídeo vai direto entre navegadores.",
-  "voice.unsupported": "Este navegador não sabe codificar voz. Tente Chrome, Edge ou um navegador recente.",
+  "voice.unsupported":
+    "Este navegador não sabe codificar voz. Tente Chrome, Edge ou um navegador recente.",
   "voice.relayTitle": "Câmera e compartilhamento de tela",
   "voice.relayIntro":
     "A voz sempre passa pela instância e não se configura: se você consegue abrir o aplicativo, consegue falar. Para a imagem há dois caminhos, e quem hospeda escolhe.",
@@ -205,11 +298,13 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Não custa nada a quem hospeda e tem melhor qualidade. Mas só chega se as duas redes se deixarem falar, e muitas não: entre dados móveis e uma casa quase nunca funciona.",
   "voice.probe": "Testar minha conexão",
   "voice.probeRunning": "Testando…",
-  "voice.probeHint": "Leva alguns segundos. Não liga para ninguém nem ativa o microfone.",
+  "voice.probeHint":
+    "Leva alguns segundos. Não liga para ninguém nem ativa o microfone.",
   "voice.probeLocal": "Rede local",
   "voice.probeStun": "Endereço público (STUN)",
   "voice.probeRelay": "Relé (TURN)",
-  "voice.probeRelayOk": "O relé responde: câmera e tela vão chegar mesmo sem rota direta.",
+  "voice.probeRelayOk":
+    "O relé responde: câmera e tela vão chegar mesmo sem rota direta.",
   "voice.probeRelayDead":
     "O relé configurado não responde. Enquanto ficar assim é o mesmo que não ter nenhum: confira o endereço e a senha.",
   "voice.probeDirectOnly":
@@ -219,9 +314,12 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.relayMet": "Relé da Metered (sem cartão)",
   "voice.relayMetHint":
     "0,5 GB por mês sem dar nenhum dado bancário, ou 20 GB se você adicionar um cartão. Quando acaba, para de repassar: nunca cobra a mais. Só entra quando o vídeo não acha rota direta.",
-  "voice.relayMetStep1": "Crie uma conta gratuita em metered.ca (não pede cartão).",
-  "voice.relayMetStep2": "No painel de TURN, copie o nome do seu app e a API key.",
-  "voice.relayMetStep3": "Cole aqui e salve: é conferido na hora e te diz se vale.",
+  "voice.relayMetStep1":
+    "Crie uma conta gratuita em metered.ca (não pede cartão).",
+  "voice.relayMetStep2":
+    "No painel de TURN, copie o nome do seu app e a API key.",
+  "voice.relayMetStep3":
+    "Cole aqui e salve: é conferido na hora e te diz se vale.",
   "voice.relayMetApp": "Nome do app",
   "voice.relayMetAppHint": "O subdomínio da sua conta, sem “.metered.live”.",
   "voice.relayMetKey": "API key",
@@ -231,9 +329,12 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.relayCf": "Relé da Cloudflare (1 TB por mês, pede cartão)",
   "voice.relayCfHint":
     "Só entra quando não há rota direta, então quase nunca gasta. Vê pacotes cifrados e os IPs de vocês; não consegue ver nem ouvir o conteúdo. Sua chave fica na instância e nunca chega ao navegador.",
-  "voice.relayCfStep1": "Entre no painel da Cloudflare → Realtime → TURN e crie uma chave (Create TURN key).",
-  "voice.relayCfStep2": "Copie o identificador da chave (TURN Key ID) e o token (API token).",
-  "voice.relayCfStep3": "Cole aqui e salve: é conferido na hora e te diz se vale.",
+  "voice.relayCfStep1":
+    "Entre no painel da Cloudflare → Realtime → TURN e crie uma chave (Create TURN key).",
+  "voice.relayCfStep2":
+    "Copie o identificador da chave (TURN Key ID) e o token (API token).",
+  "voice.relayCfStep3":
+    "Cole aqui e salve: é conferido na hora e te diz se vale.",
   "voice.relayCfKey": "Identificador da chave",
   "voice.relayCfKeyHint": "O TURN Key ID que a Cloudflare te deu.",
   "voice.relayCfToken": "Token da chave",
@@ -249,15 +350,18 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.relayUrl": "Endereço do TURN",
   "voice.relayUser": "Usuário",
   "voice.relayPassword": "Senha",
-  "voice.relayPasswordHint": "Fica guardada na instância e não aparece de novo.",
+  "voice.relayPasswordHint":
+    "Fica guardada na instância e não aparece de novo.",
   "voice.relaySaved": "Salvo. Vale para as próximas chamadas.",
-  "voice.relayLocked": "Fixado por ICE_SERVERS no ambiente da instância. Tire essa variável para mudar aqui.",
+  "voice.relayLocked":
+    "Fixado por ICE_SERVERS no ambiente da instância. Tire essa variável para mudar aqui.",
   "voice.relayHostOnly": "Só quem hospeda a instância pode mudar isso.",
   "voice.device": "Microfone",
   "voice.deviceDefault": "O do sistema",
   "voice.test": "Teste seu microfone",
   "voice.testHint": "Fale: se a barra mexer, estamos te ouvindo.",
-  "voice.limits": "A voz vai direto entre navegadores. Funciona bem até umas 6 pessoas por canal; acima disso precisa de um servidor de mídia, que vem depois.",
+  "voice.limits":
+    "A voz vai direto entre navegadores. Funciona bem até umas 6 pessoas por canal; acima disso precisa de um servidor de mídia, que vem depois.",
 
   "nav.panel": "Canais (Ctrl+B)",
   "members.title": "Membros",
@@ -290,12 +394,15 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.pronouns": "Pronomes",
   "settings.accent": "Cor de destaque",
   "settings.avatar": "Seu avatar",
-  "settings.avatarHint": "Envie um PNG, JPG, GIF ou WebP, ou cole um link. GIFs animados valem igual: aqui não se cobra por isso.",
+  "settings.avatarHint":
+    "Envie um PNG, JPG, GIF ou WebP, ou cole um link. GIFs animados valem igual: aqui não se cobra por isso.",
   "settings.galleryAvatar": "Escolher da galeria",
   "settings.galleryBanner": "Escolher da galeria de perfis",
   "settings.galleryCategory": "Categoria",
-  "settings.galleryAnimated": "As marcadas com ✦ são animadas. Aqui não custam nada.",
-  "settings.galleryError": "A galeria não respondeu. Tente de novo em um momento.",
+  "settings.galleryAnimated":
+    "As marcadas com ✦ são animadas. Aqui não custam nada.",
+  "settings.galleryError":
+    "A galeria não respondeu. Tente de novo em um momento.",
   "settings.bannerHint": "A imagem larga do seu perfil. Animada também vale.",
   "settings.banner": "Seu banner",
   "settings.theme": "Tema",
@@ -319,12 +426,15 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.wallpaperSearch": "Buscar um papel de parede",
   "settings.wallpaperHide": "Fechar a busca",
   "settings.wallpaperClear": "Remover o papel de parede",
-  "settings.wallpaperHint": "As etiquetas do Wallhaven estão em inglês. Fica neste dispositivo.",
+  "settings.wallpaperHint":
+    "As etiquetas do Wallhaven estão em inglês. Fica neste dispositivo.",
   "settings.wallpaperPlaceholder": "mountains, abstract, city at night…",
-  "settings.wallpaperEmpty": "Nada para essa busca. O Wallhaven etiqueta em inglês: tente «mountains» no lugar de «montanhas».",
+  "settings.wallpaperEmpty":
+    "Nada para essa busca. O Wallhaven etiqueta em inglês: tente «mountains» no lugar de «montanhas».",
   "settings.wallpaperError": "Não deu para buscar. O Wallhaven não respondeu.",
   "settings.wallpaperOwn": "Sua própria imagem",
-  "settings.wallpaperOwnHint": "Envie um arquivo ou cole uma URL. Fica no disco de quem hospeda.",
+  "settings.wallpaperOwnHint":
+    "Envie um arquivo ou cole uma URL. Fica no disco de quem hospeda.",
   "settings.wallpaperTune": "Ajustar o fundo",
   "settings.wallpaperVeil": "Véu",
   "settings.wallpaperBlur": "Desfoque",
@@ -332,7 +442,8 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.wallpaperContrast": "Contraste",
   "settings.wallpaperSaturate": "Cor",
   "settings.motion": "Animações",
-  "settings.motionHint": "Desligue se preferir uma interface totalmente parada.",
+  "settings.motionHint":
+    "Desligue se preferir uma interface totalmente parada.",
   "settings.fontSize": "Tamanho do texto",
   "settings.density": "Densidade",
   "settings.densityCompact": "Compacta",
@@ -340,7 +451,8 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.language": "Idioma",
   "settings.logout": "Sair da conta",
   "settings.upgrade": "Transformar em conta permanente",
-  "settings.upgradeHint": "Você mantém mensagens, comunidades e identidade. Só adiciona usuário e senha.",
+  "settings.upgradeHint":
+    "Você mantém mensagens, comunidades e identidade. Só adiciona usuário e senha.",
   "settings.revokeAll": "Sair em todos os dispositivos",
 
   "manage.title": "Administrar {name}",
@@ -367,10 +479,12 @@ export const ptBR: Record<keyof typeof es, string> = {
   "manage.inviteNever": "Nunca",
   "manage.inviteUnlimited": "Sem limite",
   "manage.export": "Exportar comunidade",
-  "manage.exportHint": "Baixe um JSON com canais, mensagens, cargos e membros. É seu: serve para migrar de instância ou guardar como cópia.",
+  "manage.exportHint":
+    "Baixe um JSON com canais, mensagens, cargos e membros. É seu: serve para migrar de instância ou guardar como cópia.",
   "manage.dangerZone": "Zona sensível",
   "manage.deleteCommunity": "Excluir comunidade",
-  "manage.deleteConfirm": "Escreva {name} para confirmar. Some tudo: canais, mensagens e arquivos.",
+  "manage.deleteConfirm":
+    "Escreva {name} para confirmar. Some tudo: canais, mensagens e arquivos.",
   "manage.auditEmpty": "Nenhuma atividade registrada ainda.",
 
   "invite.joining": "Você foi convidado para",
@@ -384,8 +498,10 @@ export const ptBR: Record<keyof typeof es, string> = {
   "invite.back": "Ir para minhas comunidades",
 
   "error.generic": "Algo falhou na instância.",
-  "error.network": "Não deu para falar com a instância. Confira se ela está ligada.",
-  "error.unreachable": "A instância não respondeu (HTTP {status}). Normalmente está desligada ou o túnel caiu.",
+  "error.network":
+    "Não deu para falar com a instância. Confira se ela está ligada.",
+  "error.unreachable":
+    "A instância não respondeu (HTTP {status}). Normalmente está desligada ou o túnel caiu.",
   "skip.toMessages": "Pular para as mensagens",
 
   "unread.some": "Mensagens não lidas",
@@ -407,23 +523,28 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.notifyAll": "Todas as mensagens",
   "settings.notifyMentions": "Só quando me mencionam",
   "settings.notifyOff": "Nenhum",
-  "settings.notifyHint": "Vale para todas as comunidades desta instância. Nada disso sai do dispositivo.",
+  "settings.notifyHint":
+    "Vale para todas as comunidades desta instância. Nada disso sai do dispositivo.",
   "settings.sounds": "Som ao receber",
-  "settings.soundsHint": "Um tom curto gerado no próprio navegador; não baixa nenhum arquivo.",
+  "settings.soundsHint":
+    "Um tom curto gerado no próprio navegador; não baixa nenhum arquivo.",
   "settings.desktopNotifications": "Notificações do sistema",
   "settings.desktopHint": "Só aparecem com a janela em segundo plano.",
   "settings.notifyAsk": "Permitir notificações",
   "settings.notifyGranted": "Permitidas pelo navegador.",
-  "settings.notifyDenied": "O navegador as bloqueou para este site. Mude pelo cadeado na barra de endereços.",
+  "settings.notifyDenied":
+    "O navegador as bloqueou para este site. Mude pelo cadeado na barra de endereços.",
   "settings.notifyUnsupported": "Este navegador não as aceita.",
 
   "voice.moderate": "Moderar",
+  "voice.person": "Opções desta pessoa",
   "voice.forceMute": "Silenciar",
   "voice.forceUnmute": "Devolver a palavra",
   "voice.forceDeafen": "Ensurdecer",
   "voice.forceUndeafen": "Tirar o ensurdecimento",
   "voice.forceDisconnect": "Tirar da chamada",
   "voice.forcedMuted": "Silenciado pela moderação",
+  "voice.cannotSpeak": "Você não pode falar nesta sala",
   "voice.forcedDeafened": "Ensurdecido pela moderação",
   "picker.emojis": "Emojis",
   "picker.stickers": "Stickers",
@@ -435,32 +556,48 @@ export const ptBR: Record<keyof typeof es, string> = {
   "picker.searchSticker": "Procure um sticker",
   "picker.gallery": "Galeria",
   "picker.empty": "Nada por aqui.",
-  "picker.noStickers": "Esta comunidade ainda não tem stickers. Qualquer pessoa com permissão pode subir.",
+  "picker.noStickers":
+    "Esta comunidade ainda não tem stickers. Qualquer pessoa com permissão pode subir.",
   "picker.addPack": "Adicionar meu pacote de figurinhas",
-  "picker.addPackFormat": "PNG, WebP ou GIF, com fundo transparente. SVG n\u00e3o \u00e9 aceito. Ficam melhor quadradas, por volta de 320\u00d7320 px. O nome aceita letras, n\u00fameros e sublinhado, de 2 a 32 caracteres: \u00e9 o que voc\u00ea vai digitar no chat. N\u00e3o h\u00e1 n\u00famero m\u00e1ximo de figurinhas \u2014 o teto \u00e9 o disco de quem hospeda.",
+  "picker.addPackFormat":
+    "PNG, WebP ou GIF, com fundo transparente. SVG n\u00e3o \u00e9 aceito. Ficam melhor quadradas, por volta de 320\u00d7320 px. O nome aceita letras, n\u00fameros e sublinhado, de 2 a 32 caracteres: \u00e9 o que voc\u00ea vai digitar no chat. N\u00e3o h\u00e1 n\u00famero m\u00e1ximo de figurinhas \u2014 o teto \u00e9 o disco de quem hospeda.",
   "picker.addPackGo": "Enviar agora",
-  "picker.addPackNoPermission": "Quem envia \u00e9 quem tem permiss\u00e3o para gerenciar a comunidade.",
+  "picker.addPackNoPermission":
+    "Quem envia \u00e9 quem tem permiss\u00e3o para gerenciar a comunidade.",
   "picker.gifError": "A busca de GIF não respondeu.",
   "picker.open": "Emojis, stickers e GIF",
   "picker.gifSaving": "Salvando o GIF na instância…",
 
-  "emoji.title": "Emojis e stickers",
-  "emoji.hint": "Ficam no disco de quem hospeda a instância. Não há número máximo.",
+  "emoji.title": "Emojis, stickers e sons",
+  "emoji.hint":
+    "Ficam no disco de quem hospeda a instância. Não há número máximo.",
   "emoji.add": "Adicionar",
   "emoji.name": "Nome",
-  "emoji.nameHint": "Letras, números e sublinhado. É assim que se escreve entre dois-pontos.",
+  "emoji.nameHint":
+    "Letras, números e sublinhado. É assim que se escreve entre dois-pontos.",
+  "emoji.nameHintSound": "Letras, números e sublinhado. É assim que aparece na lista de sons.",
   "emoji.kind": "Tipo",
   "emoji.kindEmoji": "Emoji",
   "emoji.kindSticker": "Sticker",
+  "emoji.kindSound": "Som",
+  "emoji.soundFile": "Arquivo de áudio",
+  "emoji.soundIcon": "Foto ou emoji do som",
+  "emoji.soundIconHint": "Opcional. Digite um emoji ou envie uma imagem; ela aparecerá no botão do som.",
+  "emoji.soundIconEmoji": "Emoji",
+  "emoji.soundIconImage": "Enviar imagem",
   "emoji.image": "Imagem",
   "emoji.none": "Ainda não há nenhum.",
-  "emoji.deleteConfirm": "Remover isto da comunidade? As mensagens que usavam vão mostrar o nome.",
+  "emoji.deleteConfirm":
+    "Remover isto da comunidade? As mensagens que usavam vão mostrar o nome.",
   "profileStyle.title": "Aparência do perfil",
-  "profileStyle.hint": "Tudo grátis, sem desbloquear nada. O catálogo inteiro vem com a instância.",
+  "profileStyle.hint":
+    "Tudo grátis, sem desbloquear nada. O catálogo inteiro vem com a instância.",
   "profileStyle.rings": "Anéis inclusos",
-  "profileStyle.ringsCredit": "Anéis: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
+  "profileStyle.ringsCredit":
+    "Anéis: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
   "profileStyle.ownDeco": "Sua própria decoração",
-  "profileStyle.ownDecoHint": "Um PNG com o centro transparente. É desenhado ao redor do avatar. Envie o que quiser: não há lista fechada.",
+  "profileStyle.ownDecoHint":
+    "Um PNG com o centro transparente. É desenhado ao redor do avatar. Envie o que quiser: não há lista fechada.",
   "profileStyle.plate": "Placa do nome",
   "profileStyle.font": "Fonte do nome",
   "profileStyle.effect": "Efeito do nome",
@@ -468,6 +605,11 @@ export const ptBR: Record<keyof typeof es, string> = {
   "profileStyle.nameColor": "Cor do nome",
   "profileStyle.themeA": "Tema 1",
   "profileStyle.themeB": "Tema 2",
+  "profileStyle.gradient": "Gradiente do cartão",
+  "profileStyle.gradientHint": "Ajuste as duas cores, a direção e onde elas se equilibram. Também se aplica ao corpo do perfil.",
+  "profileStyle.gradientPreview": "Prévia do gradiente",
+  "profileStyle.gradientAngle": "Direção",
+  "profileStyle.gradientBalance": "Ponto de mistura",
   "profileStyle.useAccent": "Usar a cor de destaque",
   "style.none": "Nenhum",
   "style.neon": "Neon",
@@ -493,19 +635,29 @@ export const ptBR: Record<keyof typeof es, string> = {
   "style.embers": "Brasas",
   "emoji.usedBy": "Criado por",
   "emoji.telegramImport": "Importar de um pacote do Telegram",
-  "emoji.telegramHint": "Digite o nome do pacote (o de t.me/addstickers/nome). Só estáticos por enquanto.",
+  "emoji.telegramHint":
+    "Digite o nome do pacote (o de t.me/addstickers/nome). Só estáticos por enquanto.",
   "emoji.telegramPlaceholder": "NomeDoPacote",
   "emoji.telegramSearch": "Buscar",
   "emoji.telegramEmpty": "Esse pacote não tem stickers, ou não existe.",
   "emoji.telegramAnimatedYet": "Animado: ainda não pode ser importado.",
   "emoji.telegramAdd": "Importar",
 
+  "emoji.soundGallery": "Buscar na galeria de sons",
+  "emoji.soundGalleryHint":
+    "Catálogo público do MyInstants. Escute antes de decidir: só o que você escolher é baixado, e a partir daí pertence à comunidade. Quem envia são usuários e não há filtro, então confira o que você adiciona.",
+  "emoji.soundPlaceholder": "Busque um som…",
+  "emoji.soundEmpty": "Nenhum som com esse nome.",
+  "emoji.soundMore": "Ver mais",
+  "emoji.soundAdd": "Adicionar à comunidade",
+
   "status.online": "Online",
   "status.offline": "Desconectado",
   "status.idle": "Ausente",
   "status.dnd": "Não perturbe",
   "status.invisible": "Invisível",
-  "status.invisibleHint": "Você continua dentro, mas aparece como desconectado.",
+  "status.invisibleHint":
+    "Você continua dentro, mas aparece como desconectado.",
   "status.dndHint": "Os avisos ficam em silêncio.",
   "status.custom": "Status personalizado",
   "status.customPlaceholder": "O que você está fazendo?",

@@ -125,7 +125,7 @@ y el cliente compilado. Tus datos viven en `./data` — ese directorio **es** tu
 ## Verificar
 
 ```bash
-npm test          # 8 comprobaciones: API, permisos, escalada de privilegios, gateway, canales privados
+npm test          # suite completa: API, permisos, gateway, voz, sonidos, seguridad y no leídos
 npm run typecheck # TypeScript estricto en cliente e instancia
 curl http://localhost:5000/health
 ```
@@ -150,9 +150,11 @@ Conviene decirlo antes de que alguien lo descubra desplegando:
   | | Por persona | Cinco personas |
   |---|---|---|
   | Voz (Opus 32 kbit/s) | ~4 KB/s | ~640 kbit/s |
-  | Vídeo (VP8, techo 1,5 Mbit/s) | ~190 KB/s | ~6 Mbit/s |
+  | Cámara equilibrada (hasta 4 Mbit/s) | ~500 KB/s | ~16 Mbit/s |
+  | Pantalla equilibrada (hasta 8 Mbit/s) | ~1 MB/s | ~32 Mbit/s |
 
-  La voz no se nota. El vídeo sí, y por eso **Ajustes → Voz y vídeo** deja pasarlo a
+  Son techos adaptativos: la fuente, el navegador y la red pueden usar menos. La voz
+  no se nota; el vídeo sí, y por eso **Ajustes → Voz y vídeo** deja pasarlo a
   directo entre navegadores: no cuesta nada a quien hospeda y da más calidad, pero
   solo llega si las dos redes se dejan hablar. Ahí mismo hay un botón que dice qué
   caminos encuentra tu red, y se puede configurar un relevo TURN para cuando no haya

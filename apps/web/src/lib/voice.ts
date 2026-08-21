@@ -1,20 +1,30 @@
 /**
  * Voz en el navegador (§9.4).
- * Malla WebRTC: una conexión por pareja. El audio va directo entre personas y
- * nunca toca la instancia, así que hospedar una llamada no cuesta ancho de banda
- * de servidor. La instancia solo presenta a los pares entre sí.
+ * La voz usa el gateway de la instancia: si la aplicación abre, la voz tiene el
+ * mismo camino y no exige STUN, TURN ni puertos adicionales. El vídeo puede ir
+ * por la instancia o directo con WebRTC, según lo que elija quien hospeda.
  *
  * Quién ofrece y quién responde se decide comparando ids, no por orden de
  * llegada: si los dos ofrecen a la vez, la negociación se rompe (glare).
  */
-import type { Snowflake, VideoSource, VoiceAction } from "@distop/protocol";
+import type { Snowflake, VideoSource, VoiceAction, VoiceSoundRejectReason } from "@distop/protocol";
 import { onMedia, sendMedia, sendCommand } from "./gateway.ts";
 import * as relay from "./relay.ts";
 
 export interface VoiceLocalState {
   channelId: Snowflake | null;
+  /** Lo que ha pedido quien está delante. No es el estado real: ver `forcedMuted`. */
   muted: boolean;
   deafened: boolean;
+  /**
+   * Callado o ensordecido por la instancia, no por uno mismo: moderación (§11) o
+   * entrar sin permiso de hablar.
+   * Va aparte de `muted`/`deafened` porque si se mezclaran, al devolverte la voz
+   * un moderador el cliente creería que el silencio fue decisión tuya y volvería
+   * a callarte solo.
+   */
+  forcedMuted: boolean;
+  forcedDeafened: boolean;
   /** Quién está hablando ahora mismo, yo incluida. */
   speaking: Set<Snowflake>;
   /** Qué estoy publicando: cámara, pantalla o nada. */
@@ -46,7 +56,11 @@ export interface VoiceLocalState {
   route: "direct" | "relay" | null;
   error: string | null;
   videoError: string | null;
+  /** Fallo visible de la última acción de la tabla de sonidos. */
+  soundError: VoiceSoundIssue | null;
 }
+
+export type VoiceSoundIssue = VoiceSoundRejectReason | Exclude<relay.ClipPlaybackIssue, "deafened">;
 
 type Listener = (state: VoiceLocalState) => void;
 
@@ -54,6 +68,8 @@ const state: VoiceLocalState = {
   channelId: null,
   muted: false,
   deafened: false,
+  forcedMuted: false,
+  forcedDeafened: false,
   speaking: new Set(),
   video: null,
   localVideo: null,
@@ -66,6 +82,7 @@ const state: VoiceLocalState = {
   route: null,
   error: null,
   videoError: null,
+  soundError: null,
 };
 const listeners = new Set<Listener>();
 
@@ -112,6 +129,11 @@ function snapshot(): VoiceLocalState {
 
 function emit(): void {
   for (const listener of listeners) listener(snapshot());
+}
+
+/** El estado actual, para quien se monte con la llamada ya empezada. */
+export function voiceSnapshot(): VoiceLocalState {
+  return snapshot();
 }
 
 export function onVoice(listener: Listener): () => void {
@@ -224,8 +246,11 @@ function pollLevels(): void {
     analyser.getByteFrequencyData(buffer);
     let sum = 0;
     for (const value of buffer) sum += value;
-    // Quien está en silencio no "habla" aunque su micro capte algo.
-    mark(id, sum / buffer.length > SPEAKING_THRESHOLD && !(id === selfId && state.muted));
+    /* Quien está en silencio no "habla" aunque su micro capte algo. Y el nivel
+       propio se pesa con el volumen del micrófono: con el mando a cero se envía
+       silencio, así que enseñar el aro de "hablando" sería mentir. */
+    const level = (sum / buffer.length) * (id === selfId ? relay.micVolume() : 1);
+    mark(id, level > SPEAKING_THRESHOLD && !(id === selfId && effectiveMuted()));
   }
 
   /* El de los demás sale de lo que ya se decodificó para reproducirlo: no hay
@@ -258,9 +283,11 @@ function createPeer(remoteId: Snowflake, joinedAt = 0): Peer {
      para esa línea, en recvonly. El transceptor propio se quedaba suelto, sin
      línea en el SDP, y su `replaceTrack` funcionaba sin enviar nada a ninguna
      parte: la cámara se veía en local y el otro lado solo veía negro. */
-  const videoSender = shouldOffer(remoteId)
-    ? connection.addTransceiver("video", { direction: "sendrecv" }).sender
+  const videoTransceiver = shouldOffer(remoteId)
+    ? connection.addTransceiver("video", { direction: "sendrecv" })
     : null;
+  if (videoTransceiver) preferVideoCodecs(videoTransceiver);
+  const videoSender = videoTransceiver?.sender ?? null;
 
   // Quien llega tarde a la sala tiene que recibir el vídeo ya encendido, y con
   // los mismos ajustes de fluidez que el resto.
@@ -372,6 +399,40 @@ export interface PeerInfo {
   user_id: Snowflake;
   joined_at: number;
   video: VideoSource | null;
+  muted?: boolean;
+  deafened?: boolean;
+}
+
+/**
+ * Lo que la instancia dice de uno mismo (§11).
+ *
+ * Manda ella: puede callar a quien no tiene permiso de hablar o a quien moderó
+ * alguien, y el cliente debe reflejarlo en vez de enseñar un micrófono abierto
+ * que no sale de la máquina. La diferencia en el otro sentido —ella cree que
+ * hablas y tú te has callado— es un mensaje perdido o un moderador devolviendo
+ * la voz: se reenvía la intención local.
+ *
+ * No se toca `state.muted`: es la intención de quien está delante, y machacarla
+ * con el eco de la instancia hace parpadear el botón en cada actualización.
+ */
+function reconcileSelf(self: PeerInfo): void {
+  const serverMuted = Boolean(self.muted);
+  const serverDeafened = Boolean(self.deafened);
+
+  const forcedMuted = serverMuted && !state.muted;
+  const forcedDeafened = serverDeafened && !state.deafened;
+  if (forcedMuted !== state.forcedMuted || forcedDeafened !== state.forcedDeafened) {
+    state.forcedMuted = forcedMuted;
+    state.forcedDeafened = forcedDeafened;
+    applyOutput();
+    if (effectiveMuted()) state.speaking.delete(selfId);
+    emit();
+  }
+
+  /* Solo se reenvía cuando lo local es MÁS restrictivo. Al revés sería pelearse
+     con la instancia —que calla a quien no puede hablar— y el mensaje daría la
+     vuelta para siempre. */
+  if ((state.muted && !serverMuted) || (state.deafened && !serverDeafened)) pushVoiceState();
 }
 
 /** Última foto de la sala, para rehacer las conexiones al encender la cámara. */
@@ -380,6 +441,9 @@ let lastRoom: { channelId: Snowflake; participants: PeerInfo[] } | null = null;
 export async function syncPeers(channelId: Snowflake, participants: PeerInfo[]): Promise<void> {
   if (state.channelId !== channelId) return;
   lastRoom = { channelId, participants };
+
+  const self = participants.find((p) => p.user_id === selfId);
+  if (self) reconcileSelf(self);
 
   const others = participants.filter((p) => p.user_id !== selfId);
   roster.clear();
@@ -433,8 +497,7 @@ export function resumeVoice(): void {
   if (!state.channelId) return;
   for (const id of [...peers.keys()]) dropPeer(id);
   sendCommand({ t: "VOICE_JOIN", d: { channel_id: state.channelId } });
-  if (state.muted || state.deafened)
-    sendCommand({ t: "VOICE_MUTE", d: { channel_id: state.channelId, muted: state.muted, deafened: state.deafened } });
+  pushVoiceState();
   if (state.video) sendCommand({ t: "VOICE_VIDEO", d: { channel_id: state.channelId, source: state.video } });
 }
 
@@ -494,6 +557,58 @@ export async function handleSignal(from: Snowflake, payload: unknown): Promise<v
   }
 }
 
+/* ── micrófono elegido (§10.2) ─────────────────────────────────────────
+   Qué aparato se usa es de este equipo, no de la cuenta: los cascos están
+   enchufados aquí. Por eso se guarda en el navegador y no viaja a la instancia. */
+
+let micDevice = localStorage.getItem("distop.micDevice") ?? "";
+
+export function inputDevice(): string {
+  return micDevice;
+}
+
+function micConstraints(): MediaTrackConstraints {
+  return {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    /* `ideal` y no `exact`: si el aparato elegido ya no está —unos cascos USB
+       desenchufados— se entra con el que haya en vez de quedarse sin llamada. */
+    ...(micDevice ? { deviceId: { ideal: micDevice } } : {}),
+  };
+}
+
+/**
+ * Cambiar de micrófono en mitad de una llamada.
+ * Se pide el nuevo ANTES de soltar el viejo: si el navegador lo niega, la
+ * llamada sigue con el que había en vez de quedarse muda.
+ */
+export async function setInputDevice(id: string): Promise<void> {
+  micDevice = id;
+  localStorage.setItem("distop.micDevice", id);
+  if (!state.channelId) return;
+
+  let next: MediaStream;
+  try {
+    next = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false });
+  } catch (err) {
+    state.error = err instanceof DOMException && err.name === "NotAllowedError" ? "denied" : "nodevice";
+    emit();
+    return;
+  }
+
+  for (const track of localStream?.getTracks() ?? []) track.stop();
+  localStream = next;
+  const analyser = watchLevel(selfId, next);
+  if (analyser) meters.set(selfId, analyser);
+
+  state.error = null;
+  if (!(await relay.startCapture(next, sendMedia))) state.error = "unsupported";
+  // Volver a capturar tira el sonido de la pantalla compartida: se reengancha.
+  if (state.video === "screen") relay.setShareAudio(videoStream);
+  emit();
+}
+
 /* ── entrar y salir ────────────────────────────────────────────────── */
 
 export async function joinVoice(channelId: Snowflake): Promise<boolean> {
@@ -502,10 +617,7 @@ export async function joinVoice(channelId: Snowflake): Promise<boolean> {
 
   state.error = null;
   try {
-    localStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      video: false,
-    });
+    localStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints(), video: false });
   } catch (err) {
     // Sin micrófono no hay llamada, y el motivo importa: permiso denegado y
     // "no hay dispositivo" se arreglan de formas distintas.
@@ -528,11 +640,14 @@ export async function joinVoice(channelId: Snowflake): Promise<boolean> {
     state.videos.set(id, stream);
     emit();
   });
-  relay.setSending(!state.muted);
-  relay.setDeafened(state.deafened);
+  applyOutput();
   if (!(await relay.startCapture(localStream, sendMedia))) state.error = "unsupported";
 
   sendCommand({ t: "VOICE_JOIN", d: { channel_id: channelId } });
+  /* Callarse o ensordecerse se puede hacer desde la barra de usuario ANTES de
+     entrar. Sin esto se llegaba a la sala con el micro cerrado en el navegador
+     pero abierto para la instancia, y el resto hablaba creyendo que oías. */
+  pushVoiceState();
   emit();
   return true;
 }
@@ -560,8 +675,11 @@ export function leaveVoice(): void {
   state.channelId = null;
   state.muted = false;
   state.deafened = false;
+  state.forcedMuted = false;
+  state.forcedDeafened = false;
   state.video = null;
   state.videoError = null;
+  state.soundError = null;
 
   if (meterTimer) {
     clearInterval(meterTimer);
@@ -570,23 +688,86 @@ export function leaveVoice(): void {
   emit();
 }
 
+/**
+ * Dispara un sonido de la tabla para toda la sala (§9.4).
+ *
+ * No suena aquí mismo: se manda el id y se espera el eco del servidor, que
+ * vuelve a todos —incluido quien pulsa— por el mismo camino. Sonarlo en local
+ * al pulsar habría sido una línea menos y una mentira: quien lo dispara lo
+ * oiría antes que los demás, y seguiría oyéndolo cuando el servidor lo descarta
+ * por estar silenciado o por pasarse del límite.
+ */
+export function playSound(soundId: Snowflake): void {
+  if (!state.channelId) return;
+  if (effectiveMuted()) {
+    setSoundError("muted");
+    return;
+  }
+  setSoundError(null);
+  sendCommand({ t: "VOICE_SOUND", d: { channel_id: state.channelId, sound_id: soundId } });
+}
+
+export function setSoundError(error: VoiceSoundIssue | null): void {
+  if (state.soundError === error) return;
+  state.soundError = error;
+  emit();
+}
+
+/** ¿Sale mi voz de verdad? Lo que impone la instancia cuenta igual que el botón. */
+export function effectiveMuted(): boolean {
+  return state.muted || state.forcedMuted;
+}
+
+/** ¿Oigo la sala de verdad? */
+export function effectiveDeafened(): boolean {
+  return state.deafened || state.forcedDeafened;
+}
+
+/**
+ * El estado de voz es UNO y viaja entero.
+ *
+ * Mandar solo la bandera que cambiaba era el fallo: al quitarse el
+ * ensordecimiento no se enviaba nada, la instancia seguía creyéndote sordo y
+ * dejaba de reenviarte audio —para siempre, hasta salir de la llamada— mientras
+ * la interfaz ya decía que oías.
+ */
+function pushVoiceState(): void {
+  if (!state.channelId) return;
+  sendCommand({
+    t: "VOICE_MUTE",
+    d: { channel_id: state.channelId, muted: state.muted, deafened: state.deafened },
+  });
+}
+
+/** Micrófono y altavoces siguen al estado real, no solo a la propia intención. */
+function applyOutput(): void {
+  relay.setSending(!effectiveMuted());
+  relay.setDeafened(effectiveDeafened());
+}
+
 export function setMuted(muted: boolean): void {
   state.muted = muted;
-  // Deja de salir de verdad: ni se envía desde aquí ni el servidor lo reenviaría
-  // aunque se enviara, porque él también sabe quién está silenciado.
-  relay.setSending(!muted);
-  if (muted) state.speaking.delete(selfId);
-  if (state.channelId)
-    sendCommand({ t: "VOICE_MUTE", d: { channel_id: state.channelId, muted, deafened: state.deafened } });
+  /* Quitarse el silencio es también dejar de estar sordo: la instancia obliga a
+     que quien no oye tampoco hable, así que "hablando y ensordecido" no existe.
+     Sin esto el botón se encendía, el micrófono capturaba, y la instancia tiraba
+     cada paquete: quien lo pulsaba creía estar hablando y no le oía nadie. */
+  if (!muted && state.deafened) state.deafened = false;
+  applyOutput();
+  if (effectiveMuted()) state.speaking.delete(selfId);
+  pushVoiceState();
   emit();
 }
 
 export function setDeafened(deafened: boolean): void {
   state.deafened = deafened;
-  relay.setDeafened(deafened);
   // Ensordecer implica callar: si no oyes a nadie, hablar es de mala educación.
-  if (deafened) setMuted(true);
-  else emit();
+  if (deafened) {
+    setMuted(true);
+    return;
+  }
+  applyOutput();
+  pushVoiceState();
+  emit();
 }
 
 export function currentChannel(): Snowflake | null {
@@ -594,9 +775,8 @@ export function currentChannel(): Snowflake | null {
 }
 
 /* ── vídeo y pantalla (§9.5) ───────────────────────────────────────────
-   Misma malla que la voz: la imagen va directa entre navegadores y no toca la
-   instancia. Cámara y pantalla comparten un único hueco de vídeo por par, así
-   que encender una apaga la otra.
+   La imagen puede ir por la instancia o directa entre navegadores. Cámara y
+   pantalla comparten un único hueco de vídeo, así que encender una apaga la otra.
 
    ponytail: en una malla el permiso se comprueba en tres sitios (botón, estado
    del servidor, y quien recibe solo pinta lo que el servidor anunció), pero los
@@ -608,40 +788,12 @@ export function canShareScreen(): boolean {
   return typeof navigator.mediaDevices?.getDisplayMedia === "function";
 }
 
-/**
- * Techo alto a propósito, no exigencia.
- * `ideal` da lo mejor que tenga el aparato y se conforma con menos; `exact`
- * haría fallar la captura entera en una webcam que solo llega a 30. Sin pedir
- * nada, el navegador entrega 30 por defecto, que es de donde salían.
- *
- * Pedir 120 no inventa fluidez: la fuente manda. Una pantalla de 60 Hz da 60 y
- * una webcam corriente da 30, pero un monitor de 144 Hz ya no queda capado en
- * 60 como antes. El contador de fps de la barra dice lo que sale de verdad.
- */
-const TARGET_FPS = 120;
-
-/**
- * Techos por pista. En malla cada par recibe su propia copia: esto se multiplica.
- * Más fluidez pide más bitrate; con el techo de antes, pedir 120 fps solo habría
- * conseguido una imagen más sucia a los mismos fotogramas.
- */
-const MAX_BITRATE: Record<VideoSource, number> = {
-  camera: 4_000_000,
-  screen: 10_000_000,
-};
-
-/**
- * Techo mucho más bajo cuando la llamada va por un relevo.
- * Ahí los bytes salen de la cuota mensual de alguien —y las capas gratuitas van
- * de medio giga a un tera—, así que 10 Mbit/s de pantalla compartida se la comen
- * en minutos. En directo no aplica: ahí no hay cuota que gastar.
- */
-const RELAY_BITRATE = 700_000;
-
 function capture(source: VideoSource): Promise<MediaStream> {
+  const profile = relay.videoProfile(source);
   return source === "screen"
     ? navigator.mediaDevices.getDisplayMedia({
-        video: { frameRate: { ideal: TARGET_FPS } },
+        // Resolución nativa: reducirla antes de codificar vuelve ilegible el texto.
+        video: { frameRate: { ideal: profile.fps, max: profile.fps } },
         /* El sonido de lo que se comparte. `ideal` y no `exact`: si el sistema no
            sabe entregarlo —Linux con algunos escritorios, o compartir una ventana
            en vez de una pestaña— se comparte igual, en mudo, en vez de fallar
@@ -649,9 +801,27 @@ function capture(source: VideoSource): Promise<MediaStream> {
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       })
     : navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: TARGET_FPS } },
+        video: {
+          width: { ideal: profile.width },
+          height: { ideal: profile.height },
+          frameRate: { ideal: profile.fps, max: profile.fps },
+        },
         audio: false,
       });
+}
+
+/** VP9 conserva más detalle al mismo bitrate; la negociación cae a H.264/VP8 si falta. */
+function preferVideoCodecs(transceiver: RTCRtpTransceiver): void {
+  const codecs = RTCRtpSender.getCapabilities?.("video")?.codecs;
+  if (!codecs || typeof transceiver.setCodecPreferences !== "function") return;
+  const score = (codec: { mimeType: string }): number => {
+    const name = codec.mimeType.toLowerCase();
+    if (name === "video/vp9") return 0;
+    if (name === "video/h264") return 1;
+    if (name === "video/vp8") return 2;
+    return 3;
+  };
+  transceiver.setCodecPreferences([...codecs].sort((a, b) => score(a) - score(b)));
 }
 
 /**
@@ -661,13 +831,15 @@ function capture(source: VideoSource): Promise<MediaStream> {
  * él es lo primero que estrangula los fps.
  */
 async function tuneSender(sender: RTCRtpSender, source: VideoSource): Promise<void> {
+  const profile = relay.videoProfile(source);
   const params = sender.getParameters();
   // Antes de negociar, `encodings` puede llegar vacío; setParameters lo exige.
   if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
 
-  params.degradationPreference = "maintain-framerate";
-  params.encodings[0]!.maxFramerate = TARGET_FPS;
-  params.encodings[0]!.maxBitrate = state.route === "relay" ? RELAY_BITRATE : MAX_BITRATE[source];
+  // Cámara: movimiento fluido. Pantalla: texto nítido y resolución estable.
+  params.degradationPreference = source === "screen" ? "maintain-resolution" : "maintain-framerate";
+  params.encodings[0]!.maxFramerate = profile.fps;
+  params.encodings[0]!.maxBitrate = profile.bitrate;
 
   try {
     await sender.setParameters(params);
@@ -711,9 +883,8 @@ export async function setVideoSource(source: VideoSource | null): Promise<void> 
     stopLocalVideo();
     videoStream = stream;
     state.localVideo = stream;
-    // Pista: aquí importa el movimiento, no el detalle fino. Es lo que hace que
-    // el codificador baje resolución antes que fluidez cuando la red aprieta.
-    track.contentHint = "motion";
+    // Una cámara privilegia movimiento; una pantalla conserva letras y bordes.
+    track.contentHint = source === "screen" ? "detail" : "motion";
     // "Dejar de compartir" desde el propio navegador también tiene que apagarlo aquí.
     track.addEventListener("ended", () => void setVideoSource(null));
   } else {
@@ -727,8 +898,17 @@ export async function setVideoSource(source: VideoSource | null): Promise<void> 
 
   if (videoViaHost) {
     // Por la instancia: se codifica aquí y sale por el mismo socket que la voz.
-    if (source && videoStream) await relay.startVideo(videoStream, sendMedia, source);
-    else relay.stopVideo();
+    if (source && videoStream) {
+      const started = await relay.startVideo(videoStream, sendMedia, source).catch(() => false);
+      if (!started) {
+        relay.setShareAudio(null);
+        state.shareAudio = false;
+        stopLocalVideo();
+        state.videoError = "unsupported";
+        emit();
+        return;
+      }
+    } else relay.stopVideo();
   } else {
     for (const peer of peers.values()) {
       const sender = peer.videoSender;

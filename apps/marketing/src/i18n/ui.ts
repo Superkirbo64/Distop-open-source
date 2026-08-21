@@ -81,8 +81,8 @@ const es = {
       },
       {
         tag: "Voz",
-        title: "Voz entre pares",
-        body: "El audio va directo de un navegador a otro por WebRTC. Tu instancia solo presenta a la gente, no transporta el sonido: por eso hospedar voz no te cuesta ancho de banda de servidor.",
+        title: "Voz que siempre encuentra camino",
+        body: "El audio viaja por la misma conexión con tu instancia que ya usa el chat. No exige STUN, TURN ni abrir más puertos; a cambio, quien hospeda envía una copia ligera a cada oyente.",
       },
       {
         tag: "Roles",
@@ -319,8 +319,8 @@ const en: Dict = {
       },
       {
         tag: "Voice",
-        title: "Peer-to-peer voice",
-        body: "Audio goes straight from one browser to another over WebRTC. Your instance only introduces people, it never carries the sound — which is why hosting voice costs you no server bandwidth.",
+        title: "Voice that always has a path",
+        body: "Audio uses the same connection to your instance as chat. It needs no STUN, TURN or extra open ports; in exchange, the host sends one lightweight copy to each listener.",
       },
       {
         tag: "Roles",
@@ -552,8 +552,8 @@ const ptBR: Dict = {
       },
       {
         tag: "Voz",
-        title: "Voz entre pares",
-        body: "O áudio vai direto de um navegador para outro por WebRTC. Sua instância só apresenta as pessoas, não carrega o som: por isso hospedar voz não consome banda do servidor.",
+        title: "Voz que sempre encontra um caminho",
+        body: "O áudio usa a mesma conexão com a sua instância que o chat já usa. Não exige STUN, TURN nem portas extras abertas; em troca, quem hospeda envia uma cópia leve para cada ouvinte.",
       },
       {
         tag: "Cargos",

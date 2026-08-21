@@ -3,12 +3,13 @@
  * Toda la personalización es gratuita por definición: aquí no hay nada bloqueado
  * ni ningún aviso de "mejora tu plan".
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DEFAULT_PROFILE_STYLE, type SelfUser } from "@distop/protocol";
 import { ExternalLink, Pipette } from "lucide-react";
 import { useStore, type BackdropChoice, type Density, type FontChoice, type ThemeChoice } from "../store.ts";
 import { api } from "../lib/api.ts";
-import { probeNetwork, setIceServers, setVideoMode } from "../lib/voice.ts";
+import { inputDevice, probeNetwork, setIceServers, setInputDevice, setVideoMode } from "../lib/voice.ts";
+import * as audio from "../lib/relay.ts";
 import { LOCALES, LOCALE_LABELS } from "../i18n.ts";
 import { Avatar, Button, ErrorNote, Field, ImageField, Modal, Toggle, useT, useErrorText } from "../components/ui.tsx";
 import { WallpaperField, WallpaperPicker } from "../components/Wallpaper.tsx";
@@ -114,7 +115,7 @@ function ProfileTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 rounded-[10px] border border-line p-3">
-        <Avatar name={form.display_name || "?"} url={form.avatar_url || null} id={user?.id} size={52} profile={form.profile_style} />
+        <Avatar name={form.display_name || "?"} url={form.avatar_url || null} id={user?.id} size={72} profile={form.profile_style} />
         <div className="min-w-0">
           <p className="display truncate font-bold">{form.display_name}</p>
           <p className="truncate text-sm text-muted">{form.pronouns || `@${user?.username}`}</p>
@@ -533,6 +534,172 @@ function Externo({ href, children }: { href: string; children: string }) {
   );
 }
 
+/**
+ * Micrófono, altavoces y volúmenes (§10.2).
+ *
+ * Va aparte del bloque de quien hospeda —y antes— porque no es configuración de
+ * la instancia: es de este equipo y de esta persona. Nada de esto viaja ni lo
+ * nota nadie más en la sala.
+ */
+function AudioSetup() {
+  const t = useT();
+  const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
+  const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([]);
+  const [mic, setMic] = useState(inputDevice);
+  const [out, setOut] = useState(audio.outputDevice);
+  const [micVol, setMicVol] = useState(audio.micVolume);
+  const [outVol, setOutVol] = useState(audio.outputVolume);
+  const [unnamed, setUnnamed] = useState(false);
+
+  /* Sin `mediaDevices` no hay nada que elegir: pasa al abrir la instancia por
+     http desde otro equipo de la red. Se dice, en vez de enseñar listas vacías. */
+  const media = typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+
+  const list = useCallback(async () => {
+    if (!media) return;
+    const all = await media.enumerateDevices();
+    setInputs(all.filter((d) => d.kind === "audioinput"));
+    setOutputs(all.filter((d) => d.kind === "audiooutput"));
+    // Sin permiso el navegador entrega los aparatos sin nombre: se puede elegir
+    // a ciegas, pero conviene decir por qué no se lee ninguno.
+    setUnnamed(all.some((d) => d.kind === "audioinput" && !d.label));
+  }, [media]);
+
+  useEffect(() => {
+    void list();
+    media?.addEventListener("devicechange", list);
+    return () => media?.removeEventListener("devicechange", list);
+  }, [list, media]);
+
+  /** Pedir el micrófono una vez y soltarlo: es lo que destapa los nombres. */
+  async function reveal(): Promise<void> {
+    try {
+      const stream = await media!.getUserMedia({ audio: true });
+      for (const track of stream.getTracks()) track.stop();
+    } catch {
+      // Si lo niega se sigue con los nombres genéricos: elegir aún funciona.
+    }
+    await list();
+  }
+
+  const name = (device: MediaDeviceInfo, index: number, key: "voice.deviceUnnamed" | "voice.deviceUnnamedOut") =>
+    device.label || t(key, { n: index + 1 });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h3 className="display text-base font-bold">{t("voice.audioTitle")}</h3>
+        <p className="mt-1 text-sm text-muted">{t("voice.audioIntro")}</p>
+      </div>
+
+      {media ? (
+        <>
+          <Field label={t("voice.device")} hint={unnamed ? t("voice.deviceNames") : ""}>
+            {(id) => (
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  id={id}
+                  className="field min-w-0 flex-1"
+                  value={mic}
+                  onChange={(e) => {
+                    setMic(e.target.value);
+                    void setInputDevice(e.target.value);
+                  }}
+                >
+                  <option value="">{t("voice.deviceDefault")}</option>
+                  {inputs.map((device, index) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {name(device, index, "voice.deviceUnnamed")}
+                    </option>
+                  ))}
+                </select>
+                {unnamed ? (
+                  <Button variant="ghost" onClick={() => void reveal()}>
+                    {t("voice.deviceAllow")}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </Field>
+
+          <Field
+            label={`${t("voice.micVolume")} — ${Math.round(micVol * 100)}%`}
+            hint={t("voice.micVolumeHint")}
+          >
+            {(id) => (
+              <input
+                id={id}
+                type="range"
+                min={0}
+                max={200}
+                step={5}
+                value={Math.round(micVol * 100)}
+                onChange={(e) => {
+                  const value = Number(e.target.value) / 100;
+                  setMicVol(value);
+                  audio.setMicVolume(value);
+                }}
+                className="w-full"
+                style={{ accentColor: "var(--accent)" }}
+              />
+            )}
+          </Field>
+
+          <Field
+            label={t("voice.outputDevice")}
+            hint={audio.canPickOutput() ? "" : t("voice.outputFixed")}
+          >
+            {(id) => (
+              <select
+                id={id}
+                className="field"
+                value={out}
+                disabled={!audio.canPickOutput()}
+                onChange={(e) => {
+                  setOut(e.target.value);
+                  void audio.setOutputDevice(e.target.value);
+                }}
+              >
+                <option value="">{t("voice.deviceDefault")}</option>
+                {outputs.map((device, index) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {name(device, index, "voice.deviceUnnamedOut")}
+                  </option>
+                ))}
+              </select>
+            )}
+          </Field>
+        </>
+      ) : (
+        <p className="text-sm text-muted">{t("voice.noMedia")}</p>
+      )}
+
+      <Field
+        label={`${t("voice.outVolume")} — ${Math.round(outVol * 100)}%`}
+        hint={t("voice.outVolumeHint")}
+      >
+        {(id) => (
+          <input
+            id={id}
+            type="range"
+            min={0}
+            max={200}
+            step={5}
+            value={Math.round(outVol * 100)}
+            onChange={(e) => {
+              const value = Number(e.target.value) / 100;
+              setOutVol(value);
+              audio.setOutputVolume(value);
+            }}
+            className="w-full"
+            style={{ accentColor: "var(--accent)" }}
+          />
+        )}
+      </Field>
+    </div>
+  );
+}
+
 function VoiceTab() {
   const t = useT();
   const errorText = useErrorText();
@@ -617,8 +784,13 @@ function VoiceTab() {
     }
   }
 
-  if (denied) return <p className="text-sm text-muted">{t("voice.relayHostOnly")}</p>;
-  if (!relay) return <p className="text-sm text-muted">{t("common.loading")}</p>;
+  if (denied || !relay)
+    return (
+      <div className="flex flex-col gap-6">
+        <AudioSetup />
+        <p className="text-sm text-muted">{denied ? t("voice.relayHostOnly") : t("common.loading")}</p>
+      </div>
+    );
 
   const modes: Array<[RelayState["mode"], string, string]> = [
     ["metered", t("voice.relayMet"), t("voice.relayMetHint")],
@@ -642,7 +814,9 @@ function VoiceTab() {
       : "";
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
+      <AudioSetup />
+
       <div>
         <h3 className="display text-base font-bold">{t("voice.relayTitle")}</h3>
         <p className="mt-1 text-sm text-muted">{t("voice.relayIntro")}</p>

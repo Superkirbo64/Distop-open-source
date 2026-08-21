@@ -22,7 +22,8 @@ export const en: Record<keyof typeof es, string> = {
   "common.none": "None",
   "common.back": "Back",
 
-  "auth.tagline": "Your community, on your server, with nothing locked behind a paywall.",
+  "auth.tagline":
+    "Your community, on your server, with nothing locked behind a paywall.",
   "auth.login": "Sign in",
   "auth.register": "Create account",
   "auth.guest": "Continue as guest",
@@ -34,23 +35,30 @@ export const en: Record<keyof typeof es, string> = {
   "auth.noAccount": "No account yet?",
   "auth.haveAccount": "Already have an account?",
   "auth.guestTitle": "No account",
-  "auth.guestHint": "You can do exactly what an account does: create communities, channels, invite people and talk. Add a password whenever you want, losing nothing.",
-  "auth.guestEqual": "Without a password you can do the same; you only need one to come back from another device.",
+  "auth.guestHint":
+    "You can do exactly what an account does: create communities, channels, invite people and talk. Add a password whenever you want, losing nothing.",
+  "auth.guestEqual":
+    "Without a password you can do the same; you only need one to come back from another device.",
   "auth.recoverTitle": "Are you the one hosting this instance?",
-  "auth.recoverHint": "These accounts have no password and own a community. Since you are on the machine hosting it, you can walk right in.",
+  "auth.recoverHint":
+    "These accounts have no password and own a community. Since you are on the machine hosting it, you can walk right in.",
   "auth.registrationClosed": "This instance has registration closed.",
   "auth.guestClosed": "This instance does not allow guests.",
 
   "setup.title": "This instance is yours",
-  "setup.subtitle": "It was just installed and has no owner yet. Put your name and your community's: no account needed.",
+  "setup.subtitle":
+    "It was just installed and has no owner yet. Put your name and your community's: no account needed.",
   "setup.yourName": "Your name",
   "setup.communityName": "Your community's name",
   "setup.password": "Password",
-  "setup.passwordHint": "Optional for now. Without it you only get in from this device; you can set it any time from Settings.",
+  "setup.passwordHint":
+    "Optional for now. Without it you only get in from this device; you can set it any time from Settings.",
   "setup.code": "Setup code",
-  "setup.codeHint": "It is printed in the terminal where you started the instance. It is asked because you are claiming it from another machine.",
+  "setup.codeHint":
+    "It is printed in the terminal where you started the instance. It is asked because you are claiming it from another machine.",
   "setup.start": "Set it up",
-  "setup.noPasswordWarning": "With no password, this account lives only in this browser. Clear it and you lose admin access.",
+  "setup.noPasswordWarning":
+    "With no password, this account lives only in this browser. Clear it and you lose admin access.",
 
   "instance.connecting": "Connecting…",
   "instance.online": "Online",
@@ -62,23 +70,32 @@ export const en: Record<keyof typeof es, string> = {
   "instance.storage": "Storage",
   "instance.users": "People connected",
   "instance.version": "Version",
-  "instance.offlineHelp": "The community lives on the host's machine. If that machine is off, there is no service until it returns.",
+  "instance.offlineHelp":
+    "The community lives on the host's machine. If that machine is off, there is no service until it returns.",
 
   "share.title": "Share your instance",
   "share.address": "Address to invite people to",
-  "share.localOnly": "Right now your instance only exists on this computer. A link with this address will not work for anyone else.",
-  "share.howTo": "Two ways to open it up: a tunnel (easiest, no router changes) or opening the port and pointing a domain at it.",
+  "share.localOnly":
+    "Right now your instance only exists on this computer. A link with this address will not work for anyone else.",
+  "share.howTo":
+    "Two ways to open it up: a tunnel (easiest, no router changes) or opening the port and pointing a domain at it.",
   "share.tunnel": "Quick tunnel with Cloudflare, no account or config:",
-  "share.thenSet": "Copy the URL it gives you and put it in PUBLIC_URL in your .env. From then on invites use that address.",
-  "share.ready": "Your instance is reachable from outside. Invites already use this address.",
+  "share.thenSet":
+    "Copy the URL it gives you and put it in PUBLIC_URL in your .env. From then on invites use that address.",
+  "share.ready":
+    "Your instance is reachable from outside. Invites already use this address.",
   "share.createLink": "Create public link",
-  "share.createLinkHint": "Opens a tunnel and gives you an https address that works outside your home. No account, no router changes.",
+  "share.createLinkHint":
+    "Opens a tunnel and gives you an https address that works outside your home. No account, no router changes.",
   "share.closeLink": "Close public link",
   "share.opening": "Opening the tunnel…",
-  "share.linkTemporary": "This link lives while the instance is on. After a restart the address is a different one.",
-  "share.needsCloudflared": "cloudflared is not installed on this machine. Install it from Cloudflare and try again.",
+  "share.linkTemporary":
+    "This link lives while the instance is on. After a restart the address is a different one.",
+  "share.needsCloudflared":
+    "cloudflared is not installed on this machine. Install it from Cloudflare and try again.",
   "share.failed": "Could not open the tunnel. Check your internet connection.",
-  "share.hostReminder": "While this computer is on, your community is online. When you shut it down, it is not.",
+  "share.hostReminder":
+    "While this computer is on, your community is online. When you shut it down, it is not.",
 
   "community.yours": "Your communities",
   "community.create": "Create community",
@@ -89,7 +106,8 @@ export const en: Record<keyof typeof es, string> = {
   "community.empty": "You are not in any community yet",
   "community.emptyHint": "Create your own or join with an invite link.",
   "community.leave": "Leave community",
-  "community.leaveConfirm": "You lose access until someone invites you again. Leave?",
+  "community.leaveConfirm":
+    "You lose access until someone invites you again. Leave?",
   "community.manage": "Community settings",
   "community.invite": "Invite people",
   "community.members": "Members",
@@ -100,14 +118,18 @@ export const en: Record<keyof typeof es, string> = {
   "invite.reachable": "It answers. The link is good to share.",
   "invite.unreachable": "No answer. Whoever gets this link will not get in.",
   "invite.localOnly": "This is a local address: it only works on this machine.",
-  "invite.tunnelHere": "This opens a public link and rebuilds the invite with it. Nothing is written to any file: it lives while the instance is on.",
+  "invite.tunnelHere":
+    "This opens a public link and rebuilds the invite with it. Nothing is written to any file: it lives while the instance is on.",
   "invite.asSomeoneElse": "Join as someone else",
-  "invite.asSomeoneElseHint": "Signs {name} out of this browser so you can join under another name.",
+  "invite.asSomeoneElseHint":
+    "Signs {name} out of this browser so you can join under another name.",
   "settings.deleteAccount": "Delete my account",
-  "settings.deleteAccountHint": "Erases your account from the database: profile, messages, uploaded files and the communities you own, with everything in them. There is no copy and no bin.",
+  "settings.deleteAccountHint":
+    "Erases your account from the database: profile, messages, uploaded files and the communities you own, with everything in them. There is no copy and no bin.",
   "settings.deleteConfirmLabel": "Type {username} to confirm",
   "settings.deleteForever": "Delete forever",
-  "invite.fixHint": "Open a public link from Instance status and create the invite again.",
+  "invite.fixHint":
+    "Open a public link from Instance status and create the invite again.",
   "community.joinLabel": "Invite link or code",
   "community.joinHint": "Paste the whole link or just the code: both work.",
   "community.joinAction": "Join",
@@ -122,10 +144,12 @@ export const en: Record<keyof typeof es, string> = {
   "channel.voice": "Voice",
   "channel.announcement": "Announcements",
   "channel.delete": "Delete channel",
-  "channel.deleteConfirm": "This deletes the channel and every message in it. There is no undo.",
+  "channel.deleteConfirm":
+    "This deletes the channel and every message in it. There is no undo.",
   "channel.none": "No visible channels",
   "channel.noneHint": "Ask an admin for access, or create one.",
-  "channel.voiceSoon": "Voice channels arrive in phase 3. The channel already exists and keeps its permissions.",
+  "channel.voiceSoon":
+    "Voice channels arrive in phase 3. The channel already exists and keeps its permissions.",
 
   "message.placeholder": "Message {channel}",
   "message.send": "Send",
@@ -155,6 +179,26 @@ export const en: Record<keyof typeof es, string> = {
   "voice.invite": "Invite to the call",
   "voice.connected": "Voice connected",
   "voice.disconnect": "Hang up",
+  "voice.soundboard": "Sounds",
+  "voice.soundboardEmpty":
+    "This community has no sounds yet. You add them in Community settings → Emojis, stickers and sounds.",
+  "voice.soundboardMuted": "Unmute your microphone to use sounds in the room.",
+  "voice.soundboardSearch": "Find the perfect sound",
+  "voice.soundboardNoResults": "No sounds match your search.",
+  "voice.soundboardFrequent": "Frequently used",
+  "voice.soundboardCommunity": "Sounds from {name}",
+  "voice.chatTitle": "Voice chat",
+  "voice.chatEmpty": "The voice chat is empty",
+  "voice.chatEmptyHint": "Write something without leaving the call.",
+  "voice.soundError.not_in_voice": "The instance no longer sees you in this room. Leave and join again.",
+  "voice.soundError.muted": "You cannot trigger sounds while your microphone is muted.",
+  "voice.soundError.rate_limited": "You triggered too many sounds in a row. Wait a few seconds.",
+  "voice.soundError.not_available": "That sound is no longer available in this community.",
+  "voice.soundError.unsupported": "This browser cannot play room sounds.",
+  "voice.soundError.blocked": "The browser blocked audio. Interact with the page and try again.",
+  "voice.soundError.download": "The sound could not be downloaded from the instance.",
+  "voice.soundError.decode": "The file does not contain audio this browser can play.",
+  "voice.soundError.too_long": "The sound is longer than 30 seconds and cannot be used as an effect.",
   "voice.mute": "Mute",
   "voice.unmute": "Unmute",
   "voice.deafen": "Deafen",
@@ -170,29 +214,76 @@ export const en: Record<keyof typeof es, string> = {
   "voice.shareMute": "Mute screen sound",
   "voice.shareUnmute": "Unmute screen sound",
   "voice.quality": "Maximum video quality",
-  "voice.qualityHint": "No paywall here: this is the host's upload, multiplied by everyone watching.",
-  "voice.qualityLow": "Light — 1.5 Mbit/s, 24 fps",
-  "voice.qualityMedium": "Balanced — 4 Mbit/s, 30 fps",
-  "voice.qualityHigh": "Maximum — 8 Mbit/s, 60 fps",
+  "voice.qualityHint":
+    "No paywall here: this is the host's upload, multiplied by everyone watching.",
+  "voice.qualityLow": "Light — up to 30 fps · camera 1.5 / screen 3 Mbit/s",
+  "voice.qualityMedium": "Balanced — up to 60 fps · camera 4 / screen 8 Mbit/s",
+  "voice.qualityHigh": "Maximum — up to 120 fps · camera 12 / screen 24 Mbit/s",
   "voice.link.new": "connecting",
   "voice.link.connecting": "connecting",
   "voice.link.disconnected": "no connection",
   "voice.link.failed": "cannot connect",
   "voice.link.closed": "disconnected",
-  "voice.needsStun": "Your public address could not be discovered, so video will not get through. Voice still works.",
+  "voice.needsStun":
+    "Your public address could not be discovered, so video will not get through. Voice still works.",
   "voice.needsTurn":
     "Your networks will not allow a direct connection, so video will not get through. Voice still works: only video needs that route.",
-  "voice.viaRelay": "Video is going through a relay: there was no direct route. It stays end-to-end encrypted.",
-  "voice.videoDenied": "You did not allow the camera, or you cancelled the screen-sharing dialog.",
+  "voice.viaRelay":
+    "Video is going through a relay: there was no direct route. It stays end-to-end encrypted.",
+  "voice.videoDenied":
+    "You did not allow the camera, or you cancelled the screen-sharing dialog.",
+  "voice.videoUnsupported":
+    "This browser cannot encode video through the instance. Try direct mode or an up-to-date Chromium browser.",
   "voice.noCamera": "No camera found. Plug one in and try again.",
   "voice.emptyRoom": "Empty voice room",
-  "voice.emptyRoomHint": "Go in first: whoever arrives next will hear you straight away.",
-  "voice.denied": "You did not allow the microphone. Enable it from the padlock in the address bar and join again.",
+  "voice.emptyRoomHint":
+    "Go in first: whoever arrives next will hear you straight away.",
+  "voice.fun": "Room games",
+  "voice.gravity": "Gravity",
+
+  "race.open": "Race",
+  "race.join": "Join ({count})",
+  "race.start": "Start",
+  "race.leave": "Leave the race",
+  "race.host": "host",
+  "race.lobbyTitle": "Waiting for people · {count} in",
+  "race.lobbyHostHint": "You opened the race: pick a world and start it when everyone is in.",
+  "race.lobbyGuestHint": "{name} starts the race when the room is ready.",
+  "race.waiting": "The race starts when whoever opened it says so.",
+  "race.nextRound": "You joined mid-race: you run in the next one.",
+  "race.title": "Marble race",
+  "race.again": "Again",
+  "race.running": "Racing… first marble across the line wins.",
+  "race.world.pegs": "Pegs",
+  "race.world.ramps": "Ramps",
+  "race.world.spinners": "Spinners",
+
+  "voice.audioTitle": "Microphone and sound",
+  "voice.audioIntro": "This device only, and only for you: nobody else notices what you change here.",
+  "voice.outputDevice": "Sound output",
+  "voice.deviceUnnamed": "Microphone {n}",
+  "voice.deviceUnnamedOut": "Output {n}",
+  "voice.deviceNames": "Device names only show up once you allow the microphone.",
+  "voice.deviceAllow": "Show names",
+  "voice.micVolume": "Microphone volume",
+  "voice.micVolumeHint": "Applied before sending. Above 100% it amplifies and may clip.",
+  "voice.outVolume": "Call volume",
+  "voice.outVolumeHint": "Affects voices and room sounds, not the rest of the machine.",
+  "voice.outputFixed": "This browser cannot pick where sound comes out: it uses the system output.",
+  "voice.noMedia":
+    "Browsers only grant microphone access over https or on localhost. Open the instance over https to pick a device.",
+  "voice.userVolume": "Volume — {value}%",
+  "voice.userVolumeHint": "Only for you. Nobody else notices.",
+  "voice.denied":
+    "You did not allow the microphone. Enable it from the padlock in the address bar and join again.",
   "voice.noDevice": "No microphone found. Plug one in and try again.",
-  "voice.peerToPeer": "Direct audio with {count} people. It does not go through the server.",
-  "voice.throughHost": "Voice through the instance with {count} people. It works while the instance is on.",
+  "voice.peerToPeer":
+    "Direct audio with {count} people. It does not go through the server.",
+  "voice.throughHost":
+    "Voice through the instance with {count} people. It works while the instance is on.",
   "voice.videoDirect": "Video goes straight between browsers.",
-  "voice.unsupported": "This browser cannot encode voice. Try Chrome, Edge or a recent browser.",
+  "voice.unsupported":
+    "This browser cannot encode voice. Try Chrome, Edge or a recent browser.",
   "voice.relayTitle": "Camera and screen sharing",
   "voice.relayIntro":
     "Voice always goes through the instance and needs no setup: if you can open the app, you can talk. For video there are two routes, and whoever hosts picks one.",
@@ -205,11 +296,13 @@ export const en: Record<keyof typeof es, string> = {
     "Costs the host nothing and looks better. But it only arrives if both networks let each other talk, and many do not: between mobile data and a home it almost never works.",
   "voice.probe": "Check my connection",
   "voice.probeRunning": "Checking…",
-  "voice.probeHint": "Takes a few seconds. It calls nobody and does not turn on the microphone.",
+  "voice.probeHint":
+    "Takes a few seconds. It calls nobody and does not turn on the microphone.",
   "voice.probeLocal": "Local network",
   "voice.probeStun": "Public address (STUN)",
   "voice.probeRelay": "Relay (TURN)",
-  "voice.probeRelayOk": "The relay answers: camera and screen will get through even with no direct route.",
+  "voice.probeRelayOk":
+    "The relay answers: camera and screen will get through even with no direct route.",
   "voice.probeRelayDead":
     "The configured relay does not answer. While that lasts it is the same as having none: check the address and the password.",
   "voice.probeDirectOnly":
@@ -220,8 +313,10 @@ export const en: Record<keyof typeof es, string> = {
   "voice.relayMetHint":
     "0.5 GB a month without giving any bank details, or 20 GB if you add a card. When it runs out it stops relaying: it never overcharges you. Only kicks in when video finds no direct route.",
   "voice.relayMetStep1": "Create a free account at metered.ca (no card asked).",
-  "voice.relayMetStep2": "In the TURN dashboard, copy your app name and its API key.",
-  "voice.relayMetStep3": "Paste them here and save: it is checked right away and tells you if they work.",
+  "voice.relayMetStep2":
+    "In the TURN dashboard, copy your app name and its API key.",
+  "voice.relayMetStep3":
+    "Paste them here and save: it is checked right away and tells you if they work.",
   "voice.relayMetApp": "App name",
   "voice.relayMetAppHint": "Your account subdomain, without “.metered.live”.",
   "voice.relayMetKey": "API key",
@@ -231,9 +326,11 @@ export const en: Record<keyof typeof es, string> = {
   "voice.relayCf": "Cloudflare relay (1 TB a month, asks for a card)",
   "voice.relayCfHint":
     "Only kicks in when there is no direct route, so it rarely spends anything. It sees encrypted packets and your IPs; it cannot see or hear the content. Your key stays on the instance and never reaches the browser.",
-  "voice.relayCfStep1": "Go to the Cloudflare dashboard → Realtime → TURN and create a TURN key.",
+  "voice.relayCfStep1":
+    "Go to the Cloudflare dashboard → Realtime → TURN and create a TURN key.",
   "voice.relayCfStep2": "Copy the TURN Key ID and its API token.",
-  "voice.relayCfStep3": "Paste them here and save: it is checked right away and tells you if they work.",
+  "voice.relayCfStep3":
+    "Paste them here and save: it is checked right away and tells you if they work.",
   "voice.relayCfKey": "Key ID",
   "voice.relayCfKeyHint": "The TURN Key ID Cloudflare gave you.",
   "voice.relayCfToken": "Key token",
@@ -251,13 +348,15 @@ export const en: Record<keyof typeof es, string> = {
   "voice.relayPassword": "Password",
   "voice.relayPasswordHint": "Stored on the instance and never shown again.",
   "voice.relaySaved": "Saved. It applies to the next calls.",
-  "voice.relayLocked": "Fixed by ICE_SERVERS in the instance environment. Remove that variable to change it here.",
+  "voice.relayLocked":
+    "Fixed by ICE_SERVERS in the instance environment. Remove that variable to change it here.",
   "voice.relayHostOnly": "Only whoever hosts the instance can change this.",
   "voice.device": "Microphone",
   "voice.deviceDefault": "System default",
   "voice.test": "Test your microphone",
   "voice.testHint": "Talk: if the bar moves, we can hear you.",
-  "voice.limits": "Voice goes straight between browsers. It works well up to about 6 people per channel; above that you need a media server, which comes later.",
+  "voice.limits":
+    "Voice goes straight between browsers. It works well up to about 6 people per channel; above that you need a media server, which comes later.",
 
   "nav.panel": "Channels (Ctrl+B)",
   "members.title": "Members",
@@ -273,7 +372,8 @@ export const en: Record<keyof typeof es, string> = {
   "members.roles": "Roles",
   "members.joined": "Joined {date}",
   "members.note": "Note (only you see it)",
-  "members.notePlaceholder": "To remember who they are. It never leaves your account.",
+  "members.notePlaceholder":
+    "To remember who they are. It never leaves your account.",
   "members.mutual": "Communities in common",
   "members.banned": "Banned",
   "members.inVoice": "In a voice room",
@@ -290,11 +390,13 @@ export const en: Record<keyof typeof es, string> = {
   "settings.pronouns": "Pronouns",
   "settings.accent": "Accent colour",
   "settings.avatar": "Your avatar",
-  "settings.avatarHint": "Upload a PNG, JPG, GIF or WebP, or paste a link. Animated GIFs work too: nothing is charged for that here.",
+  "settings.avatarHint":
+    "Upload a PNG, JPG, GIF or WebP, or paste a link. Animated GIFs work too: nothing is charged for that here.",
   "settings.galleryAvatar": "Pick from the gallery",
   "settings.galleryBanner": "Pick from the profile gallery",
   "settings.galleryCategory": "Category",
-  "settings.galleryAnimated": "The ones marked ✦ are animated. They cost nothing here.",
+  "settings.galleryAnimated":
+    "The ones marked ✦ are animated. They cost nothing here.",
   "settings.galleryError": "The gallery didn't answer. Try again in a moment.",
   "settings.bannerHint": "The wide image on your profile. Animated works too.",
   "settings.banner": "Your banner",
@@ -319,12 +421,14 @@ export const en: Record<keyof typeof es, string> = {
   "settings.wallpaperSearch": "Search a wallpaper",
   "settings.wallpaperHide": "Close the search",
   "settings.wallpaperClear": "Remove wallpaper",
-  "settings.wallpaperHint": "Saved on this device. Searched by the instance, not by your browser.",
+  "settings.wallpaperHint":
+    "Saved on this device. Searched by the instance, not by your browser.",
   "settings.wallpaperPlaceholder": "mountains, abstract, city at night…",
   "settings.wallpaperEmpty": "Nothing for that search. Try another word.",
   "settings.wallpaperError": "Couldn't search. Wallhaven didn't answer.",
   "settings.wallpaperOwn": "Your own image",
-  "settings.wallpaperOwnHint": "Upload a file or paste a URL. Stored on the host’s disk.",
+  "settings.wallpaperOwnHint":
+    "Upload a file or paste a URL. Stored on the host’s disk.",
   "settings.wallpaperTune": "Adjust the wallpaper",
   "settings.wallpaperVeil": "Veil",
   "settings.wallpaperBlur": "Blur",
@@ -332,7 +436,8 @@ export const en: Record<keyof typeof es, string> = {
   "settings.wallpaperContrast": "Contrast",
   "settings.wallpaperSaturate": "Colour",
   "settings.motion": "Animations",
-  "settings.motionHint": "Turn them off if you prefer a completely still interface.",
+  "settings.motionHint":
+    "Turn them off if you prefer a completely still interface.",
   "settings.fontSize": "Text size",
   "settings.density": "Density",
   "settings.densityCompact": "Compact",
@@ -340,7 +445,8 @@ export const en: Record<keyof typeof es, string> = {
   "settings.language": "Language",
   "settings.logout": "Sign out",
   "settings.upgrade": "Turn this into a permanent account",
-  "settings.upgradeHint": "You keep your messages, communities and identity. You only add a username and password.",
+  "settings.upgradeHint":
+    "You keep your messages, communities and identity. You only add a username and password.",
   "settings.revokeAll": "Sign out everywhere",
 
   "manage.title": "Manage {name}",
@@ -367,10 +473,12 @@ export const en: Record<keyof typeof es, string> = {
   "manage.inviteNever": "Never",
   "manage.inviteUnlimited": "Unlimited",
   "manage.export": "Export community",
-  "manage.exportHint": "Download a JSON with channels, messages, roles and members. It is yours: use it to migrate instances or keep as a backup.",
+  "manage.exportHint":
+    "Download a JSON with channels, messages, roles and members. It is yours: use it to migrate instances or keep as a backup.",
   "manage.dangerZone": "Danger zone",
   "manage.deleteCommunity": "Delete community",
-  "manage.deleteConfirm": "Type {name} to confirm. Channels, messages and files all go.",
+  "manage.deleteConfirm":
+    "Type {name} to confirm. Channels, messages and files all go.",
   "manage.auditEmpty": "No recorded activity yet.",
 
   "invite.joining": "You were invited to",
@@ -385,7 +493,8 @@ export const en: Record<keyof typeof es, string> = {
 
   "error.generic": "Something failed on the instance.",
   "error.network": "Could not reach the instance. Check that it is running.",
-  "error.unreachable": "The instance did not answer (HTTP {status}). Usually it is off, or the tunnel dropped.",
+  "error.unreachable":
+    "The instance did not answer (HTTP {status}). Usually it is off, or the tunnel dropped.",
   "skip.toMessages": "Skip to messages",
 
   "unread.some": "Unread messages",
@@ -407,23 +516,29 @@ export const en: Record<keyof typeof es, string> = {
   "settings.notifyAll": "Every message",
   "settings.notifyMentions": "Only when I am mentioned",
   "settings.notifyOff": "None",
-  "settings.notifyHint": "Applies to every community on this instance. None of it leaves the device.",
+  "settings.notifyHint":
+    "Applies to every community on this instance. None of it leaves the device.",
   "settings.sounds": "Sound on arrival",
-  "settings.soundsHint": "A short tone generated in the browser itself; it downloads no file.",
+  "settings.soundsHint":
+    "A short tone generated in the browser itself; it downloads no file.",
   "settings.desktopNotifications": "System notifications",
-  "settings.desktopHint": "They only appear while the window is in the background.",
+  "settings.desktopHint":
+    "They only appear while the window is in the background.",
   "settings.notifyAsk": "Allow notifications",
   "settings.notifyGranted": "Allowed by the browser.",
-  "settings.notifyDenied": "The browser has them blocked for this site. Change it from the padlock in the address bar.",
+  "settings.notifyDenied":
+    "The browser has them blocked for this site. Change it from the padlock in the address bar.",
   "settings.notifyUnsupported": "This browser does not support them.",
 
   "voice.moderate": "Moderate",
+  "voice.person": "Options for this person",
   "voice.forceMute": "Mute",
   "voice.forceUnmute": "Give the floor back",
   "voice.forceDeafen": "Deafen",
   "voice.forceUndeafen": "Undeafen",
   "voice.forceDisconnect": "Remove from the call",
   "voice.forcedMuted": "Muted by a moderator",
+  "voice.cannotSpeak": "You cannot speak in this room",
   "voice.forcedDeafened": "Deafened by a moderator",
   "picker.emojis": "Emojis",
   "picker.stickers": "Stickers",
@@ -435,32 +550,48 @@ export const en: Record<keyof typeof es, string> = {
   "picker.searchSticker": "Search a sticker",
   "picker.gallery": "Gallery",
   "picker.empty": "Nothing here.",
-  "picker.noStickers": "This community has no stickers yet. Anyone with permission can upload them.",
+  "picker.noStickers":
+    "This community has no stickers yet. Anyone with permission can upload them.",
   "picker.addPack": "Add my sticker pack",
-  "picker.addPackFormat": "PNG, WebP or GIF, with a transparent background. SVG is not accepted. They look best square, around 320\u00d7320 px. The name takes letters, numbers and underscore, 2 to 32 characters: it's what you'll type in chat. There's no maximum number of stickers \u2014 the ceiling is the host's disk.",
+  "picker.addPackFormat":
+    "PNG, WebP or GIF, with a transparent background. SVG is not accepted. They look best square, around 320\u00d7320 px. The name takes letters, numbers and underscore, 2 to 32 characters: it's what you'll type in chat. There's no maximum number of stickers \u2014 the ceiling is the host's disk.",
   "picker.addPackGo": "Upload them now",
-  "picker.addPackNoPermission": "They're uploaded by whoever can manage the community.",
+  "picker.addPackNoPermission":
+    "They're uploaded by whoever can manage the community.",
   "picker.gifError": "The GIF search did not answer.",
   "picker.open": "Emojis, stickers and GIFs",
   "picker.gifSaving": "Saving the GIF on the instance…",
 
-  "emoji.title": "Emojis and stickers",
-  "emoji.hint": "They live on the disk of whoever hosts the instance. There is no maximum count.",
+  "emoji.title": "Emojis, stickers and sounds",
+  "emoji.hint":
+    "They live on the disk of whoever hosts the instance. There is no maximum count.",
   "emoji.add": "Add",
   "emoji.name": "Name",
-  "emoji.nameHint": "Letters, digits and underscore. This is how it is typed between colons.",
+  "emoji.nameHint":
+    "Letters, digits and underscore. This is how it is typed between colons.",
+  "emoji.nameHintSound": "Letters, digits and underscore. This is how it shows up in the sound list.",
   "emoji.kind": "Type",
   "emoji.kindEmoji": "Emoji",
   "emoji.kindSticker": "Sticker",
+  "emoji.kindSound": "Sound",
+  "emoji.soundFile": "Audio file",
+  "emoji.soundIcon": "Sound image or emoji",
+  "emoji.soundIconHint": "Optional. Enter an emoji or upload an image; it will appear on the sound button.",
+  "emoji.soundIconEmoji": "Emoji",
+  "emoji.soundIconImage": "Upload image",
   "emoji.image": "Image",
   "emoji.none": "None yet.",
-  "emoji.deleteConfirm": "Remove this from the community? Messages using it will show its name instead.",
+  "emoji.deleteConfirm":
+    "Remove this from the community? Messages using it will show its name instead.",
   "profileStyle.title": "Profile look",
-  "profileStyle.hint": "All free, nothing to unlock. The whole catalogue ships with the instance.",
+  "profileStyle.hint":
+    "All free, nothing to unlock. The whole catalogue ships with the instance.",
   "profileStyle.rings": "Bundled rings",
-  "profileStyle.ringsCredit": "Rings: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
+  "profileStyle.ringsCredit":
+    "Rings: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
   "profileStyle.ownDeco": "Your own decoration",
-  "profileStyle.ownDecoHint": "A PNG with a transparent centre. It is drawn around the avatar. Upload any you like: there is no fixed list.",
+  "profileStyle.ownDecoHint":
+    "A PNG with a transparent centre. It is drawn around the avatar. Upload any you like: there is no fixed list.",
   "profileStyle.plate": "Nameplate",
   "profileStyle.font": "Name font",
   "profileStyle.effect": "Name effect",
@@ -468,6 +599,11 @@ export const en: Record<keyof typeof es, string> = {
   "profileStyle.nameColor": "Name colour",
   "profileStyle.themeA": "Theme 1",
   "profileStyle.themeB": "Theme 2",
+  "profileStyle.gradient": "Card gradient",
+  "profileStyle.gradientHint": "Adjust both colours, their direction and where they balance. It also applies to the profile body.",
+  "profileStyle.gradientPreview": "Gradient preview",
+  "profileStyle.gradientAngle": "Direction",
+  "profileStyle.gradientBalance": "Blend point",
   "profileStyle.useAccent": "Use the accent colour",
   "style.none": "None",
   "style.neon": "Neon",
@@ -493,12 +629,21 @@ export const en: Record<keyof typeof es, string> = {
   "style.embers": "Embers",
   "emoji.usedBy": "Created by",
   "emoji.telegramImport": "Import from a Telegram pack",
-  "emoji.telegramHint": "Type the pack name (the one in t.me/addstickers/name). Static stickers only for now.",
+  "emoji.telegramHint":
+    "Type the pack name (the one in t.me/addstickers/name). Static stickers only for now.",
   "emoji.telegramPlaceholder": "PackName",
   "emoji.telegramSearch": "Search",
   "emoji.telegramEmpty": "That pack has no stickers, or doesn't exist.",
   "emoji.telegramAnimatedYet": "Animated: can't be imported yet.",
   "emoji.telegramAdd": "Import",
+
+  "emoji.soundGallery": "Search the sound gallery",
+  "emoji.soundGalleryHint":
+    "MyInstants' public catalogue. Listen before you decide: only the one you pick gets downloaded, and from then on it belongs to the community. Users upload it and it is not filtered, so check what you add.",
+  "emoji.soundPlaceholder": "Search for a sound…",
+  "emoji.soundEmpty": "No sound by that name.",
+  "emoji.soundMore": "Show more",
+  "emoji.soundAdd": "Add to the community",
 
   "status.online": "Online",
   "status.offline": "Offline",

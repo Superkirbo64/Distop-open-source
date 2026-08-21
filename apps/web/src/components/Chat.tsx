@@ -3,16 +3,16 @@
  * El historial se agrupa por autor y por día para que leer una conversación
  * larga no sea una lista plana de bloques repetidos.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, CornerUpLeft, Hash, Megaphone, MoreVertical, Paperclip, Pin, Search, Smile, Volume2, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, CornerUpLeft, Hash, Megaphone, MessageSquareText, MonitorUp, MoreVertical, Paperclip, PhoneOff, Pin, Search, Smile, VideoOff, Volume2, X } from "lucide-react";
 import { People, Send, Upload } from "./icons.tsx";
 import { PERMISSIONS, has, isJumbo, toBits, type Attachment, type Channel, type Member, type Message } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api, upload } from "../lib/api.ts";
 import { Picker } from "./Picker.tsx";
 import { renderContent, type RenderContext } from "../lib/markdown.tsx";
-import { VoiceStage, useVoiceLocal } from "./Voice.tsx";
-import { joinVoice, leaveVoice } from "../lib/voice.ts";
+import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLocal } from "./Voice.tsx";
+import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
 import { formatBytes, formatDayHeading, formatTime } from "../i18n.ts";
 import { Avatar, Button, EmptyState, ErrorNote, IconButton, Menu, MenuItem, Modal, Spinner, useConfirm, useLocale, useT, useErrorText } from "./ui.tsx";
 
@@ -54,6 +54,12 @@ export function Chat({
   const [showPins, setShowPins] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const voiceLocal = useVoiceLocal();
+  const [voiceNoteOff, setVoiceNoteOff] = useState(false);
+  /* Se descarta la nota, no el aviso: vuelve a aparecer la próxima vez que
+     entres a una sala de voz, que es cuando otra vez importa. */
+  useEffect(() => {
+    if (voiceLocal.channelId) setVoiceNoteOff(false);
+  }, [voiceLocal.channelId]);
 
   const channel = data?.channels.find((c) => c.id === channelId);
   const memberIndex = useMemo(() => new Map((data?.members ?? []).map((m) => [m.user.id, m])), [data?.members]);
@@ -70,7 +76,13 @@ export function Chat({
       /* De TODAS mis comunidades, no solo de esta: un mensaje puede traer el
          emoji de otra comunidad mía, y si aquí solo estuvieran los de esta se
          vería `:nombre:` en vez de la imagen que sí tengo derecho a ver. */
-      emojis: new Map(expressions.map((e) => [e.id, { name: e.name, url: e.url, kind: e.kind }])),
+      /* Los sonidos comparten tabla con los emojis pero no se escriben dentro
+         de un mensaje: si entraran aquí, un `<:x:id>` apuntando a uno pintaría
+         un <img> de un mp3, o sea un cuadro roto. Fuera del mapa se queda en
+         `:nombre:`, que al menos se lee. */
+      emojis: new Map(
+        expressions.filter((e) => e.kind !== "sound").map((e) => [e.id, { name: e.name, url: e.url, kind: e.kind }]),
+      ),
       selfId: user?.id,
     }),
     [data?.members, data?.channels, expressions, user?.id],
@@ -122,7 +134,8 @@ export function Chat({
   const Icon = ICONS[channel.kind];
   const canSend = has(permissions, PERMISSIONS.SEND_MESSAGES);
 
-  // Un canal de voz no es una lista de mensajes: es una sala con gente dentro.
+  // El centro sigue siendo la sala con su gente; sus mensajes viven en el
+  // lateral derecho para no sustituir la experiencia de voz.
   if (channel.kind === "voice") {
     return (
       <main data-pane="main" className="flex min-w-0 flex-1 flex-col bg-bg">
@@ -133,18 +146,51 @@ export function Chat({
           <Icon size={18} className="shrink-0 text-muted" />
           <h1 className="display truncate text-[0.95rem] font-bold">{channel.name}</h1>
           <span className="flex-1" />
-          <IconButton label={t("members.title")} onClick={onToggleMembers} pressed={membersOpen}>
-            <People size={17} />
+          <VoiceFunMenu channelId={channel.id} />
+          <IconButton label={t("voice.chatTitle")} onClick={onToggleMembers} pressed={membersOpen}>
+            <MessageSquareText size={17} />
           </IconButton>
         </header>
 
         <VoiceStage channelId={channel.id} />
 
-        <div className="flex flex-col items-center gap-2 border-t border-line bg-surface px-4 py-4">
+        <div className="flex flex-col items-center gap-2 px-4 py-4">
           {voiceLocal.channelId === channel.id ? (
-            <Button variant="danger" onClick={leaveVoice}>
-              {t("voice.disconnect")}
-            </Button>
+            /* Pastilla de cristal en vez de barra opaca: flota sobre la sala y
+               deja quitar la cámara o la pantalla sin colgar la llamada. */
+            /* `relative z-20` no es decoración: `backdrop-blur` crea contexto de
+               apilamiento, así que el z-30 del menú de sonidos se resuelve DENTRO
+               de la pastilla y no la sube por encima de la nota de abajo —que
+               también lleva blur y va después en el DOM. Sin esto, a 390 px la
+               nota se comía los clics de la tabla de sonidos. */
+            <div className="relative z-20 flex items-center gap-1 rounded-full border border-line bg-surface/60 p-1 shadow-[var(--shadow)] backdrop-blur-md">
+              {/* La tabla de sonidos va primero: es lo que se usa durante la
+                  llamada, y colgar es lo último que se hace. */}
+              {communityId && data ? (
+                <VoiceSoundboard
+                  communityId={communityId}
+                  communityName={data.community.name}
+                  muted={voiceLocal.muted || voiceLocal.forcedMuted}
+                />
+              ) : null}
+              <span className="h-5 w-px shrink-0 bg-line" />
+              {voiceLocal.video ? (
+                <>
+                  <button
+                    onClick={() => void setVideoSource(null)}
+                    className="btn btn-ghost rounded-full border-transparent px-3 text-xs"
+                  >
+                    {voiceLocal.video === "camera" ? <VideoOff size={15} /> : <MonitorUp size={15} />}
+                    {t(voiceLocal.video === "camera" ? "voice.cameraOff" : "voice.screenOff")}
+                  </button>
+                  <span className="h-5 w-px shrink-0 bg-line" />
+                </>
+              ) : null}
+              <button onClick={leaveVoice} className="btn btn-danger rounded-full border-transparent px-4 text-xs">
+                <PhoneOff size={15} />
+                {t("voice.disconnect")}
+              </button>
+            </div>
           ) : (
             <Button
               variant="primary"
@@ -154,7 +200,15 @@ export function Chat({
               {t("voice.join")}
             </Button>
           )}
-          <p className="max-w-md text-center text-xs text-muted">{t("voice.limits")}</p>
+          <VoiceSoundError error={voiceLocal.soundError} />
+          {voiceNoteOff ? null : (
+            <div className="flex max-w-md items-center gap-1 rounded-2xl border border-line bg-surface/50 py-1.5 pr-1.5 pl-3.5 backdrop-blur-md">
+              <p className="text-xs leading-relaxed text-muted">{t("voice.limits")}</p>
+              <IconButton label={t("common.close")} onClick={() => setVoiceNoteOff(true)} className="shrink-0">
+                <X size={15} />
+              </IconButton>
+            </div>
+          )}
         </div>
         {confirmElement}
       </main>
@@ -335,6 +389,158 @@ export function Chat({
       <ChannelSearch channelId={channel.id} open={showSearch} onClose={() => setShowSearch(false)} members={memberIndex} />
       {confirmElement}
     </main>
+  );
+}
+
+/**
+ * El lateral de una sala de voz es el chat de ESE canal, no una segunda lista
+ * de miembros. Reutiliza exactamente mensajes, permisos, adjuntos y eventos del
+ * chat principal; solo cambia la disposición para caber en una columna estrecha.
+ */
+export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
+  const t = useT();
+  const { confirm, element: confirmElement } = useConfirm();
+  const communityId = useStore((s) => s.activeCommunityId);
+  const channelId = useStore((s) => s.activeChannelId);
+  const data = useStore((s) => (communityId ? s.data[communityId] : undefined));
+  const messages = useStore((s) => (channelId ? s.messages[channelId] : undefined));
+  const hasMore = useStore((s) => (channelId ? s.hasMore[channelId] : false));
+  const typing = useStore((s) => (channelId ? s.typing[channelId] : undefined));
+  const user = useStore((s) => s.user);
+  const expressions = useStore((s) => s.expressions);
+  const loadOlder = useStore((s) => s.loadOlder);
+  const markRead = useStore((s) => s.markRead);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [editing, setEditing] = useState<Message | null>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+
+  const channel = data?.channels.find((candidate) => candidate.id === channelId && candidate.kind === "voice");
+  const memberIndex = useMemo(() => new Map((data?.members ?? []).map((member) => [member.user.id, member])), [data?.members]);
+  const renderCtx = useMemo<RenderContext>(
+    () => ({
+      users: new Map((data?.members ?? []).map((member) => [member.user.id, member.nickname ?? member.user.display_name])),
+      channels: new Map((data?.channels ?? []).map((candidate) => [candidate.id, candidate.name])),
+      emojis: new Map(
+        expressions
+          .filter((expression) => expression.kind !== "sound")
+          .map((expression) => [expression.id, { name: expression.name, url: expression.url, kind: expression.kind }]),
+      ),
+      selfId: user?.id,
+    }),
+    [data?.members, data?.channels, expressions, user?.id],
+  );
+  const permissions = toBits((channelId ? data?.channel_permissions[channelId] : undefined) ?? "0");
+  const typingNames = Object.keys(typing ?? {})
+    .map((id) => memberIndex.get(id)?.nickname ?? memberIndex.get(id)?.user.display_name)
+    .filter((name): name is string => Boolean(name));
+
+  useEffect(() => {
+    setReplyTo(null);
+    setEditing(null);
+    atBottom.current = true;
+  }, [channelId]);
+
+  useLayoutEffect(() => {
+    const element = scroller.current;
+    if (!element || !atBottom.current) return;
+    element.scrollTop = element.scrollHeight;
+  }, [messages?.length, channelId]);
+
+  if (!channel || !data) return null;
+
+  return (
+    <aside data-pane="members" data-panel="voice-chat" className="flex w-full flex-col border-l border-line bg-surface">
+      <header className="flex h-[var(--header-h)] shrink-0 items-center gap-2 border-b border-line px-3">
+        <MessageSquareText size={17} className="shrink-0 text-muted" />
+        <div className="min-w-0 flex-1">
+          <h2 className="display truncate text-[0.95rem] font-bold">{t("voice.chatTitle")}</h2>
+          <p className="truncate text-[0.68rem] text-muted"># {channel.name}</p>
+        </div>
+        <IconButton label={t("common.close")} onClick={onClose}>
+          <X size={17} />
+        </IconButton>
+      </header>
+
+      <div
+        ref={scroller}
+        role="log"
+        aria-live="polite"
+        aria-label={t("voice.chatTitle")}
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+          if (atBottom.current) markRead(channel.id);
+        }}
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-3"
+      >
+        {messages === undefined ? (
+          <Spinner label={t("common.loading")} />
+        ) : messages.length === 0 ? (
+          <EmptyState title={t("voice.chatEmpty")} hint={t("voice.chatEmptyHint")} />
+        ) : (
+          <div className="mt-auto flex flex-col">
+            {hasMore ? (
+              <Button className="mx-auto mb-3" onClick={() => void loadOlder(channel.id)}>
+                {t("message.loadMore")}
+              </Button>
+            ) : null}
+            {messages.map((message, index) => {
+              const previous = messages[index - 1];
+              const grouped =
+                previous?.author_id === message.author_id &&
+                message.created_at - previous.created_at < GROUP_WINDOW_MS &&
+                !message.reply_to_id;
+              return (
+                <MessageRow
+                  key={message.id}
+                  message={message}
+                  member={memberIndex.get(message.author_id)}
+                  roles={data.roles}
+                  grouped={grouped}
+                  isSelf={message.author_id === user?.id}
+                  canManage={has(permissions, PERMISSIONS.MANAGE_MESSAGES)}
+                  canReact={has(permissions, PERMISSIONS.ADD_REACTIONS)}
+                  replyTarget={messages.find((candidate) => candidate.id === message.reply_to_id)}
+                  renderCtx={renderCtx}
+                  mentioned={(user ? message.content.includes(`<@${user.id}>`) : false) || message.mentions_everyone}
+                  onReply={() => setReplyTo(message)}
+                  onEdit={() => setEditing(message)}
+                  onDelete={async () => {
+                    if (await confirm(t("message.deleteConfirm"))) await api("DELETE", `/api/v1/messages/${message.id}`);
+                  }}
+                  myId={user?.id ?? ""}
+                />
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <p className="h-5 shrink-0 px-3 text-[0.7rem] text-muted" aria-live="polite">
+        {typingNames.length === 1
+          ? t("message.typingOne", { name: typingNames[0]! })
+          : typingNames.length > 1
+            ? t("message.typingMany")
+            : ""}
+      </p>
+
+      <Composer
+        channelId={channel.id}
+        channelName={channel.name}
+        canSend={has(permissions, PERMISSIONS.SEND_MESSAGES)}
+        canAttach={has(permissions, PERMISSIONS.ATTACH_FILES)}
+        compact
+        members={data.members}
+        channels={data.channels}
+        replyTo={replyTo}
+        replyName={replyTo ? (memberIndex.get(replyTo.author_id)?.user.display_name ?? "") : ""}
+        onCancelReply={() => setReplyTo(null)}
+      />
+
+      <EditMessage message={editing} onClose={() => setEditing(null)} />
+      {confirmElement}
+    </aside>
   );
 }
 
@@ -607,6 +813,7 @@ function Composer({
   channelName,
   canSend,
   canAttach,
+  compact = false,
   members,
   channels,
   replyTo,
@@ -617,6 +824,7 @@ function Composer({
   channelName: string;
   canSend: boolean;
   canAttach: boolean;
+  compact?: boolean;
   members: Member[];
   channels: Channel[];
   replyTo: Message | null;
@@ -631,7 +839,7 @@ function Composer({
   const maxUploadMb = useStore((s) => s.instance?.max_upload_mb ?? 25);
 
   const [text, setText] = useState("");
-  const [pending, setPending] = useState<Array<{ id: string; filename: string; size: number }>>([]);
+  const [pending, setPending] = useState<Array<{ id: string; filename: string; size: number; url?: string; content_type?: string }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -650,13 +858,34 @@ function Composer({
     setToken(null);
   }, [channelId]);
 
-  // Auto-alto sin librería: el textarea crece con el contenido hasta un techo.
-  useLayoutEffect(() => {
+  const resizeBox = useCallback(() => {
     const element = box.current;
     if (!element) return;
-    element.style.height = "auto";
-    element.style.height = `${Math.min(element.scrollHeight, 200)}px`;
-  }, [text]);
+    element.style.height = "0px";
+    element.style.height = `${Math.min(element.scrollHeight, compact ? 120 : 200)}px`;
+  }, [compact]);
+
+  // Auto-alto sin librería: el textarea crece con el contenido hasta un techo.
+  // Al abrir el chat lateral, la rejilla puede montarlo inicialmente con ancho
+  // cero. Medir solo aquí envolvería el placeholder letra por letra y dejaría
+  // una burbuja de 200 px hasta que el usuario escribiera.
+  useLayoutEffect(() => {
+    resizeBox();
+  }, [text, resizeBox]);
+
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    let lastWidth = -1;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? element.clientWidth;
+      if (Math.abs(width - lastWidth) < 0.5) return;
+      lastWidth = width;
+      resizeBox();
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [resizeBox]);
 
   const suggestions = useMemo<Suggestion[]>(() => {
     if (!token) return [];
@@ -760,7 +989,7 @@ function Composer({
     setError(null);
     setBusy(true);
     try {
-      const guardado = await api<{ id: string; filename: string; size: number }>("POST", "/api/v1/gifs/save", { url });
+      const guardado = await api<{ id: string; filename: string; size: number; url: string; content_type: string }>("POST", "/api/v1/gifs/save", { url });
       setPending((prev) => [...prev, guardado]);
     } catch (err) {
       setError(errorText(err));
@@ -779,7 +1008,7 @@ function Composer({
       }
       try {
         const uploaded = await upload(file);
-        setPending((prev) => [...prev, { id: uploaded.id, filename: uploaded.filename, size: uploaded.size }]);
+        setPending((prev) => [...prev, { id: uploaded.id, filename: uploaded.filename, size: uploaded.size, url: uploaded.url, content_type: uploaded.content_type }]);
       } catch (err) {
         setError(errorText(err));
       }
@@ -800,7 +1029,9 @@ function Composer({
          con una barra opaca de punta a punta. Ahora es solo el hueco donde
          flota la caja de verdad (más abajo), como una insignia sobre la
          imagen en vez de una barra encima de ella. */
-      className="relative flex min-h-[var(--footer-h)] flex-col justify-center px-3 py-2 sm:px-5"
+      className={`relative flex flex-col justify-center ${
+        compact ? "shrink-0 px-2 pb-2 pt-1" : "min-h-[var(--footer-h)] px-3 py-2 sm:px-5"
+      }`}
       /* Arrastrar un archivo es el primer gesto que prueba la gente. `dragOver`
          hay que cancelarlo o el navegador abre el archivo y te saca de la
          aplicación, que es la forma más rápida de perder lo que estabas escribiendo. */
@@ -871,14 +1102,22 @@ function Composer({
       {pending.length > 0 ? (
         <ul className="mb-2 flex flex-wrap gap-2">
           {pending.map((file) => (
-            <li key={file.id} className="flex items-center gap-2 rounded-[10px] border border-line px-2 py-1 text-xs">
-              <Paperclip size={12} />
-              <span className="max-w-40 truncate">{file.filename}</span>
-              <span className="text-muted">{formatBytes(locale, file.size)}</span>
+            <li key={file.id} className="group relative flex items-center gap-2 rounded-[10px] border border-line px-2 py-1 text-xs bg-surface/50">
+              {file.content_type?.startsWith("image/") && file.content_type !== "image/svg+xml" ? (
+                <div className="relative h-16 w-16 overflow-hidden rounded-[6px] bg-bg/50">
+                  <img src={file.url} alt={file.filename} className="h-full w-full object-cover" />
+                </div>
+              ) : (
+                <>
+                  <Paperclip size={12} className="shrink-0" />
+                  <span className="max-w-40 truncate">{file.filename}</span>
+                  <span className="text-muted shrink-0">{formatBytes(locale, file.size)}</span>
+                </>
+              )}
               <button
                 onClick={() => setPending((prev) => prev.filter((item) => item.id !== file.id))}
                 aria-label={t("common.delete")}
-                className="hover:text-danger"
+                className="absolute -right-2 -top-2 rounded-full border border-line bg-surface p-0.5 hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity focus-visible:opacity-100"
               >
                 <X size={12} />
               </button>
@@ -889,7 +1128,11 @@ function Composer({
 
       {error ? <div className="mb-2"><ErrorNote>{error}</ErrorNote></div> : null}
 
-      <div className="flex items-end gap-2 rounded-full border border-line bg-surface/90 px-3 py-1.5 shadow-[var(--shadow)] backdrop-blur-md focus-within:border-accent">
+      <div
+        className={`flex items-end border border-line bg-surface/90 shadow-[var(--shadow)] backdrop-blur-md focus-within:border-accent ${
+          compact ? "gap-1 rounded-[18px] px-2 py-1" : "gap-2 rounded-full px-3 py-1.5"
+        }`}
+      >
         {canAttach ? (
           <label className="icon-btn grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-[10px] text-muted hover:bg-raise hover:text-ink">
             <Upload size={17} />
@@ -961,7 +1204,7 @@ function Composer({
           placeholder={t("message.placeholder", { channel: `#${channelName}` })}
           aria-label={t("message.placeholder", { channel: `#${channelName}` })}
           maxLength={4000}
-          className="max-h-52 min-h-9 flex-1 resize-none bg-transparent py-1.5 text-[0.94rem] outline-none [-webkit-text-stroke:0.4px_#fff]"
+          className={`${compact ? "max-h-[120px]" : "max-h-52"} min-h-9 flex-1 resize-none bg-transparent py-1.5 text-[0.94rem] outline-none [-webkit-text-stroke:0.4px_#fff]`}
         />
 
         <Menu

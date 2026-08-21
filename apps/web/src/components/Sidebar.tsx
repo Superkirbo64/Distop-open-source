@@ -40,7 +40,7 @@ export function Sidebar({
 
   if (!communityId || !data) {
     return (
-      <div data-pane="sidebar" className="hidden w-full border-r border-line bg-surface wide:block" aria-hidden="true" />
+      <div data-pane="sidebar" className="hidden w-full rounded-br-card border-r border-line bg-surface wide:block" aria-hidden="true" />
     );
   }
 
@@ -134,7 +134,7 @@ export function Sidebar({
   }
 
   return (
-    <div data-pane="sidebar" className="flex w-full flex-col border-r border-line bg-surface">
+    <div data-pane="sidebar" className="flex w-full flex-col rounded-br-card border-r border-line bg-surface">
       <Menu
         trigger={({ onClick }) => (
           <button

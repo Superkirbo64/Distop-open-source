@@ -32,6 +32,23 @@ test("los colores solo pasan si son hex de seis digitos", () => {
   assert.equal(style.theme_b, null);
 });
 
+test("la dirección y el balance del degradado tienen límites claros", () => {
+  assert.equal(toProfileStyle({ theme_angle: 270, theme_balance: 35 }).theme_angle, 270);
+  assert.equal(toProfileStyle({ theme_angle: 270, theme_balance: 35 }).theme_balance, 35);
+
+  for (const raw of [
+    { theme_angle: -1, theme_balance: 50 },
+    { theme_angle: 361, theme_balance: 50 },
+    { theme_angle: 45.5, theme_balance: 50 },
+  ]) assert.equal(toProfileStyle(raw).theme_angle, 135);
+
+  for (const raw of [
+    { theme_angle: 135, theme_balance: 9 },
+    { theme_angle: 135, theme_balance: 91 },
+    { theme_angle: 135, theme_balance: "50" },
+  ]) assert.equal(toProfileStyle(raw).theme_balance, 50);
+});
+
 test("un valor valido del catalogo se conserva", () => {
   const style = toProfileStyle({ nameplate: "mist", name_effect: "neon" });
 

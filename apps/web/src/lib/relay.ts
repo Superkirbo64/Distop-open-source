@@ -42,8 +42,11 @@ declare class MediaStreamTrackGenerator extends MediaStreamTrack {
 
 /** Tipos de paquete. El primer byte de cada envío. */
 const KIND_AUDIO = 0;
+/** 1/2 se aceptan para clientes anteriores; 3/4 incluyen el tiempo real del frame. */
 const KIND_VIDEO_KEY = 1;
 const KIND_VIDEO_DELTA = 2;
+const KIND_VIDEO_KEY_TIMED = 3;
+const KIND_VIDEO_DELTA_TIMED = 4;
 
 /** Antepone el tipo a los datos, que es lo que espera la instancia. */
 function packet(kind: number, data: ArrayBuffer | Uint8Array): Uint8Array {
@@ -51,6 +54,18 @@ function packet(kind: number, data: ArrayBuffer | Uint8Array): Uint8Array {
   const out = new Uint8Array(1 + body.length);
   out[0] = kind;
   out.set(body, 1);
+  return out;
+}
+
+/**
+ * [tipo][timestamp µs, 8 bytes][VP8]. Antes el receptor inventaba 30 FPS y una
+ * fuente de 60/120 quedaba temporizada como si aún fuera de 30.
+ */
+function videoPacket(kind: number, timestamp: number, data: Uint8Array): Uint8Array {
+  const out = new Uint8Array(9 + data.length);
+  out[0] = kind;
+  new DataView(out.buffer).setBigUint64(1, BigInt(Math.max(0, Math.round(timestamp))));
+  out.set(data, 9);
   return out;
 }
 
@@ -73,9 +88,22 @@ export function videoSupported(): boolean {
   return supported() && typeof VideoEncoder === "function" && typeof MediaStreamTrackGenerator === "function";
 }
 
+/**
+ * Elegir por qué altavoz suena (`setSinkId` en el contexto de audio) existe en
+ * Chrome desde la 110, pero todavía no está en los tipos del DOM. Se declara lo
+ * justo y se comprueba en tiempo real: donde no exista, la opción no se enseña
+ * en vez de fallar en silencio (§29.3).
+ */
+interface SinkContext extends AudioContext {
+  setSinkId?: (id: string) => Promise<void>;
+}
+
 let context: AudioContext | null = null;
 function audio(): AudioContext {
-  context ??= new AudioContext({ sampleRate: SAMPLE_RATE });
+  if (!context) {
+    context = new AudioContext({ sampleRate: SAMPLE_RATE });
+    if (outDevice) void applySink(context, outDevice);
+  }
   // Entrar a la llamada es un gesto de la persona, que es lo que exige el
   // navegador para dejar sonar algo.
   if (context.state === "suspended") void context.resume();
@@ -84,6 +112,139 @@ function audio(): AudioContext {
 
 /** Volumen reciente de cada quien, para el indicador de quién habla. */
 export const levels = new Map<Snowflake, number>();
+
+/* ── volumen y dispositivos (§10.2) ───────────────────────────────────────
+   Cuatro mandos y ninguno de pago: lo que entra por el micrófono, lo que sale
+   por los altavoces, el volumen de cada persona por separado y qué aparato se
+   usa para cada cosa.
+
+   El volumen por persona NO viaja a ninguna parte: es "yo te oigo demasiado
+   fuerte", no "tú hablas fuerte". Bajárselo a alguien para toda la sala sería
+   moderación, y la moderación ya tiene sus botones y sus permisos (§11).
+
+   Todo esto se guarda aquí y no en las preferencias de la aplicación porque es
+   de este aparato —estos altavoces, este micrófono— y porque un mapa por persona
+   no cabe en una preferencia suelta. */
+
+/** 200%: recuperar a quien tiene el micro bajo sin obligarle a arreglarlo. */
+const MAX_VOLUME = 2;
+
+function clamp(value: number): number {
+  return Number.isFinite(value) ? Math.min(MAX_VOLUME, Math.max(0, value)) : 1;
+}
+
+/** Un almacenamiento bloqueado (ventana privada, permisos) no debe tirar el audio. */
+function remember(key: string, value: string): void {
+  try {
+    localStorage.setItem("distop." + key, value);
+  } catch {
+    // Sin sitio donde guardar, el ajuste vale para esta sesión y ya está.
+  }
+}
+
+function recall(key: string): string | null {
+  try {
+    return localStorage.getItem("distop." + key);
+  } catch {
+    return null;
+  }
+}
+
+function recallVolume(key: string): number {
+  const raw = recall(key);
+  return raw === null ? 1 : clamp(Number(raw));
+}
+
+let micLevel = recallVolume("micVolume");
+let outLevel = recallVolume("outVolume");
+let outDevice = recall("outDevice") ?? "";
+let micNode: GainNode | null = null;
+let master: GainNode | null = null;
+
+/** Todo lo que suena pasa por aquí: es el punto donde se baja el volumen general. */
+function output(ctx: AudioContext): GainNode {
+  if (!master) {
+    master = ctx.createGain();
+    master.gain.value = deafened ? 0 : outLevel;
+    master.connect(ctx.destination);
+  }
+  return master;
+}
+
+export function micVolume(): number {
+  return micLevel;
+}
+
+export function outputVolume(): number {
+  return outLevel;
+}
+
+export function setMicVolume(value: number): void {
+  micLevel = clamp(value);
+  remember("micVolume", String(micLevel));
+  if (micNode) micNode.gain.value = micLevel;
+}
+
+export function setOutputVolume(value: number): void {
+  outLevel = clamp(value);
+  remember("outVolume", String(outLevel));
+  // Ensordecido manda: subir el volumen no puede devolver el sonido por detrás.
+  if (master && !deafened) master.gain.value = outLevel;
+}
+
+/** Volumen de una persona, solo para quien lo ajusta. 1 = como todo el mundo. */
+export function userVolume(id: Snowflake): number {
+  return volumes.get(id) ?? 1;
+}
+
+export function setUserVolume(id: Snowflake, value: number): void {
+  const level = clamp(value);
+  // El 100% no se guarda: es lo de todos, y guardarlo llenaría el almacenamiento
+  // de gente a la que nunca se le tocó nada.
+  if (level === 1) volumes.delete(id);
+  else volumes.set(id, level);
+  remember("userVolumes", JSON.stringify(Object.fromEntries(volumes)));
+
+  const player = players.get(id);
+  if (player) player.gain.gain.value = level;
+}
+
+const volumes = loadVolumes();
+
+function loadVolumes(): Map<Snowflake, number> {
+  try {
+    const raw: unknown = JSON.parse(recall("userVolumes") ?? "{}");
+    if (!raw || typeof raw !== "object") return new Map();
+    return new Map(Object.entries(raw as Record<string, unknown>).map(([id, v]) => [id, clamp(Number(v))]));
+  } catch {
+    // Un JSON corrupto se descarta entero: son ajustes de comodidad, no datos.
+    return new Map();
+  }
+}
+
+/** ¿Deja este navegador elegir el altavoz? Si no, la opción no se enseña (§29.3). */
+export function canPickOutput(): boolean {
+  return typeof AudioContext === "function" && typeof (AudioContext.prototype as SinkContext).setSinkId === "function";
+}
+
+export function outputDevice(): string {
+  return outDevice;
+}
+
+async function applySink(ctx: AudioContext, id: string): Promise<void> {
+  try {
+    await (ctx as SinkContext).setSinkId?.(id);
+  } catch {
+    // El aparato pudo desaparecer entre elegirlo y aplicarlo: sigue el de siempre.
+  }
+}
+
+/** Cambia el altavoz en caliente: la llamada en curso no se corta. */
+export async function setOutputDevice(id: string): Promise<void> {
+  outDevice = id;
+  remember("outDevice", id);
+  if (context) await applySink(context, id);
+}
 
 /* ── envío ─────────────────────────────────────────────────────────────── */
 
@@ -147,7 +308,16 @@ export async function startCapture(mic: MediaStream, send: (frame: ArrayBuffer) 
   const destination = ctx.createMediaStreamDestination();
   destination.channelCount = 1;
   destination.channelCountMode = "explicit";
-  source.connect(destination);
+  /* El volumen del micrófono se aplica ANTES de codificar: subirlo después es
+     imposible, y bajarlo en el receptor sería pedirle a cada persona de la sala
+     que arregle un micro que no es suyo.
+
+     ponytail: por encima del 100% se amplifica y puede saturar, como en
+     cualquier otra aplicación de voz. Un compresor lo evitaría; hasta que
+     alguien se queje, el tope del 200% y el aviso en Ajustes bastan. */
+  micNode = ctx.createGain();
+  micNode.gain.value = micLevel;
+  source.connect(micNode).connect(destination);
 
   const track = destination.stream.getAudioTracks()[0];
   if (!track) return false;
@@ -188,6 +358,8 @@ export function stopCapture(): void {
   setShareAudio(null);
   capture?.track.stop();
   capture?.source.disconnect();
+  micNode?.disconnect();
+  micNode = null;
   capture = null;
 }
 
@@ -204,10 +376,122 @@ interface Player {
 
 const players = new Map<Snowflake, Player>();
 let deafened = false;
+const activeClips = new Set<AudioBufferSourceNode>();
 
+/* Ensordecer es el volumen general a cero, no el de cada quien: así el volumen
+   que se le puso a una persona sigue ahí al volver a oír. */
 export function setDeafened(on: boolean): void {
   deafened = on;
-  for (const player of players.values()) player.gain.gain.value = on ? 0 : 1;
+  if (master) master.gain.value = on ? 0 : outLevel;
+}
+
+/* ── tabla de sonidos (§9.4) ───────────────────────────────────────────
+   Por el socket llega un id, no audio: el archivo se pide una vez a la
+   instancia y se queda decodificado en memoria. Un botón de sonidos se pulsa
+   muchas veces seguidas y volver a bajar el mismo mp3 en cada pulsación sería
+   pagar la misma descarga en bucle, además de retrasar el sonido.
+
+   Va por el AudioContext de la llamada y no por un `new Audio()` suelto: es el
+   que ya despertó el gesto de entrar a la sala, y así "ensordecido" apaga
+   también esto y no solo las voces. */
+export type ClipPlaybackIssue = "deafened" | "unsupported" | "blocked" | "download" | "decode" | "too_long";
+export type ClipPlaybackResult = { ok: true } | { ok: false; reason: ClipPlaybackIssue };
+
+const MAX_CACHED_CLIPS = 12;
+const MAX_CLIP_SECONDS = 30;
+const clips = new Map<string, Promise<AudioBuffer>>();
+
+class ClipLoadFailure extends Error {
+  constructor(readonly reason: "download" | "decode" | "too_long") {
+    super(reason);
+  }
+}
+
+function loadClip(ctx: AudioContext, url: string): Promise<AudioBuffer> {
+  const cached = clips.get(url);
+  if (cached) {
+    // Map conserva el orden de inserción: reinsertar convierte esto en una LRU.
+    clips.delete(url);
+    clips.set(url, cached);
+    return cached;
+  }
+
+  const pending = (async () => {
+    let response: Response;
+    try {
+      response = await fetch(url);
+    } catch {
+      throw new ClipLoadFailure("download");
+    }
+    if (!response.ok) throw new ClipLoadFailure("download");
+
+    const raw = await response.arrayBuffer();
+    if (raw.byteLength === 0) throw new ClipLoadFailure("download");
+    try {
+      const decoded = await ctx.decodeAudioData(raw);
+      // El coste real en memoria es el PCM decodificado, no el MP3 comprimido.
+      if (!Number.isFinite(decoded.duration) || decoded.duration > MAX_CLIP_SECONDS)
+        throw new ClipLoadFailure("too_long");
+      return decoded;
+    } catch (error) {
+      if (error instanceof ClipLoadFailure) throw error;
+      throw new ClipLoadFailure("decode");
+    }
+  })();
+
+  clips.set(url, pending);
+  void pending
+    .then(() => {
+      while (clips.size > MAX_CACHED_CLIPS) clips.delete(clips.keys().next().value!);
+    })
+    // Un fallo no se cachea: recuperar la red o reemplazar el archivo debe bastar.
+    .catch(() => clips.delete(url));
+  return pending;
+}
+
+/** Descarga, decodifica y reproduce un efecto con un resultado que la UI puede explicar. */
+export async function playClip(url: string): Promise<ClipPlaybackResult> {
+  if (deafened) return { ok: false, reason: "deafened" };
+  // Reproducir un archivo solo necesita Web Audio. No debe depender de que el
+  // navegador también sepa codificar Opus con WebCodecs.
+  if (typeof AudioContext !== "function") return { ok: false, reason: "unsupported" };
+
+  const ctx = audio();
+  if (ctx.state === "suspended") {
+    try {
+      await ctx.resume();
+    } catch {
+      return { ok: false, reason: "blocked" };
+    }
+  }
+  if (ctx.state !== "running") return { ok: false, reason: "blocked" };
+
+  let buffer: AudioBuffer;
+  try {
+    buffer = await loadClip(ctx, url);
+  } catch (error) {
+    return { ok: false, reason: error instanceof ClipLoadFailure ? error.reason : "decode" };
+  }
+
+  const node = ctx.createBufferSource();
+  node.buffer = buffer;
+  node.connect(output(ctx));
+  activeClips.add(node);
+  node.onended = () => {
+    activeClips.delete(node);
+    node.disconnect();
+  };
+  node.start();
+  return { ok: true };
+}
+
+function stopClips(): void {
+  for (const node of activeClips) {
+    node.onended = null;
+    node.stop();
+    node.disconnect();
+  }
+  activeClips.clear();
 }
 
 function play(id: Snowflake, player: Player, data: AudioData): void {
@@ -240,8 +524,8 @@ function playerFor(id: Snowflake): Player {
 
   const ctx = audio();
   const gain = ctx.createGain();
-  gain.gain.value = deafened ? 0 : 1;
-  gain.connect(ctx.destination);
+  gain.gain.value = userVolume(id);
+  gain.connect(output(ctx));
 
   const player: Player = {
     gain,
@@ -283,9 +567,18 @@ export function receive(id: Snowflake, kind: number, payload: Uint8Array): void 
  * donde le dé su conexión (§10.3).
  */
 const QUALITY = {
-  low: { camera: 1_000_000, screen: 1_500_000, fps: 24 },
-  medium: { camera: 2_500_000, screen: 4_000_000, fps: 30 },
-  high: { camera: 5_000_000, screen: 8_000_000, fps: 60 },
+  low: {
+    camera: { bitrate: 1_500_000, fps: 30, width: 1280, height: 720 },
+    screen: { bitrate: 3_000_000, fps: 30, width: 0, height: 0 },
+  },
+  medium: {
+    camera: { bitrate: 4_000_000, fps: 60, width: 1920, height: 1080 },
+    screen: { bitrate: 8_000_000, fps: 60, width: 0, height: 0 },
+  },
+  high: {
+    camera: { bitrate: 12_000_000, fps: 120, width: 2560, height: 1440 },
+    screen: { bitrate: 24_000_000, fps: 120, width: 0, height: 0 },
+  },
 } as const;
 
 export type Quality = keyof typeof QUALITY;
@@ -295,8 +588,21 @@ export function setQuality(value: Quality): void {
   quality = QUALITY[value] ? value : "medium";
 }
 
+export interface VideoProfile {
+  bitrate: number;
+  fps: number;
+  /** Cámara: resolución ideal. Pantalla: 0 conserva la resolución nativa elegida. */
+  width: number;
+  height: number;
+}
+
+/** El mismo perfil gobierna captura, WebRTC directo y WebCodecs por instancia. */
+export function videoProfile(source: "camera" | "screen"): VideoProfile {
+  return QUALITY[quality][source];
+}
+
 /** Cada cuánto se manda un fotograma completo: es por donde se engancha quien llega. */
-const KEYFRAME_MS = 2000;
+const KEYFRAME_MS = 1000;
 /** VP8 porque sus paquetes se bastan solos: el decodificador no necesita que le
     manden antes una cabecera aparte, como sí ocurre con H.264. */
 const VIDEO_CODEC = "vp8";
@@ -312,7 +618,7 @@ export function videoFps(): number | null {
 
 export async function startVideo(
   stream: MediaStream,
-  send: (frame: ArrayBuffer) => void,
+  send: (frame: ArrayBuffer) => boolean | void,
   source: "camera" | "screen",
 ): Promise<boolean> {
   stopVideo();
@@ -321,27 +627,48 @@ export async function startVideo(
   const track = stream.getVideoTracks()[0];
   if (!track) return false;
   const { width = 1280, height = 720 } = track.getSettings();
-  const preset = QUALITY[quality];
-  const bitrate = preset[source];
+  const preset = videoProfile(source);
+  let forceKeyFrame = true;
+
+  const fallbackConfig: VideoEncoderConfig = {
+    codec: VIDEO_CODEC,
+    width,
+    height,
+    bitrate: preset.bitrate,
+    framerate: preset.fps,
+    latencyMode: "realtime",
+  };
+  const preferredConfig: VideoEncoderConfig = {
+    ...fallbackConfig,
+    bitrateMode: "variable",
+    hardwareAcceleration: "prefer-hardware",
+  };
+  let encoderConfig = fallbackConfig;
+  try {
+    const support = await VideoEncoder.isConfigSupported(preferredConfig);
+    if (support.supported) encoderConfig = preferredConfig;
+  } catch {
+    // Implementación antigua: el perfil básico VP8 sigue siendo compatible.
+  }
 
   videoEncoder = new VideoEncoder({
     output: (chunk) => {
       const data = new Uint8Array(chunk.byteLength);
       chunk.copyTo(data);
-      send(packet(chunk.type === "key" ? KIND_VIDEO_KEY : KIND_VIDEO_DELTA, data).buffer as ArrayBuffer);
+      const kind = chunk.type === "key" ? KIND_VIDEO_KEY_TIMED : KIND_VIDEO_DELTA_TIMED;
+      const accepted = send(videoPacket(kind, chunk.timestamp, data).buffer as ArrayBuffer);
+      if (accepted === false) forceKeyFrame = true;
     },
     error: () => stopVideo(),
   });
   // "realtime" le dice al codificador que prefiera llegar a tiempo antes que
   // apurar la calidad: es exactamente el compromiso de una llamada.
-  videoEncoder.configure({
-    codec: VIDEO_CODEC,
-    width,
-    height,
-    bitrate,
-    framerate: preset.fps,
-    latencyMode: "realtime",
-  });
+  try {
+    videoEncoder.configure(encoderConfig);
+  } catch {
+    stopVideo();
+    return false;
+  }
 
   const reader = new MediaStreamTrackProcessor<VideoFrame>({ track }).readable.getReader();
   let running = true;
@@ -369,8 +696,9 @@ export async function startVideo(
         continue;
       }
 
-      const keyFrame = now - lastKey >= KEYFRAME_MS;
+      const keyFrame = forceKeyFrame || now - lastKey >= KEYFRAME_MS;
       if (keyFrame) lastKey = now;
+      forceKeyFrame = false;
       lastFrame = now;
       videoEncoder.encode(value, { keyFrame });
       value.close();
@@ -379,7 +707,9 @@ export async function startVideo(
       // después de los descartes de arriba.
       sent.frames++;
       if (now - sent.since >= 1000) {
-        sent = { frames: 0, since: now, fps: Math.round((sent.frames * 1000) / (now - sent.since)) };
+        const elapsed = now - sent.since;
+        const fps = Math.round((sent.frames * 1000) / elapsed);
+        sent = { frames: 0, since: now, fps };
       }
     }
   })();
@@ -425,6 +755,12 @@ function receiveVideo(id: Snowflake, kind: number, payload: Uint8Array): void {
       timestamp: 0,
       decoder: new VideoDecoder({
         output: (frame) => {
+          // TrackGenerator también tiene cola. Si la pantalla no pinta a tiempo,
+          // conservar un frame viejo solo añade latencia y memoria.
+          if ((created.writer.desiredSize ?? 1) <= 0) {
+            frame.close();
+            return;
+          }
           void created.writer.write(frame).catch(() => frame.close());
         },
         error: () => dropVideo(id),
@@ -436,18 +772,36 @@ function receiveVideo(id: Snowflake, kind: number, payload: Uint8Array): void {
     onStream?.(id, stream);
   }
 
-  const key = kind === KIND_VIDEO_KEY;
+  const timed = kind === KIND_VIDEO_KEY_TIMED || kind === KIND_VIDEO_DELTA_TIMED;
+  const key = kind === KIND_VIDEO_KEY || kind === KIND_VIDEO_KEY_TIMED;
+  if (kind !== KIND_VIDEO_KEY && kind !== KIND_VIDEO_DELTA && !timed) return;
+  if (timed && payload.byteLength <= 8) return;
   // Empezar por la mitad de una secuencia solo produce basura verde: se espera.
   if (!viewer.ready && !key) return;
+  // Si decodificar ya va muy por detrás, se salta hasta el próximo keyframe. Un
+  // delta posterior depende de lo descartado y solo consumiría CPU para fallar.
+  if (!key && viewer.decoder.decodeQueueSize > 4) {
+    viewer.ready = false;
+    return;
+  }
+  if (key && viewer.decoder.decodeQueueSize > 4) {
+    viewer.decoder.reset();
+    viewer.decoder.configure({ codec: VIDEO_CODEC, optimizeForLatency: true });
+  }
   viewer.ready = true;
   if (viewer.decoder.state !== "configured") return;
 
+  const timestamp = timed
+    ? Number(new DataView(payload.buffer, payload.byteOffset, 8).getBigUint64(0))
+    : viewer.timestamp;
+  const data = timed ? payload.subarray(8) : payload;
+
   viewer.decoder.decode(
-    new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp: viewer.timestamp, data: payload }),
+    new EncodedVideoChunk({ type: key ? "key" : "delta", timestamp, data }),
   );
   // Marca de tiempo creciente: al decodificador le basta con que avance, no tiene
   // que coincidir con los fps reales de quien emite.
-  viewer.timestamp += 33_333;
+  if (!timed) viewer.timestamp += 33_333;
 }
 
 export function dropVideo(id: Snowflake): void {
@@ -470,4 +824,5 @@ export function drop(id: Snowflake): void {
 export function dropAll(): void {
   for (const id of [...players.keys()]) drop(id);
   for (const id of [...viewers.keys()]) dropVideo(id);
+  stopClips();
 }

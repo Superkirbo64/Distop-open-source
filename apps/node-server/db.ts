@@ -246,6 +246,16 @@ const MIGRATIONS: string[] = [
   `
   ALTER TABLE users ADD COLUMN profile_style TEXT NOT NULL DEFAULT '{}';
   `,
+
+  /* Un sonido puede llevar una cara propia: emoji o imagen subida. El audio y
+     su imagen siguen perteneciendo a la misma comunidad y viven en la misma
+     instancia; no se aceptan URL externas que puedan rastrear a quien abra la
+     tabla de sonidos. */
+  `
+  ALTER TABLE emojis ADD COLUMN icon_emoji TEXT;
+  ALTER TABLE emojis ADD COLUMN icon_attachment_id TEXT REFERENCES attachments(id) ON DELETE SET NULL;
+  CREATE INDEX idx_emojis_icon_attachment ON emojis(icon_attachment_id);
+  `,
 ];
 
 const current = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
