@@ -9,6 +9,7 @@
  * lo dice y el resto funciona igual (relay.ts `supported()`).
  */
 import type { CapacitorConfig } from "@capacitor/cli";
+//
 
 const config: CapacitorConfig = {
   appId: "com.distop.app",
