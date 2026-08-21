@@ -159,9 +159,10 @@ export function setIceServers(servers: RTCIceServer[]): void {
  */
 let videoViaHost = true;
 
-export function setVideoMode(mode: "host" | "direct", quality: relay.Quality = "medium"): void {
+export function setVideoMode(mode: "host" | "direct", quality: relay.Quality = "medium", priority: relay.Priority = "balanced"): void {
   videoViaHost = mode !== "direct";
   relay.setQuality(quality);
+  relay.setPriority(priority);
 }
 
 /** Silencia el sonido de la pantalla compartida sin tocar el micrófono. */
@@ -836,8 +837,18 @@ async function tuneSender(sender: RTCRtpSender, source: VideoSource): Promise<vo
   // Antes de negociar, `encodings` puede llegar vacío; setParameters lo exige.
   if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
 
-  // Cámara: movimiento fluido. Pantalla: texto nítido y resolución estable.
-  params.degradationPreference = source === "screen" ? "maintain-resolution" : "maintain-framerate";
+  /* Qué recorta el codificador cuando no llega: lo decide la prioridad elegida
+     en Ajustes. En "balanced", lo de siempre — cámara: movimiento fluido;
+     pantalla: texto nítido y resolución estable. */
+  const pref = relay.videoPriority();
+  params.degradationPreference =
+    pref === "fluid"
+      ? "maintain-framerate"
+      : pref === "sharp"
+        ? "maintain-resolution"
+        : source === "screen"
+          ? "maintain-resolution"
+          : "maintain-framerate";
   params.encodings[0]!.maxFramerate = profile.fps;
   params.encodings[0]!.maxBitrate = profile.bitrate;
 
@@ -883,8 +894,11 @@ export async function setVideoSource(source: VideoSource | null): Promise<void> 
     stopLocalVideo();
     videoStream = stream;
     state.localVideo = stream;
-    // Una cámara privilegia movimiento; una pantalla conserva letras y bordes.
-    track.contentHint = source === "screen" ? "detail" : "motion";
+    // La pista le dice al codificador qué es: con prioridad elegida manda esa;
+    // en equilibrado, una cámara privilegia movimiento y una pantalla, letras.
+    const hintPref = relay.videoPriority();
+    track.contentHint =
+      hintPref === "fluid" ? "motion" : hintPref === "sharp" ? "detail" : source === "screen" ? "detail" : "motion";
     // "Dejar de compartir" desde el propio navegador también tiene que apagarlo aquí.
     track.addEventListener("ended", () => void setVideoSource(null));
   } else {

@@ -588,6 +588,28 @@ export function setQuality(value: Quality): void {
   quality = QUALITY[value] ? value : "medium";
 }
 
+/**
+ * Qué sacrificar cuando no alcanza para todo, que con vídeo es siempre: el
+ * bitrate es un techo y hay que repartirlo entre fotogramas por segundo y
+ * detalle por fotograma.
+ *
+ *   fluid    — movimiento suave: se conservan los fps y se cede resolución.
+ *   balanced — lo de siempre: la cámara privilegia movimiento y la pantalla
+ *              conserva letras y bordes. Es lo correcto para casi todo el mundo.
+ *   sharp    — imagen definida: mitad de fotogramas, el doble de bits por cada
+ *              uno. Para enseñar texto, diagramas o detalle fino.
+ */
+export type Priority = "fluid" | "balanced" | "sharp";
+let priority: Priority = "balanced";
+
+export function setPriority(value: Priority): void {
+  priority = value === "fluid" || value === "sharp" ? value : "balanced";
+}
+
+export function videoPriority(): Priority {
+  return priority;
+}
+
 export interface VideoProfile {
   bitrate: number;
   fps: number;
@@ -598,7 +620,15 @@ export interface VideoProfile {
 
 /** El mismo perfil gobierna captura, WebRTC directo y WebCodecs por instancia. */
 export function videoProfile(source: "camera" | "screen"): VideoProfile {
-  return QUALITY[quality][source];
+  const base: VideoProfile = QUALITY[quality][source];
+  /* Nitidez: mitad de fps al mismo bitrate = el doble de bits por fotograma.
+     El suelo de 24 existe porque por debajo deja de parecer vídeo. */
+  if (priority === "sharp") return { ...base, fps: Math.max(24, Math.round(base.fps / 2)) };
+  /* Fluidez: menos píxeles por fotograma para que el codificador no se ahogue
+     en movimiento. Solo la cámara: reducir una pantalla vuelve ilegible el texto. */
+  if (priority === "fluid" && source === "camera")
+    return { ...base, width: Math.round((base.width * 2) / 3 / 2) * 2, height: Math.round((base.height * 2) / 3 / 2) * 2 };
+  return base;
 }
 
 /** Cada cuánto se manda un fotograma completo: es por donde se engancha quien llega. */

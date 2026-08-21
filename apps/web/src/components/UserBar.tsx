@@ -13,11 +13,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Copy, LogOut, Pencil } from "lucide-react";
 import { USER_STATUSES, type UserStatus } from "@distop/protocol";
-import { useStore } from "../store.ts";
+import { gameOf, useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
 import { Gear, Headset, Microphone } from "./icons.tsx";
 import { Avatar, DisplayName, IconButton, Menu, StatusDot, useT, type PresenceRing } from "./ui.tsx";
-import { cardBackground, effectClass, profileSurfaceBackground } from "./ProfileStyle.tsx";
+import { CardEffectLayer, cardBackground, profileSurfaceBackground } from "./ProfileStyle.tsx";
 import { setDeafened, setMuted } from "../lib/voice.ts";
 import { useVoiceLocal } from "./Voice.tsx";
 
@@ -36,21 +36,26 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: () => void }) {
   const t = useT();
   const user = useStore((s) => s.user);
   const status = useStore((s) => s.status);
+  const game = useStore((s) => (s.user ? gameOf(s.data, s.user.id) : undefined));
   const local = useVoiceLocal();
 
   if (!user) return null;
   const ring = ringOf(user.status, status === "online");
 
   /* Lo que se lee bajo el nombre, por orden de "cuanto cambia": la frase que uno
-     escribe, luego estar en una llamada, y si no, el estado de presencia. El
-     `@usuario` que había antes no cambia nunca, así que no informaba de nada. */
+     escribe, luego el juego abierto, luego estar en una llamada, y si no, el
+     estado de presencia. La frase escrita gana porque es una elección explícita;
+     el juego gana a la voz porque cambia más. El `@usuario` que había antes no
+     cambia nunca, así que no informaba de nada. */
   const pie = user.custom_status
     ? user.custom_status
-    : local.channelId
-      ? t("voice.inChannel")
-      : user.kind === "guest"
-        ? t("members.guest")
-        : t(`status.${status === "online" ? user.status : "offline"}`);
+    : game
+      ? t("game.playing", { name: game.game_name })
+      : local.channelId
+        ? t("voice.inChannel")
+        : user.kind === "guest"
+          ? t("members.guest")
+          : t(`status.${status === "online" ? user.status : "offline"}`);
 
   return (
     /* Tarjeta suelta y no una franja pegada al borde: la barra de perfil no es
@@ -187,17 +192,12 @@ function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: () => void; cl
 
   return (
     <div
-      className="w-[21rem] max-w-[92vw] overflow-hidden"
+      className="relative w-[21rem] max-w-[92vw] overflow-hidden"
       style={{ background: profileSurfaceBackground(user.profile_style, user.accent_color) }}
     >
       {/* Portada: la imagen de quien la tenga, y si no su color de acento. Nunca
           un hueco gris, que es lo que hace que un perfil parezca incompleto. */}
-      <div className="h-20 w-full" style={{ background: cardBackground(user.profile_style, user.accent_color, user.banner_url) }}>
-        {/* El efecto va en un hijo a pantalla completa y no en el propio div de
-            la portada: `overflow: hidden` sobre el que lleva el fondo recortaria
-            tambien el avatar, que sube por encima del borde a proposito. */}
-        <div className={`h-full w-full ${effectClass(user.profile_style)}`} />
-      </div>
+      <div className="h-20 w-full" style={{ background: cardBackground(user.profile_style, user.accent_color, user.banner_url) }} />
 
       <div className="-mt-10 px-4">
         <span className="inline-block">
@@ -298,6 +298,11 @@ function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: () => void; cl
           {t("settings.logout")}
         </button>
       </div>
+
+      {/* El efecto cubre la tarjeta ENTERA y va al final para pintarse encima;
+          sus clases llevan pointer-events: none, así que el menú, el campo de
+          estado y los botones siguen recibiendo el clic. */}
+      <CardEffectLayer effect={user.profile_style.profile_effect} className="absolute inset-0" />
     </div>
   );
 }

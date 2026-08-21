@@ -1204,7 +1204,7 @@ function Composer({
           placeholder={t("message.placeholder", { channel: `#${channelName}` })}
           aria-label={t("message.placeholder", { channel: `#${channelName}` })}
           maxLength={4000}
-          className={`${compact ? "max-h-[120px]" : "max-h-52"} min-h-9 flex-1 resize-none bg-transparent py-1.5 text-[0.94rem] outline-none [-webkit-text-stroke:0.4px_#fff]`}
+          className={`${compact ? "max-h-[120px]" : "max-h-52"} min-h-9 flex-1 resize-none bg-transparent py-1.5 text-[0.94rem] outline-none`}
         />
 
         <Menu

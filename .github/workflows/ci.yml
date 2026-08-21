@@ -1,0 +1,21 @@
+# CI (§16.1): cada push y PR pasa typecheck y la suite del node-server.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run typecheck --workspace @distop/desktop
+      - run: npm test

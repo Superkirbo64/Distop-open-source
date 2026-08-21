@@ -72,9 +72,10 @@ import {
   v,
   type Ctx,
 } from "./http.ts";
-import { instanceHealth, VERSION } from "./instance.ts";
-import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, saveRemoteAttachment, saveUpload, serveFile } from "./storage.ts";
-import { disconnectSession, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
+import { instanceHealth, invalidateStorageCache, VERSION } from "./instance.ts";
+import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, serveFile } from "./storage.ts";
+import { disconnectSession, disconnectUser, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
+import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.ts";
 import { statesOfCommunity } from "./voice.ts";
 
 /* ── guardas ───────────────────────────────────────────────────────── */
@@ -352,6 +353,11 @@ route("PATCH", "/api/v1/users/me", async (ctx) => {
   );
 
   const updated = toSelfUser(findUserById(user.id)!);
+
+  // Apagar "compartir actividad de juego" limpia el estado vivo al momento:
+  // un interruptor de privacidad que tarda en surtir efecto no es de fiar.
+  if (body.settings !== undefined && !sharesGameActivity(user.id)) clearPlaying(user.id);
+
   for (const community of communitiesForUser(user.id)) {
     const member = getMember(community.id, user.id);
     if (member) publish(community.id, { t: "MEMBER_UPDATE", d: member });
@@ -360,8 +366,62 @@ route("PATCH", "/api/v1/users/me", async (ctx) => {
        PRESENCE_UPDATE, y son dos listas distintas en el cliente. */
     if (body.status !== undefined)
       publish(community.id, { t: "PRESENCE_UPDATE", d: { community_id: community.id, online: onlineIn(community.id) } });
+    /* Y lo mismo con el juego: invisible o sin compartir, la lista cambia. */
+    if (body.status !== undefined || body.settings !== undefined)
+      publish(community.id, { t: "GAME_PRESENCE_UPDATE", d: { community_id: community.id, presences: presencesIn(community.id) } });
   }
   return updated;
+});
+
+/* ── "jugando a…" (§9.1) ───────────────────────────────────────────────
+   Lo alimenta la app de escritorio con la sesión normal del usuario. El
+   servidor nunca ve la lista de procesos: llega solo el nombre del juego ya
+   casado con el catálogo local del jugador. */
+
+function announceGame(userId: Snowflake): void {
+  for (const community of communitiesForUser(userId)) {
+    publish(community.id, {
+      t: "GAME_PRESENCE_UPDATE",
+      d: { community_id: community.id, presences: presencesIn(community.id) },
+    });
+  }
+}
+
+// El barrido de heartbeats muertos vive en gamePresence.ts; el fan-out, aquí.
+// Separado así para que gamePresence no importe gateway (ciclo de imports).
+onGamePresenceChange(announceGame);
+
+route("PUT", "/api/v1/users/me/game-presence", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  // Con el interruptor en "no compartir" se corta en origen, no se disimula.
+  if (!sharesGameActivity(user.id)) throw forbidden("La actividad de juego está desactivada en tus ajustes.");
+
+  rateLimit(`game:${user.id}`, 30, 60_000);
+  const body = await readJson(ctx);
+  // Texto plano y corto, mismo trato que custom_status: no se interpreta nada.
+  const gameName = v.string(body, "game_name", { max: 100 });
+
+  if (setPlaying(user.id, gameName)) announceGame(user.id);
+});
+
+route("DELETE", "/api/v1/users/me/game-presence", (ctx) => {
+  const { user } = requireAuth(ctx);
+  if (clearPlaying(user.id)) announceGame(user.id);
+});
+
+route("GET", "/api/v1/users/:id/game-history", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const targetId = ctx.params.id === "me" ? user.id : ctx.params.id!;
+
+  // El historial se enseña entre gente que ya se ve: co-miembros de alguna
+  // comunidad. Un desconocido con un id no es "gente que ya se ve".
+  if (targetId !== user.id) {
+    const shared = communitiesForUser(user.id).some((community) => getMember(community.id, targetId));
+    if (!shared) throw notFound("No encontrado.");
+    // Vacío y no 403: un "prohibido" confirmaría que hay algo que ocultar.
+    if (!showsGameHistory(targetId)) return [];
+  }
+  return historyOf(targetId);
 });
 
 /**
@@ -392,6 +452,33 @@ route("POST", "/api/v1/users/me/upgrade", async (ctx) => {
     user.id,
   );
   return toSelfUser(findUserById(user.id)!);
+});
+
+/**
+ * Cambiar una contraseña que ya existe (§22).
+ * Pide la actual —un equipo desbloqueado no debe bastar para dejar fuera a la
+ * dueña— y revoca las demás sesiones: cambiarla ES la palanca ante una fuga,
+ * así que dejar las sesiones viejas vivas la volvería decorativa. La sesión
+ * que hizo el cambio recibe tokens nuevos y sigue dentro sin relogin.
+ */
+route("POST", "/api/v1/users/me/password", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const current = findUserById(user.id)!;
+  if (!current.password_hash) throw conflict("Esta cuenta no tiene contraseña todavía. Ponla desde «convertir en cuenta permanente».");
+
+  rateLimit(`password:${user.id}`, config.maxLoginAttemptsPerQuarterHour, 15 * 60_000);
+
+  const body = await readJson(ctx);
+  const currentPassword = v.string(body, "current_password", { min: 1, max: 200, trim: false });
+  const password = v.string(body, "password", { min: 10, max: 200, trim: false });
+  if (!verifyPassword(currentPassword, current.password_hash)) throw unauthorized("La contraseña actual no es correcta.");
+
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), user.id);
+  revokeAllSessions(user.id);
+  // Revocar filas no basta: los sockets abiertos seguirían escuchando. Se
+  // cierran todos; este dispositivo reconecta solo con los tokens nuevos.
+  disconnectUser(user.id);
+  return issue(user.id);
 });
 
 /**
@@ -436,6 +523,9 @@ route("DELETE", "/api/v1/users/me", async (ctx) => {
 route("POST", "/api/v1/users/me/sessions/revoke-all", (ctx) => {
   const { user } = requireAuth(ctx);
   revokeAllSessions(user.id);
+  // Misma razón que en el cambio de contraseña: sin cerrar los sockets, los
+  // dispositivos "expulsados" seguirían recibiendo eventos en vivo.
+  disconnectUser(user.id);
   return issue(user.id);
 });
 
@@ -486,6 +576,7 @@ route("GET", "/api/v1/communities/:id/bootstrap", (ctx) => {
     roles: rolesOf(communityId),
     members: membersOf(communityId),
     online: onlineIn(communityId),
+    game_presences: presencesIn(communityId),
     permissions: communityPermissions(communityId, user.id).toString(),
     channel_permissions: channelPerms,
     voice_states: statesOfCommunity(communityId),
@@ -1951,9 +2042,10 @@ route("POST", "/api/v1/invites/:code/join", (ctx) => {
  * arranca un proceso en el ordenador anfitrión, y administrar una comunidad no
  * da derecho sobre la máquina de quien la hospeda.
  */
-function requireHost(ctx: Ctx): void {
-  const { user } = requireAuth(ctx);
-  if (!isInstanceOwner(user.id)) throw forbidden("Esto solo puede hacerlo quien hospeda la instancia.");
+function requireHost(ctx: Ctx): ReturnType<typeof requireAuth> {
+  const auth = requireAuth(ctx);
+  if (!isInstanceOwner(auth.user.id)) throw forbidden("Esto solo puede hacerlo quien hospeda la instancia.");
+  return auth;
 }
 
 route("GET", "/api/v1/instance/tunnel", (ctx) => {
@@ -1986,6 +2078,11 @@ route("PUT", "/api/v1/instance/relay", async (ctx) => {
     typeof body[key] === "string" ? { [key]: (body[key] as string).trim() } : {};
   return setRelay({
     ...text("mode"),
+    /* Sin estas tres, el selector de Ajustes guardaba en el vacío: el cliente
+       las mandaba, aquí se filtraban, y setRelay persistía lo de siempre. */
+    ...text("video"),
+    ...text("quality"),
+    ...text("priority"),
     ...text("url"),
     ...text("username"),
     ...text("credential"),
@@ -1994,6 +2091,36 @@ route("PUT", "/api/v1/instance/relay", async (ctx) => {
     ...text("appName"),
     ...text("apiKey"),
   } as Parameters<typeof setRelay>[0]);
+});
+
+/**
+ * Vaciar el historial de la instancia entera (§28.4).
+ * Se van los mensajes y sus archivos —fotos, GIF, adjuntos— de TODAS las
+ * comunidades. Se quedan las comunidades, sus miembros, roles, canales,
+ * emojis, avatares y fondos: es una limpieza de disco, no un cierre.
+ * Solo quien hospeda: el disco que se llena es el suyo.
+ */
+route("POST", "/api/v1/instance/purge", (ctx) => {
+  const { user } = requireHost(ctx);
+
+  const messages = (db.prepare("SELECT COUNT(*) AS n FROM messages").get() as { n: number }).n;
+  // Primero los ficheros (las filas de adjuntos dicen dónde están), después las
+  // filas de mensajes: reacciones y adjuntos restantes caen por CASCADE.
+  const { files, mb } = purgeChatFiles();
+  db.prepare("DELETE FROM messages").run();
+  invalidateStorageCache();
+
+  const communities = db.prepare("SELECT id FROM communities").all() as { id: string }[];
+  for (const community of communities) {
+    // Que conste en la auditoría de CADA comunidad: su historial desapareció y
+    // sus miembros tienen derecho a ver quién y cuándo.
+    audit(community.id, user.id, "instance.purge", null, { messages, files, mb });
+    // Sin este aviso, los demás clientes enseñarían una conversación que ya no
+    // existe hasta la próxima recarga.
+    publish(community.id, { t: "MESSAGES_PURGED", d: { community_id: community.id } });
+  }
+
+  return { messages, files, mb };
 });
 
 /* ── adjuntos (§28.3) ──────────────────────────────────────────────── */

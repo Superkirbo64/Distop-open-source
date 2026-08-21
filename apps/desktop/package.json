@@ -1,0 +1,22 @@
+{
+  "name": "@distop/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cliente de escritorio de Distop: el mismo cliente web, con bandeja, instancia local y actividad de juego.",
+  "author": "Distop",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "npm run build && electron .",
+    "dist": "npm run build && node ../../scripts/stage-protocol.mjs && electron-builder --win nsis",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.5",
+    "electron": "40.10.6",
+    "electron-builder": "^26.0.12"
+  }
+}

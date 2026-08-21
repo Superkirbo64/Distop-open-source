@@ -112,6 +112,57 @@ ahí sí se puede entrar como invitado, sin cuenta. Escribid: los mensajes viaja
 El cliente en desarrollo habla siempre con su propio origen; Vite hace de proxy hacia
 la instancia, así que no hay CORS que configurar ni tokens cruzando dominios.
 
+## Aplicación de escritorio (Windows)
+
+El mismo cliente web, empaquetado con Electron (el porqué frente a Tauri está en
+`docs/decisions.md`). Añade lo que el navegador no puede dar:
+
+- **Conectar a instancias**: la app viaja contigo y arranca en "Conectar a una
+  instancia"; tus sesiones se guardan por instancia, en tu equipo.
+- **Hospedar aquí**: arranca la instancia node-server DENTRO de la app, con el
+  Node 24 que Electron embebe. Tu cuenta y tus datos quedan literalmente en tu
+  PC (`%APPDATA%/Distop/instance/data`).
+- **Jugando a…**: detecta el juego abierto (catálogo editable en
+  `%APPDATA%/Distop/games.json`) y lo enseña en tu perfil. Al servidor solo
+  llega el nombre del juego, nunca tu lista de programas; se apaga en Ajustes.
+- Bandeja, notificaciones nativas, inicio con Windows y auto-update desde
+  GitHub Releases.
+
+```bash
+npm run dev  --workspace @distop/desktop   # desarrollo (usa apps/web/dist)
+npm run dist --workspace @distop/desktop   # instalador NSIS en apps/desktop/release/
+```
+
+Sin certificado de firma de código (~300 USD/año que no hay, §3), SmartScreen
+avisará de "editor desconocido" al instalar: es esperable, no un fallo.
+
+## Aplicación Android (APK)
+
+El mismo cliente, empaquetado con Capacitor (`apps/mobile`). Es **cliente
+puro**: en Android no hay Node, así que no puede hospedar instancias — se
+conecta a la tuya o a la de cualquiera. La voz necesita un Android System
+WebView ≥94 (se actualiza solo por Play Store); si falta, la app lo dice y el
+resto funciona.
+
+```bash
+npm run sync --workspace @distop/mobile    # build del cliente + cap sync
+npm run open --workspace @distop/mobile    # abre Android Studio para compilar
+```
+
+El APK de release lo construye GitHub Actions al taguear (`v*`); se firma solo
+si existen los secretos del keystore (ver `.github/workflows/release.yml`).
+**El keystore jamás entra al repo, y perderlo = no poder actualizar el APK.**
+
+También se puede compilar en local sin Android Studio (JDK 21 + cmdline-tools):
+
+```powershell
+$env:JAVA_HOME = "ruta\al\jdk21"; $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+$env:ANDROID_KEYSTORE_PATH = "ruta\al\distop-release.keystore"
+$env:ANDROID_KEYSTORE_PASSWORD = "..."; $env:ANDROID_KEY_ALIAS = "distop"; $env:ANDROID_KEY_PASSWORD = "..."
+cd apps/mobile/android; .\gradlew.bat assembleRelease
+# → app/build/outputs/apk/release/app-release.apk (firmado)
+```
+
 ## Producción con Docker
 
 ```bash

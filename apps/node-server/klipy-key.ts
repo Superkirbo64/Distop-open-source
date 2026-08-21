@@ -5,4 +5,4 @@
  * 
  * Reemplaza el texto vacío con tu clave.
  */
-export const KLIPY_API_KEY = "QG1T0kxnRAfA13t8p7cKre5PpPCBtm99Ehjl2trQJuzdwasRX5Vodu6C8U51dx9X"; 
+export const KLIPY_API_KEY: string = "QG1T0kxnRAfA13t8p7cKre5PpPCBtm99Ehjl2trQJuzdwasRX5Vodu6C8U51dx9X";

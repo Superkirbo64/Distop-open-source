@@ -325,13 +325,29 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
   const instance = useStore((s) => s.instance);
   const status = useStore((s) => s.status);
 
+  /* GB o TB según el tamaño: "quedan 231,4 GB" dice algo; "quedan 236993 MB" no.
+     Intl y no toFixed: el separador decimal es del idioma, no siempre un punto. */
+  const freeMb = instance?.storage_free_mb ?? 0;
+  const decimal = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
+  const freeLabel =
+    freeMb >= 1024 * 1024
+      ? `${decimal.format(freeMb / 1024 / 1024)} TB`
+      : freeMb >= 1024
+        ? `${decimal.format(freeMb / 1024)} GB`
+        : `${freeMb} MB`;
+
   const rows: Array<[string, string]> = instance
     ? [
         [t("instance.version"), `${instance.version} · ${instance.protocol}`],
         [t("instance.uptime"), formatDuration(locale, instance.uptime_s)],
         [t("instance.users"), String(instance.online_users)],
         [t("instance.memory"), `${instance.memory_used_mb} / ${instance.memory_total_mb} MB`],
-        [t("instance.storage"), `${instance.storage_used_mb} MB`],
+        [
+          t("instance.storage"),
+          freeMb > 0
+            ? `${instance.storage_used_mb} MB · ${t("instance.storageFree", { free: freeLabel })}`
+            : `${instance.storage_used_mb} MB`,
+        ],
       ]
     : [];
 
@@ -359,6 +375,8 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
         </dl>
 
         <ShareInstance />
+
+        <PurgeData />
 
         <p className="text-xs text-muted">{t("instance.offlineHelp")}</p>
       </div>
@@ -460,6 +478,75 @@ function ShareInstance() {
       ) : null}
 
       <p className="text-xs text-muted">{t("share.hostReminder")}</p>
+    </section>
+  );
+}
+
+/**
+ * Vaciar el historial para recuperar disco (§28.4).
+ * Solo lo ve quien hospeda: el disco que se llena es el suyo. La advertencia
+ * dice exactamente qué se va (chats, fotos, GIF y archivos, de TODAS las
+ * comunidades) y qué se queda (las comunidades con sus miembros, roles,
+ * canales, emojis y avatares). No hay papelera, y por eso hay dos pasos.
+ */
+function PurgeData() {
+  const t = useT();
+  const errorText = useErrorText();
+
+  const [isHost, setIsHost] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<{ messages: number; files: number; mb: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Mismo trato que el túnel: si la instancia contesta 403, la sección entera
+  // desaparece en vez de enseñar un botón que no funcionaría.
+  useEffect(() => {
+    void api("GET", "/api/v1/instance/tunnel")
+      .then(() => setIsHost(true))
+      .catch(() => setIsHost(false));
+  }, []);
+
+  if (!isHost) return null;
+
+  async function purge(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      setDone(await api<{ messages: number; files: number; mb: number }>("POST", "/api/v1/instance/purge"));
+      setConfirming(false);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-2 rounded-[10px] border border-danger/40 p-3">
+      <h3 className="display text-sm font-bold text-danger">{t("instance.purge")}</h3>
+      <p className="text-xs text-muted">{t("instance.purgeHint")}</p>
+
+      {done ? <p className="text-xs text-ok">{t("instance.purgeDone", { messages: String(done.messages), mb: String(done.mb) })}</p> : null}
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+
+      {confirming ? (
+        <>
+          <p className="text-xs font-medium text-danger">{t("instance.purgeWarning")}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setConfirming(false)} disabled={busy}>
+              {t("common.cancel")}
+            </Button>
+            <Button variant="danger" onClick={() => void purge()} disabled={busy}>
+              {busy ? t("common.loading") : t("instance.purgeDo")}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <Button variant="danger" onClick={() => setConfirming(true)} className="self-start">
+          {t("instance.purge")}
+        </Button>
+      )}
     </section>
   );
 }

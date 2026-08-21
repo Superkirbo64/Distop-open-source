@@ -66,10 +66,42 @@ export const es = {
   "instance.uptime": "Encendida",
   "instance.memory": "Memoria",
   "instance.storage": "Almacenamiento",
+  "instance.storageFree": "quedan {free} libres",
+  "instance.purge": "Limpiar datos",
+  "instance.purgeHint":
+    "Vacía el historial para recuperar espacio en el disco: se borran los chats, fotos, GIF y archivos de todas las comunidades. Las comunidades se quedan, con sus miembros, roles, canales, emojis y avatares.",
+  "instance.purgeWarning":
+    "Esto borra PARA SIEMPRE todos los mensajes y sus archivos, de todas las comunidades de esta instancia. No hay papelera ni forma de recuperarlos. Tu comunidad no se elimina: solo su historial.",
+  "instance.purgeDo": "Borrar el historial para siempre",
+  "instance.purgeDone": "Hecho: {messages} mensajes borrados y {mb} MB recuperados.",
   "instance.users": "Personas conectadas",
   "instance.version": "Versión",
   "instance.offlineHelp":
     "La comunidad vive en el equipo de quien la hospeda. Si ese equipo está apagado, no hay servicio hasta que vuelva.",
+
+  "connect.title": "Conectar a una instancia",
+  "connect.hint":
+    "La aplicación viaja contigo; las comunidades viven cada una en su servidor. Pega la dirección de la instancia a la que quieres entrar.",
+  "connect.url": "Dirección de la instancia",
+  "connect.urlHint": "La misma que usarías en el navegador, con https:// delante.",
+  "connect.action": "Conectar",
+  "connect.checking": "Comprobando…",
+  "connect.invalid": "Esa dirección no es válida. Solo se admiten direcciones http o https.",
+  "connect.unreachable":
+    "Ahí no responde nadie. Puede que la instancia esté apagada, que el túnel se haya cerrado o que la dirección tenga una errata.",
+  "connect.notInstance": "En esa dirección responde algo, pero no es una instancia de Distop.",
+  "connect.known": "Instancias recientes",
+  "connect.forget": "Olvidar",
+  "connect.hostHere": "Hospedar aquí",
+  "connect.hostHint":
+    "Tu comunidad corre en este ordenador, dentro de la aplicación: tus datos se quedan contigo. Estará disponible mientras este equipo esté encendido, y la velocidad depende de tu conexión.",
+  "connect.hostEnter": "Entrar en mi instancia",
+  "connect.hostStarting": "Arrancando la instancia…",
+
+  "game.playing": "Jugando a {name}",
+  "game.for": "desde hace {time}",
+  "game.recent": "Juegos recientes",
+  "game.duration": "{time} · {date}",
 
   "share.title": "Compartir tu instancia",
   "share.address": "Dirección para invitar",
@@ -218,6 +250,12 @@ export const es = {
   "voice.qualityLow": "Ahorro — hasta 30 fps · cámara 1,5 / pantalla 3 Mbit/s",
   "voice.qualityMedium": "Equilibrada — hasta 60 fps · cámara 4 / pantalla 8 Mbit/s",
   "voice.qualityHigh": "Máxima — hasta 120 fps · cámara 12 / pantalla 24 Mbit/s",
+  "voice.priority": "Qué priorizar",
+  "voice.priorityHint":
+    "Cuando el ancho de banda no da para todo, algo se sacrifica. Aquí eliges qué: fotogramas o detalle.",
+  "voice.priorityFluid": "Fluidez — movimiento suave, algo menos de nitidez",
+  "voice.priorityBalanced": "Equilibrada — cámara fluida, pantalla nítida",
+  "voice.prioritySharp": "Nitidez — imagen definida, la mitad de fotogramas",
   "voice.link.new": "conectando",
   "voice.link.connecting": "conectando",
   "voice.link.disconnected": "sin conexión",
@@ -270,6 +308,9 @@ export const es = {
   "voice.micVolume": "Volumen del micrófono",
   "voice.micVolumeHint":
     "Se aplica antes de enviar. Por encima del 100% se amplifica y puede saturar.",
+  "voice.micTest": "Probar el micrófono",
+  "voice.micTestStop": "Detener la prueba",
+  "voice.micTestHint": "Habla: si la barra se mueve, se te oye. Nada sale de este equipo.",
   "voice.outVolume": "Volumen de la llamada",
   "voice.outVolumeHint": "Afecta a las voces y a los sonidos de la sala, no al resto del equipo.",
   "voice.outputFixed":
@@ -397,6 +438,13 @@ export const es = {
   "settings.bio": "Sobre ti",
   "settings.pronouns": "Pronombres",
   "settings.accent": "Color de acento",
+  "settings.gameActivity": "Actividad de juego",
+  "settings.gameActivityHint":
+    "La detección corre en la aplicación de escritorio, en tu equipo. Al servidor solo llega el nombre del juego, nunca tu lista de programas.",
+  "settings.gameShare": "Mostrar a qué estoy jugando",
+  "settings.gameShareHint": "Apagado, nadie ve tu partida en curso y la detección deja de enviarse.",
+  "settings.gameHistory": "Mostrar mis juegos recientes en el perfil",
+  "settings.gameHistoryHint": "Apagado, tu historial de partidas queda solo para ti.",
   "settings.avatar": "Tu avatar",
   "settings.avatarHint":
     "Sube un PNG, JPG, GIF o WebP, o pega un enlace. Los GIF animados valen igual: aquí no se cobra por eso.",
@@ -458,6 +506,12 @@ export const es = {
   "settings.upgradeHint":
     "Conservas tus mensajes, comunidades y tu identidad. Solo añades usuario y contraseña.",
   "settings.revokeAll": "Cerrar sesión en todos los dispositivos",
+  "settings.changePassword": "Cambiar la contraseña",
+  "settings.changePasswordHint":
+    "Al cambiarla se cierran las sesiones de los demás dispositivos. Esta sigue abierta.",
+  "settings.currentPassword": "Contraseña actual",
+  "settings.newPassword": "Contraseña nueva",
+  "settings.passwordChanged": "Contraseña cambiada. Las demás sesiones quedaron cerradas.",
 
   "manage.title": "Administrar {name}",
   "manage.overview": "General",
@@ -594,9 +648,16 @@ export const es = {
   "emoji.none": "Todavía no hay ninguno.",
   "emoji.deleteConfirm":
     "¿Quitar esto de la comunidad? Los mensajes que lo usaban mostrarán su nombre.",
+  "profile.identity": "Identidad",
+  "profile.avatarDeco": "Avatar y decoración",
+  "profile.bannerPlate": "Banner y placa",
+  "profile.nameStyle": "Estilo del nombre",
+  "profile.theme": "Tema del perfil",
+  "profile.memberSince": "Miembro desde",
   "profileStyle.title": "Aspecto del perfil",
   "profileStyle.hint":
     "Todo gratis, sin desbloquear nada. El catálogo entero viene con la instancia.",
+  "profileStyle.deco": "Decoración del avatar",
   "profileStyle.rings": "Aros incluidos",
   "profileStyle.ringsCredit":
     "Aros: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
@@ -634,10 +695,10 @@ export const es = {
   "style.gradient": "Degradado",
   "style.pop": "Pop",
   "style.animated": "Animado",
-  "style.sparkles": "Destellos",
-  "style.confetti": "Confeti",
-  "style.rain": "Lluvia",
   "style.embers": "Brasas",
+  "style.snow": "Nieve",
+  "style.fireworks": "Fuegos artificiales",
+  "style.bubbles": "Burbujas",
   "emoji.usedBy": "Creado por",
   "emoji.telegramImport": "Importar de un paquete de Telegram",
   "emoji.telegramHint":

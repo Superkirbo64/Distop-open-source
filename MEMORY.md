@@ -1,7 +1,7 @@
 # Memoria del proyecto — Distop
 
 Lo que no se deduce leyendo el código: qué se decidió, qué se descartó y por qué.
-Última actualización: **2 de agosto de 2026**.
+Última actualización: **21 de agosto de 2026**.
 
 ## Identidad
 
@@ -412,3 +412,155 @@ borraron al terminar.
   tarjeta. Es una captura de 1200×630 en `public/`.
 - Falta la página de descubrimiento de comunidades públicas: la API ya tiene
   `/api/v1/discovery`, pero el sitio es estático y no puede consultarla en el build.
+
+---
+
+## Seguridad, fuentes y Ajustes de cuenta (21 de agosto de 2026)
+
+Tanda de verificación y optimización sobre el repo recién clonado.
+
+### Lo que se cerró de la lista de pendientes
+
+- **`ws` 8.18.0 → 8.21.3.** Eran los dos avisos altos ya anotados (divulgación de
+  memoria y DoS por fragmentos diminutos). `vite` 6.0.7 → 6.4.3 por el aviso del
+  dev server de esbuild (solo afectaba a desarrollo). `npm audit` queda en cero.
+- **`apps/web` ya no pide las fuentes a Google.** Mismo enfoque Fontsource que
+  `apps/marketing`: `@fontsource-variable/inter` y `@fontsource-variable/bricolage-grotesque`
+  importados en `main.tsx`, `<link>` de Google fuera de `index.html`, y los tokens
+  de `styles.css` apuntan a las familias "… Variable" con las viejas de respaldo.
+  Verificado: 10 `.woff2` en `dist/assets` y ni una URL externa.
+- **Medidor de prueba del micrófono en Ajustes → Voz** (pendiente desde la tanda de
+  voz). Botón que arranca `getUserMedia` + `AnalyserNode` y pinta una barra con el
+  nivel RMS. Nada sale del equipo; cambiar de aparato con la prueba en marcha la
+  reinicia con el nuevo; se suelta el micrófono al desmontar. De paso, conceder el
+  permiso destapa los nombres de los aparatos.
+
+### Cuenta: contraseña que ya existe y dueño sin contraseña
+
+- **Nuevo `POST /api/v1/users/me/password`**: pide la contraseña actual, revoca las
+  demás sesiones (cambiarla ES la palanca ante una fuga) y devuelve tokens nuevos
+  para la sesión que hizo el cambio, que sigue dentro sin relogin. Rate limit igual
+  que el login. Cubierto por `password.test.ts` (2 tests, 46 en total en verde).
+- **`SelfUser.has_password` (protocolo, aditivo).** La pestaña Cuenta decide con eso,
+  no con `kind === "guest"`: el agujero era que quien pone en marcha la instancia es
+  `local` sin contraseña y no veía NINGUNA forma de ponerla desde Ajustes. Ahora
+  "convertir en cuenta permanente" sale para cualquier cuenta sin contraseña (con el
+  usuario prellenado) y "cambiar la contraseña" para las que ya la tienen.
+- La clave de Klipy en `klipy-key.ts` es pública **a propósito** (confirmado por quien
+  lidera); solo se le añadió la anotación `: string` porque el tipo literal rompía el
+  `!== ""` de `api.ts` en typecheck.
+
+### Bundle
+
+- **`lottie-web` pasó a import dinámico** en `AnimatedEmoji.tsx`: el motor solo se
+  descarga la primera vez que un emoji animado entra en pantalla. El bundle
+  principal bajó de 854 a 681 kB (gzip 256 → 207); lottie queda en un chunk aparte
+  de 169 kB que la mayoría de cargas nunca pide.
+- `motion` (~35 kB) volvió a entrar como dependencia para `icons.tsx` en algún
+  momento posterior a la nota que decía haberlo evitado con CSS. No se tocó: los
+  iconos se usan en toda la interfaz y no hay dónde partirlos.
+
+### Verificación de esta tanda
+
+`npm run typecheck` limpio (había 1 error real, el de Klipy), `npm test` 46/46,
+`npm audit` 0 vulnerabilidades, build del cliente sin URLs externas, y smoke test
+de producción real: instancia arrancada con `AUTH_SECRET`, `/health` y `/api/v1/info`
+respondiendo, registro + cambio de contraseña por curl con tokens nuevos.
+
+**Sigue pendiente de antes:** LICENSE con AGPL-3.0, reordenar canales arrastrando,
+FTS5 para búsqueda, og:image y URL real del repo en el sitio público.
+
+## Vídeo con prioridad, y limpieza de datos (21 de agosto de 2026, segunda tanda)
+
+- **Bug encontrado y corregido:** el `PUT /api/v1/instance/relay` filtraba el cuerpo
+  por lista blanca y `video`, `quality` (y el nuevo `priority`) no estaban en ella —
+  el selector de calidad y el modo de vídeo de Ajustes **guardaban en el vacío**
+  desde siempre. El cliente los mandaba, el servidor los tiraba, y la respuesta
+  devolvía lo de antes.
+- **Nueva opción "Qué priorizar"** en Ajustes → Voz, junto al techo de calidad:
+  `fluid` / `balanced` / `sharp`. El techo dice CUÁNTO; esto dice QUÉ SACRIFICAR.
+  Atraviesa los dos caminos: en WebRTC directo gobierna `degradationPreference` y
+  `contentHint`; en modo instancia ajusta el perfil de `relay.ts` (nitidez = mitad
+  de fps al mismo bitrate → el doble de bits por fotograma; fluidez = ⅔ de
+  resolución de cámara, la pantalla no se reduce porque el texto se vuelve
+  ilegible). `balanced` conserva el comportamiento de siempre (cámara-movimiento,
+  pantalla-detalle). Se guarda en el mismo `voice_relay` de la instancia.
+- **`-webkit-text-stroke: 0.4px #fff`** en el textarea del compositor (Chat.tsx):
+  fuera. Ponía un borde blanco a cada letra y en tema claro se veía lavado.
+- **Diálogo de instancia: almacenamiento con espacio libre** (`storage_free_mb` en
+  `InstanceHealth`, vía `statfsSync`; en GB/TB legibles) y **sección "Limpiar
+  datos"** solo para quien hospeda: `POST /api/v1/instance/purge` borra mensajes y
+  sus archivos de TODAS las comunidades y deja comunidades, miembros, roles,
+  canales, emojis y avatares (solo adjuntos con `message_id NOT NULL`, justo por el
+  aviso que ya estaba en db.ts sobre los adjuntos de personalización). Dos pasos
+  con advertencia en la interfaz, constancia en la auditoría de cada comunidad, y
+  evento nuevo **`MESSAGES_PURGED`** para que los clientes conectados vacíen el
+  canal en vivo en vez de enseñar una conversación que ya no existe.
+- Verificación: typecheck limpio, **47/47 tests** (nuevo `purge.test.ts`), build ok.
+
+## Editor de perfil estilo Discord (21 de agosto de 2026, tercera tanda)
+
+Pedido con capturas del editor de perfil de Discord como referencia explícita.
+
+- **`ProfileTab` pasó de formulario vertical a editor de dos columnas:** carril de
+  categorías plegables a la izquierda (acordeón, una abierta a la vez) y
+  **`ProfileCardPreview`** —la tarjeta grande y viva— fija a la derecha con el
+  botón de guardar debajo. Cada cabecera del carril enseña la elección ACTUAL en
+  miniatura (avatar con su aro, chip de la placa, muestra del gradiente, "Ag" con
+  la fuente elegida), que es lo que hace legible el carril sin abrir nada.
+- Categorías: Identidad (nombre, pronombres, bio, acento) · Avatar y decoración
+  (subida + galería + aros + decoración propia) · Banner (subida + dos galerías)
+  · Placa · Estilo del nombre (fuente/efecto/color) · Tema del perfil (gradiente)
+  · Efecto de la tarjeta. **Sin tienda, sin candados, sin "exclusivo de"**: la
+  estructura es la de Discord, el modelo no (§10, §29.6).
+- `ProfileStyleEditor` desapareció: `ProfileStyle.tsx` ahora exporta piezas
+  (`ProfileCardPreview`, `AvatarDecoPicker`, `PlatePicker`, `NameStylePicker`,
+  `CardEffectPicker`, `GradientControls`) y Settings compone el acordeón.
+  `cardBackground`/`effectClass`/`profileSurfaceBackground` intactos (los usan
+  Members y UserBar).
+- La tarjeta enseña además el punto de presencia y "Miembro desde" con
+  `created_at` formateado al locale.
+- **Verificado en navegador real** con `scripts/shot.mjs` + `EVAL` para abrir el
+  modal por CDP (truco: el aria-label del engranaje cambia por idioma —
+  "Ajustes"/"Configurações" — el selector va por regex). Captura correcta a
+  1400×900: carril, acordeón abierto, tarjeta viva y guardar visibles.
+
+## Auditoría de lo entregado (21 de agosto de 2026, cuarta tanda)
+
+Revisión pedida expresamente («analiza qué hiciste mal») sobre las tres tandas.
+Lo que estaba mal y quedó corregido:
+
+- **Revocar sesiones no cerraba sus sockets.** El cambio de contraseña (nuevo) y
+  el «cerrar sesión en todos los dispositivos» (preexistente) borraban las filas
+  de `sessions`, pero un gateway ya conectado seguía recibiendo eventos con una
+  sesión que no existía: la expulsión era mentira en vivo. Nuevo
+  `disconnectUser()` en gateway.ts, llamado en los dos endpoints; cada cliente
+  reintenta con su token guardado (el nuevo entra, el revocado cae al login).
+  El test de contraseña ahora abre un socket real y comprueba el cierre 4001.
+- **La vista previa del perfil quedaba DEBAJO de todas las secciones en pantalla
+  estrecha**: se editaba a ciegas. `order-first lg:order-last` — en móvil la
+  tarjeta va arriba, como en la referencia.
+- **«Aros incluidos» y «Tu propia decoración» eran dos secciones para una sola
+  decisión** (lo señaló quien lidera). Además `Avatar` pinta ambas capas a la
+  vez: apiladas eran un borrón. Ahora es UN catálogo «Decoración del avatar»:
+  Ninguno · casilla de subida propia · los 39 aros, mutuamente excluyentes
+  (elegir aro limpia la propia y al revés).
+- **`toFixed(1)` en el espacio libre del disco**: separador decimal fijo en
+  punto. Ahora `Intl.NumberFormat(locale)`.
+- Verificado además en esta pasada: `statfsSync` funciona en Windows (el /health
+  real devuelve `storage_free_mb`), typecheck limpio, **47/47 tests**, audit 0,
+  build ok, y captura nueva del catálogo unificado en navegador real.
+
+Deudas conocidas que se dejaron a propósito (anotadas, no corregidas):
+- `PurgeData` y `ShareInstance` hacen cada uno su `GET /instance/tunnel` para
+  saber si eres anfitrión: dos peticiones al abrir el diálogo. Barato, pero feo.
+- Tras limpiar datos, las cifras de almacenamiento del diálogo abierto no se
+  refrescan hasta el próximo READY (reconexión): el caché se invalida en el
+  servidor, no en el cliente.
+
+- **Quinta tanda (mismo día):** «Tu banner» y «Placa del nombre» unificadas en
+  UNA sección «Banner y placa» (pedido explícito): los dos son el fondo sobre el
+  que va tu nombre — el banner en la tarjeta, la placa en la lista de miembros.
+  La cabecera enseña las dos miniaturas. El carril queda en seis categorías:
+  Identidad · Avatar y decoración · Banner y placa · Estilo del nombre · Tema ·
+  Efecto de la tarjeta. Verificado en navegador (captura con la sección abierta).

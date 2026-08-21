@@ -12,6 +12,7 @@ import { UserBar } from "./components/UserBar.tsx";
 import { Chat, VoiceChatPanel } from "./components/Chat.tsx";
 import { Members } from "./components/Members.tsx";
 import { Auth } from "./views/Auth.tsx";
+import { Connect } from "./views/Connect.tsx";
 import { Setup } from "./views/Setup.tsx";
 import { Invite } from "./views/Invite.tsx";
 import { Settings } from "./views/Settings.tsx";
@@ -19,6 +20,7 @@ import { WallpaperTuner } from "./components/Wallpaper.tsx";
 import { Manage } from "./views/Manage.tsx";
 import { Button, ErrorNote, Field, Modal, Spinner, Toggle, useErrorText, useT } from "./components/ui.tsx";
 import { api } from "./lib/api.ts";
+import { instanceBase, isPackaged } from "./lib/instance.ts";
 import { onStaleBuild, watchBuild } from "./lib/version.ts";
 import type { Invite as InviteEntity } from "@distop/protocol";
 
@@ -129,6 +131,8 @@ export function App() {
   }, [activeChannelId, voiceChat, isMobile, setMembersOpen]);
 
   useEffect(() => {
+    // Empaquetado y sin instancia elegida no hay a quién preguntar todavía.
+    if (isPackaged() && !instanceBase) return;
     void boot();
   }, [boot]);
 
@@ -148,6 +152,10 @@ export function App() {
   useEffect(() => {
     if (user && !activeCommunityId && communities[0]) void openCommunity(communities[0].id);
   }, [user, activeCommunityId, communities, openCommunity]);
+
+  // La app instalada no la sirvió ninguna instancia: sin una elegida, lo
+  // primero es elegirla. En la web esta rama no existe (§4).
+  if (isPackaged() && !instanceBase) return <Connect />;
 
   const inviteCode = path.startsWith("/invite/") ? path.slice("/invite/".length) : null;
 

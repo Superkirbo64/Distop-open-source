@@ -7,7 +7,7 @@ import { PROTOCOL_VERSION } from "@distop/protocol";
 import type { InstanceHealth, InstanceState } from "@distop/protocol";
 import { config } from "./config.ts";
 import { db, INSTANCE_ID } from "./db.ts";
-import { storageUsedMb } from "./storage.ts";
+import { storageFreeMb, storageUsedMb } from "./storage.ts";
 
 export const VERSION = "0.1.0";
 const STARTED_AT = Date.now();
@@ -18,13 +18,20 @@ export function setState(next: InstanceState): void {
 }
 
 let cachedStorageMb = 0;
+let cachedFreeMb = 0;
 let storageCheckedAt = 0;
+
+/** La limpieza de datos deja el caché viejo un minuto: se invalida a mano. */
+export function invalidateStorageCache(): void {
+  storageCheckedAt = 0;
+}
 
 export function instanceHealth(onlineUsers: number): InstanceHealth {
   const now = Date.now();
   // Recorrer el árbol de uploads en cada /health castiga discos lentos (NAS, Pi).
   if (now - storageCheckedAt > 60_000) {
     cachedStorageMb = storageUsedMb();
+    cachedFreeMb = storageFreeMb();
     storageCheckedAt = now;
   }
 
@@ -45,6 +52,7 @@ export function instanceHealth(onlineUsers: number): InstanceHealth {
     memory_used_mb: Math.round((totalmem() - freemem()) / 1024 / 1024),
     memory_total_mb: Math.round(totalmem() / 1024 / 1024),
     storage_used_mb: cachedStorageMb,
+    storage_free_mb: cachedFreeMb,
     max_upload_mb: config.maxUploadMb,
     registration_enabled: config.registrationEnabled,
     guest_mode_enabled: config.guestModeEnabled,

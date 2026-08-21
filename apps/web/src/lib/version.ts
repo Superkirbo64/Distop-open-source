@@ -10,6 +10,8 @@
  * servidor no es el que estoy ejecutando, hay versión nueva.
  */
 
+import { isPackaged } from "./instance.ts";
+
 type Listener = (stale: boolean) => void;
 
 const listeners = new Set<Listener>();
@@ -46,6 +48,9 @@ export function onStaleBuild(listener: Listener): () => void {
 export function watchBuild(): void {
   // En desarrollo el módulo lo sirve Vite con recarga en caliente: aquí sobra.
   if (!import.meta.env.PROD) return;
+  // Empaquetado, el bundle no lo sirve la instancia: recargar no traería nada
+  // nuevo. De avisar de versiones se encarga el actualizador de la propia app.
+  if (isPackaged()) return;
 
   void check();
   // Al volver a la pestaña es cuando más probable es haber quedado atrás, y no

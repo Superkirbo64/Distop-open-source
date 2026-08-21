@@ -14,8 +14,19 @@
  * corriendo a la vez como mensajes cargados, la mayoría fuera de pantalla.
  */
 import { useEffect, useRef } from "react";
-import lottie, { type AnimationItem } from "lottie-web/build/player/lottie_light";
+import type { AnimationItem } from "lottie-web/build/player/lottie_light";
 import { ANIMATED_EMOJI } from "../lib/animatedEmoji.generated.ts";
+
+/* El motor (~170 KB minificado) se pide la primera vez que un emoji animado
+   entra en pantalla, no al arrancar la aplicación: quien no cruza ninguno no
+   lo descarga, y el primer pintado no lo espera. El import dinámico saca el
+   chunk del bundle principal; una vez resuelto queda cacheado aquí. */
+let lottiePromise: Promise<(typeof import("lottie-web/build/player/lottie_light"))["default"]> | null = null;
+
+function loadLottie() {
+  lottiePromise ??= import("lottie-web/build/player/lottie_light").then((m) => m.default);
+  return lottiePromise;
+}
 
 /** Un JSON pedido una vez sirve para todas las instancias que usen ese emoji. */
 const cache = new Map<string, Promise<object>>();
@@ -56,7 +67,7 @@ export function AnimatedEmoji({ char, size = 22, className = "" }: { char: strin
           return;
         }
         if (anim) return; // ya está corriendo
-        void fetchAnimation(id).then((animationData) => {
+        void Promise.all([fetchAnimation(id), loadLottie()]).then(([animationData, lottie]) => {
           if (cancelled || !host.current) return;
           anim = lottie.loadAnimation({ container: host.current, renderer: "svg", loop: true, autoplay: true, animationData });
         });

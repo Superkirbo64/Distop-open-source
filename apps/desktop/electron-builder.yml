@@ -1,0 +1,47 @@
+# Empaquetado del cliente de escritorio (§15, §16).
+# extraResources replica la forma del repo: el node-server encuentra el cliente
+# en ../web/dist igual que en desarrollo, sin variables de entorno extra.
+appId: com.distop.app
+productName: Distop
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - dist/**
+  - package.json
+
+extraResources:
+  - from: ../web/dist
+    to: web/dist
+  - from: ../node-server
+    to: node-server
+    filter:
+      - "*.ts"
+      - "package.json"
+      - "!*.test.ts"
+  # Transpilado a JS por scripts/stage-protocol.mjs: bajo node_modules, Node
+  # se niega a ejecutar .ts (ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING).
+  - from: staging/protocol
+    to: node-server/node_modules/@distop/protocol
+  - from: ../../node_modules/ws
+    to: node-server/node_modules/ws
+
+win:
+  target:
+    - nsis
+  icon: build/icon.ico
+
+nsis:
+  oneClick: true
+  perMachine: false
+  deleteAppDataOnUninstall: false
+
+# Releases de GitHub: distribución y auto-update sin coste (§3).
+# releaseType release y no draft: el job de Android sube su APK a la misma
+# release por tag, y un borrador no se encuentra por tag.
+publish:
+  provider: github
+  owner: Superkirbo64
+  repo: Distop-open-source
+  releaseType: release

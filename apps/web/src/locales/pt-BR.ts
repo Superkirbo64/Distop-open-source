@@ -68,10 +68,42 @@ export const ptBR: Record<keyof typeof es, string> = {
   "instance.uptime": "Ligada há",
   "instance.memory": "Memória",
   "instance.storage": "Armazenamento",
+  "instance.storageFree": "restam {free} livres",
+  "instance.purge": "Limpar dados",
+  "instance.purgeHint":
+    "Esvazia o histórico para recuperar espaço em disco: apaga os chats, fotos, GIFs e arquivos de todas as comunidades. As comunidades ficam, com seus membros, cargos, canais, emojis e avatares.",
+  "instance.purgeWarning":
+    "Isto apaga PARA SEMPRE todas as mensagens e seus arquivos, de todas as comunidades desta instância. Não há lixeira nem como recuperar. Sua comunidade não é excluída: só o histórico dela.",
+  "instance.purgeDo": "Apagar o histórico para sempre",
+  "instance.purgeDone": "Feito: {messages} mensagens apagadas e {mb} MB recuperados.",
   "instance.users": "Pessoas conectadas",
   "instance.version": "Versão",
   "instance.offlineHelp":
     "A comunidade vive na máquina de quem hospeda. Se ela estiver desligada, não há serviço até voltar.",
+
+  "connect.title": "Conectar a uma instância",
+  "connect.hint":
+    "O aplicativo viaja com você; cada comunidade vive no seu próprio servidor. Cole o endereço da instância em que você quer entrar.",
+  "connect.url": "Endereço da instância",
+  "connect.urlHint": "O mesmo que você usaria no navegador, com https:// na frente.",
+  "connect.action": "Conectar",
+  "connect.checking": "Verificando…",
+  "connect.invalid": "Esse endereço não é válido. Só são aceitos endereços http ou https.",
+  "connect.unreachable":
+    "Ninguém responde aí. A instância pode estar desligada, o túnel pode ter fechado ou o endereço tem um erro de digitação.",
+  "connect.notInstance": "Algo responde nesse endereço, mas não é uma instância do Distop.",
+  "connect.known": "Instâncias recentes",
+  "connect.forget": "Esquecer",
+  "connect.hostHere": "Hospedar aqui",
+  "connect.hostHint":
+    "Sua comunidade roda neste computador, dentro do aplicativo: seus dados ficam com você. Ela estará disponível enquanto esta máquina estiver ligada, e a velocidade depende da sua conexão.",
+  "connect.hostEnter": "Entrar na minha instância",
+  "connect.hostStarting": "Iniciando a instância…",
+
+  "game.playing": "Jogando {name}",
+  "game.for": "há {time}",
+  "game.recent": "Jogos recentes",
+  "game.duration": "{time} · {date}",
 
   "share.title": "Compartilhar sua instância",
   "share.address": "Endereço para convidar",
@@ -222,6 +254,12 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.qualityLow": "Econômica — até 30 fps · câmera 1,5 / tela 3 Mbit/s",
   "voice.qualityMedium": "Equilibrada — até 60 fps · câmera 4 / tela 8 Mbit/s",
   "voice.qualityHigh": "Máxima — até 120 fps · câmera 12 / tela 24 Mbit/s",
+  "voice.priority": "O que priorizar",
+  "voice.priorityHint":
+    "Quando a banda não dá para tudo, algo é sacrificado. Aqui você escolhe o quê: quadros ou detalhe.",
+  "voice.priorityFluid": "Fluidez — movimento suave, um pouco menos de nitidez",
+  "voice.priorityBalanced": "Equilibrada — câmera fluida, tela nítida",
+  "voice.prioritySharp": "Nitidez — imagem definida, metade dos quadros",
   "voice.link.new": "conectando",
   "voice.link.connecting": "conectando",
   "voice.link.disconnected": "sem conexão",
@@ -269,6 +307,9 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.deviceAllow": "Ver os nomes",
   "voice.micVolume": "Volume do microfone",
   "voice.micVolumeHint": "Aplicado antes de enviar. Acima de 100% amplifica e pode distorcer.",
+  "voice.micTest": "Testar o microfone",
+  "voice.micTestStop": "Parar o teste",
+  "voice.micTestHint": "Fale: se a barra se mexer, dá para te ouvir. Nada sai deste computador.",
   "voice.outVolume": "Volume da chamada",
   "voice.outVolumeHint": "Afeta as vozes e os sons da sala, não o resto do computador.",
   "voice.outputFixed": "Este navegador não deixa escolher por onde o som sai: usa a saída do sistema.",
@@ -393,6 +434,13 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.bio": "Sobre você",
   "settings.pronouns": "Pronomes",
   "settings.accent": "Cor de destaque",
+  "settings.gameActivity": "Atividade de jogo",
+  "settings.gameActivityHint":
+    "A detecção roda no aplicativo de desktop, na sua máquina. Só o nome do jogo chega ao servidor — nunca a sua lista de programas.",
+  "settings.gameShare": "Mostrar o que estou jogando",
+  "settings.gameShareHint": "Desligado, ninguém vê sua partida em andamento e a detecção para de enviar.",
+  "settings.gameHistory": "Mostrar meus jogos recentes no perfil",
+  "settings.gameHistoryHint": "Desligado, seu histórico de partidas fica só com você.",
   "settings.avatar": "Seu avatar",
   "settings.avatarHint":
     "Envie um PNG, JPG, GIF ou WebP, ou cole um link. GIFs animados valem igual: aqui não se cobra por isso.",
@@ -454,6 +502,12 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.upgradeHint":
     "Você mantém mensagens, comunidades e identidade. Só adiciona usuário e senha.",
   "settings.revokeAll": "Sair em todos os dispositivos",
+  "settings.changePassword": "Trocar a senha",
+  "settings.changePasswordHint":
+    "Ao trocar, as sessões dos outros dispositivos são encerradas. Esta continua aberta.",
+  "settings.currentPassword": "Senha atual",
+  "settings.newPassword": "Senha nova",
+  "settings.passwordChanged": "Senha trocada. As outras sessões foram encerradas.",
 
   "manage.title": "Administrar {name}",
   "manage.overview": "Geral",
@@ -589,9 +643,16 @@ export const ptBR: Record<keyof typeof es, string> = {
   "emoji.none": "Ainda não há nenhum.",
   "emoji.deleteConfirm":
     "Remover isto da comunidade? As mensagens que usavam vão mostrar o nome.",
+  "profile.identity": "Identidade",
+  "profile.avatarDeco": "Avatar e decoração",
+  "profile.bannerPlate": "Banner e placa",
+  "profile.nameStyle": "Estilo do nome",
+  "profile.theme": "Tema do perfil",
+  "profile.memberSince": "Membro desde",
   "profileStyle.title": "Aparência do perfil",
   "profileStyle.hint":
     "Tudo grátis, sem desbloquear nada. O catálogo inteiro vem com a instância.",
+  "profileStyle.deco": "Decoração do avatar",
   "profileStyle.rings": "Anéis inclusos",
   "profileStyle.ringsCredit":
     "Anéis: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
@@ -629,10 +690,10 @@ export const ptBR: Record<keyof typeof es, string> = {
   "style.gradient": "Degradê",
   "style.pop": "Pop",
   "style.animated": "Animado",
-  "style.sparkles": "Brilhos",
-  "style.confetti": "Confete",
-  "style.rain": "Chuva",
   "style.embers": "Brasas",
+  "style.snow": "Neve",
+  "style.fireworks": "Fogos de artifício",
+  "style.bubbles": "Bolhas",
   "emoji.usedBy": "Criado por",
   "emoji.telegramImport": "Importar de um pacote do Telegram",
   "emoji.telegramHint":

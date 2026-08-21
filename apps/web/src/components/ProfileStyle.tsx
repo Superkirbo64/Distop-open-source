@@ -9,18 +9,20 @@
  * diálogo, y anidar otro encima obliga a cerrar dos cosas para volver. Además
  * así se ve el efecto de cada opción sobre la vista previa sin abrir nada.
  */
-import type { ReactNode } from "react";
-import { RotateCcw } from "lucide-react";
+import { Suspense, lazy, useState, useSyncExternalStore, type ReactNode } from "react";
+import { ImagePlus, RotateCcw } from "lucide-react";
 import {
   NAMEPLATES,
   NAME_EFFECTS,
   NAME_FONTS,
   PROFILE_EFFECTS,
   RINGS,
+  type ProfileEffect,
   type ProfileStyle,
 } from "@distop/protocol";
 import type { MessageKey } from "../i18n.ts";
-import { Avatar, DisplayName, ImageField, useT } from "./ui.tsx";
+import { useStore } from "../store.ts";
+import { Avatar, DisplayName, ImageField, useLocale, useT } from "./ui.tsx";
 
 /**
  * El fondo de una tarjeta de perfil, en un solo sitio.
@@ -50,124 +52,275 @@ export function profileSurfaceBackground(style: ProfileStyle, accent: string | n
   return `linear-gradient(color-mix(in srgb, var(--surface) 62%, transparent), color-mix(in srgb, var(--surface) 76%, transparent)), ${profileGradient(style, accent)}`;
 }
 
-/** Clase del efecto de tarjeta, o cadena vacía. Misma razón que cardBackground. */
-export function effectClass(style: ProfileStyle): string {
-  return style.profile_effect === "none" ? "" : `pfx pfx-${style.profile_effect}`;
+/* Los efectos que dibuja tsParticles en un canvas; el resto sigue siendo CSS
+   puro. La división vive aquí y no en el protocolo porque es un detalle de
+   CÓMO los pinta este cliente, no de qué ids existen. */
+const PARTICLE_EFFECTS: ReadonlySet<string> = new Set(["snow", "fireworks", "bubbles"]);
+
+/* lazy: engine y presets de tsParticles van en un chunk aparte que solo se
+   descarga la primera vez que hay que pintar uno de estos efectos. */
+const ParticleEffect = lazy(() => import("./ParticleEffect.tsx"));
+
+function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = matchMedia("(prefers-reduced-motion: reduce)");
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
 }
 
-export function ProfileStyleEditor({
+/**
+ * La capa decorativa de la tarjeta, en un solo sitio. Misma razón que
+ * cardBackground: la usan la vista previa, la tarjeta de miembro, la barra de
+ * usuario y las muestras del selector.
+ */
+export function CardEffectLayer({ effect, className }: { effect: ProfileEffect; className: string }) {
+  /* A los efectos CSS los congela la regla global de reduced-motion; el canvas
+     no lee CSS, así que las dos formas de pedir quietud se aplican aquí: sin
+     movimiento, el canvas ni se monta. */
+  const motion = useStore((s) => s.prefs.motion);
+  const reduced = usePrefersReducedMotion();
+
+  if (effect === "none") return null;
+  if (PARTICLE_EFFECTS.has(effect)) {
+    if (!motion || reduced) return null;
+    return (
+      <Suspense fallback={null}>
+        <ParticleEffect effect={effect} className={`pfx-live ${className}`} />
+      </Suspense>
+    );
+  }
+  return <div className={`pfx pfx-${effect} ${className}`} aria-hidden />;
+}
+
+/**
+ * La tarjeta de perfil grande, como la verán los demás (§10.1).
+ * Es la protagonista del editor —estilo Discord: controles a un lado, tarjeta
+ * viva al otro— y cada cambio de la izquierda se pinta aquí al instante.
+ */
+export function ProfileCardPreview({
+  style,
+  name,
+  username,
+  pronouns,
+  bio,
+  avatarUrl,
+  bannerUrl,
+  accent,
+  userId,
+  createdAt,
+}: {
+  style: ProfileStyle;
+  name: string;
+  username: string;
+  pronouns: string;
+  bio: string;
+  avatarUrl: string;
+  bannerUrl: string;
+  accent: string;
+  userId: string | undefined;
+  createdAt: number | undefined;
+}) {
+  const t = useT();
+  const locale = useLocale();
+  const since = createdAt
+    ? new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric" }).format(new Date(createdAt))
+    : null;
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-[14px] border border-line shadow-[var(--shadow)]"
+      style={{ background: profileSurfaceBackground(style, accent) }}
+    >
+      <div className="h-28 w-full" style={{ background: cardBackground(style, accent, bannerUrl || null) }} />
+
+      <div className="-mt-12 px-4 pb-4">
+        <div className="relative inline-block">
+          <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={96} profile={style} cutout={6} />
+          {/* El punto de presencia es parte de cómo te ven: la vista previa lo enseña. */}
+          <span
+            className="absolute right-1 bottom-1 block h-5 w-5 rounded-full border-[3px]"
+            style={{ background: "var(--ok)", borderColor: "var(--surface)" }}
+            aria-hidden
+          />
+        </div>
+
+        <p className="mt-2 truncate text-xl font-bold">
+          <DisplayName name={name || "?"} style={style} accent={null} />
+        </p>
+        <p className="truncate text-sm text-muted">
+          @{username}
+          {pronouns ? ` · ${pronouns}` : ""}
+        </p>
+
+        {bio ? <p className="mt-2 text-sm whitespace-pre-wrap">{bio}</p> : null}
+
+        {since ? (
+          <div className="mt-3 rounded-[10px] border border-line bg-surface/75 px-3 py-2 backdrop-blur-sm">
+            <p className="text-[0.65rem] font-semibold tracking-wider text-muted uppercase">{t("profile.memberSince")}</p>
+            <p className="text-sm font-medium">{since}</p>
+          </div>
+        ) : null}
+
+        {/* Cómo se ve en la lista de miembros, que es donde vive la placa. */}
+        <div
+          className={`mt-2 flex items-center gap-2 rounded-[10px] border border-line bg-surface/75 px-2 py-1.5 backdrop-blur-sm plate plate-${style.nameplate}`}
+        >
+          <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={24} />
+          <span className="truncate text-sm font-medium">
+            <DisplayName name={name || "?"} style={style} accent={accent} />
+          </span>
+        </div>
+      </div>
+
+      {/* El efecto cubre la tarjeta ENTERA, no solo la portada. Va al final
+          para pintarse encima del contenido; sus clases llevan
+          pointer-events: none, así que nada de debajo pierde el clic. */}
+      <CardEffectLayer effect={style.profile_effect} className="absolute inset-0" />
+    </div>
+  );
+}
+
+/* ── seletores por categoría, para el carril del editor ──────────────────
+   Cada uno es una sección del editor estilo Discord. Todo el catálogo está en
+   todos: no hay "tus artículos" contra "la tienda", ni candados (§10, §29.6). */
+
+/**
+ * Decoración del avatar: UN solo catálogo.
+ * Los aros incluidos y la imagen propia son la misma decisión —qué adorna tu
+ * avatar—, así que viven en la misma rejilla y se excluyen entre sí: el
+ * componente Avatar pinta las dos capas a la vez, y apiladas son un borrón.
+ */
+export function AvatarDecoPicker({
   value,
   onChange,
   name,
   avatarUrl,
-  bannerUrl,
-  accent,
   userId,
 }: {
   value: ProfileStyle;
   onChange: (patch: Partial<ProfileStyle>) => void;
   name: string;
   avatarUrl: string;
-  bannerUrl: string;
-  accent: string;
   userId: string | undefined;
 }) {
   const t = useT();
+  const custom = value.avatar_deco_url;
+  /* El formulario de subida se abre desde su casilla de la rejilla; si ya hay
+     una decoración propia puesta, se queda a la vista para poder cambiarla. */
+  const [customOpen, setCustomOpen] = useState(false);
 
   return (
-    <section className="flex flex-col gap-4 rounded-[10px] border border-line p-3">
-      <div>
-        <h3 className="display text-sm font-bold">{t("profileStyle.title")}</h3>
-        <p className="mt-0.5 text-xs text-muted">{t("profileStyle.hint")}</p>
-      </div>
+    <fieldset>
+      <legend className="mb-1.5 text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
+        {t("profileStyle.deco")}
+      </legend>
+      {/* Rejilla y no fila con scroll: con 40 casillas y una sola visible a la
+          vez, deslizar seria buscar a ciegas. */}
+      <div className="grid max-h-56 grid-cols-5 gap-2 overflow-y-auto pb-1 sm:grid-cols-6">
+        <button
+          onClick={() => onChange({ avatar_ring: null, avatar_deco_url: null })}
+          aria-pressed={!value.avatar_ring && !custom}
+          title={t("style.none")}
+          className={`grid aspect-square place-items-center rounded-[10px] border text-[0.6rem] text-muted transition-colors ${
+            !value.avatar_ring && !custom ? "border-accent bg-accent-soft" : "border-line hover:border-accent"
+          }`}
+        >
+          {t("style.none")}
+        </button>
 
-      {/* Vista previa arriba del todo: cada fila de abajo cambia esto en directo,
-          que es lo que evita ir probando a ciegas y guardar para ver el resultado. */}
-      <div
-        className="overflow-hidden rounded-[10px] border border-line"
-        style={{ background: profileSurfaceBackground(value, accent) }}
-      >
-        <div className="h-24 w-full" style={{ background: cardBackground(value, accent, bannerUrl || null) }}>
-          <div className={`h-full w-full ${effectClass(value)}`} />
-        </div>
-        <div className="-mt-10 px-4 pb-4">
-          <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={80} profile={value} cutout={5} />
-          <p className="mt-2 truncate text-lg font-bold">
-            <DisplayName name={name || "?"} style={value} accent={null} />
-          </p>
-          {/* Cómo se ve en la lista de miembros, que es donde vive la placa. */}
-          <div className={`mt-2 flex items-center gap-2 rounded-[10px] border border-line bg-surface/75 px-2 py-1.5 backdrop-blur-sm plate plate-${value.nameplate}`}>
-            <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={24} />
-            <span className="truncate text-sm font-medium">
-              <DisplayName name={name || "?"} style={value} accent={accent} />
-            </span>
-          </div>
-        </div>
-      </div>
+        {/* Tu propia imagen es una casilla más del catálogo, no otra sección:
+            decorar el avatar es una sola decisión. No viene ninguna incluida a
+            propósito — repartir marcos exigiría repartir arte con licencia para
+            ello, y el proyecto no distribuye ilustraciones ajenas (§24). */}
+        <button
+          onClick={() => setCustomOpen((v) => !v)}
+          aria-pressed={Boolean(custom)}
+          aria-expanded={customOpen || Boolean(custom)}
+          title={t("profileStyle.ownDeco")}
+          className={`grid aspect-square place-items-center rounded-[10px] border transition-colors ${
+            custom ? "border-accent bg-accent-soft" : "border-dashed border-line text-muted hover:border-accent"
+          }`}
+        >
+          {custom ? (
+            <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={22} profile={{ ...value, avatar_ring: null }} />
+          ) : (
+            <ImagePlus size={15} aria-hidden />
+          )}
+          <span className="sr-only">{t("profileStyle.ownDeco")}</span>
+        </button>
 
-      {/* Aros incluidos. Rejilla y no fila con scroll como las demas: con 39 y
-          uno solo visible a la vez, deslizar seria buscar a ciegas. */}
-      <fieldset>
-        <legend className="mb-1.5 text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
-          {t("profileStyle.rings")}
-        </legend>
-        <div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto pb-1 sm:grid-cols-8">
+        {RINGS.map((aro) => (
           <button
-            onClick={() => onChange({ avatar_ring: null })}
-            aria-pressed={!value.avatar_ring}
-            title={t("style.none")}
-            className={`grid aspect-square place-items-center rounded-[10px] border text-[0.6rem] text-muted transition-colors ${
-              !value.avatar_ring ? "border-accent bg-accent-soft" : "border-line hover:border-accent"
+            key={aro.id}
+            onClick={() => onChange({ avatar_ring: aro.id, avatar_deco_url: null })}
+            aria-pressed={value.avatar_ring === aro.id && !custom}
+            title={aro.name}
+            className={`grid aspect-square place-items-center rounded-[10px] border transition-colors ${
+              value.avatar_ring === aro.id && !custom ? "border-accent bg-accent-soft" : "border-line hover:border-accent"
             }`}
           >
-            {t("style.none")}
+            <Avatar
+              name={name || "?"}
+              url={avatarUrl || null}
+              id={userId}
+              size={22}
+              profile={{ ...value, avatar_deco_url: null, avatar_ring: aro.id }}
+            />
+            <span className="sr-only">{aro.name}</span>
           </button>
-          {RINGS.map((aro) => (
-            <button
-              key={aro.id}
-              onClick={() => onChange({ avatar_ring: aro.id })}
-              aria-pressed={value.avatar_ring === aro.id}
-              title={aro.name}
-              className={`grid aspect-square place-items-center rounded-[10px] border transition-colors ${
-                value.avatar_ring === aro.id ? "border-accent bg-accent-soft" : "border-line hover:border-accent"
-              }`}
-            >
-              <Avatar
-                name={name || "?"}
-                url={avatarUrl || null}
-                id={userId}
-                size={22}
-                profile={{ ...value, avatar_deco_url: null, avatar_ring: aro.id }}
-              />
-              <span className="sr-only">{aro.name}</span>
-            </button>
-          ))}
+        ))}
+      </div>
+      {/* Credito exigido por la CC BY 4.0 de estos aros: nada que pagar, pero
+          si algo que citar — igual que las animaciones de Noto en el selector. */}
+      <p className="mt-1.5 text-[0.65rem] text-muted">{t("profileStyle.ringsCredit")}</p>
+
+      {customOpen || custom ? (
+        <div className="mt-2">
+          <ImageField
+            label={t("profileStyle.ownDeco")}
+            hint={t("profileStyle.ownDecoHint")}
+            value={custom ?? ""}
+            // Poner la propia quita el aro: son la misma capa, no dos.
+            onChange={(url) => onChange({ avatar_deco_url: url || null, ...(url ? { avatar_ring: null } : {}) })}
+            preview="round"
+          />
         </div>
-        {/* Credito exigido por la CC BY 4.0 de estos aros: nada que pagar, pero
-            si algo que citar — igual que las animaciones de Noto en el selector. */}
-        <p className="mt-1.5 text-[0.65rem] text-muted">{t("profileStyle.ringsCredit")}</p>
-      </fieldset>
+      ) : null}
+    </fieldset>
+  );
+}
 
-      {/* Decoracion propia. Aqui no viene ninguna incluida a proposito: repartir
-          marcos exigiria repartir arte con licencia para ello, y el proyecto no
-          distribuye ilustraciones que no sean suyas (§24). La pone quien la usa,
-          y entonces no hay lista de 65 sino las que quiera. */}
-      <ImageField
-        label={t("profileStyle.ownDeco")}
-        hint={t("profileStyle.ownDecoHint")}
-        value={value.avatar_deco_url ?? ""}
-        onChange={(url) => onChange({ avatar_deco_url: url || null })}
-        preview="round"
-      />
+/** Placa del nombre en la lista de miembros. */
+export function PlatePicker({ value, onChange }: { value: ProfileStyle; onChange: (patch: Partial<ProfileStyle>) => void }) {
+  const t = useT();
+  return (
+    <Row
+      label={t("profileStyle.plate")}
+      options={NAMEPLATES}
+      current={value.nameplate}
+      onPick={(nameplate) => onChange({ nameplate })}
+      render={(id) => <span className={`block h-7 w-14 rounded-md border border-line plate plate-${id}`} />}
+    />
+  );
+}
 
-      <Row
-        label={t("profileStyle.plate")}
-        options={NAMEPLATES}
-        current={value.nameplate}
-        onPick={(nameplate) => onChange({ nameplate })}
-        render={(id) => <span className={`block h-7 w-14 rounded-md border border-line plate plate-${id}`} />}
-      />
-
+/** Fuente, efecto y color del nombre visible. */
+export function NameStylePicker({
+  value,
+  onChange,
+  accent,
+}: {
+  value: ProfileStyle;
+  onChange: (patch: Partial<ProfileStyle>) => void;
+  accent: string;
+}) {
+  const t = useT();
+  return (
+    <div className="flex flex-col gap-3">
       <Row
         label={t("profileStyle.font")}
         options={NAME_FONTS}
@@ -175,7 +328,6 @@ export function ProfileStyleEditor({
         onPick={(name_font) => onChange({ name_font })}
         render={(id) => <span className={`text-base font-bold nfont-${id}`}>Ag</span>}
       />
-
       <Row
         label={t("profileStyle.effect")}
         options={NAME_EFFECTS}
@@ -187,30 +339,47 @@ export function ProfileStyleEditor({
           </span>
         )}
       />
-
-      <Row
-        label={t("profileStyle.profileEffect")}
-        options={PROFILE_EFFECTS}
-        current={value.profile_effect}
-        onPick={(profile_effect) => onChange({ profile_effect })}
-        render={(id) => (
-          <span
-            className={`block h-7 w-14 rounded-md ${id === "none" ? "" : `pfx pfx-${id}`}`}
-            style={{ background: cardBackground(value, accent, null) }}
-          />
-        )}
+      <ColorSlot
+        label={t("profileStyle.nameColor")}
+        value={value.name_color}
+        fallback={accent}
+        onChange={(name_color) => onChange({ name_color })}
       />
-
-      <div className="grid gap-3 sm:grid-cols-1">
-        <ColorSlot label={t("profileStyle.nameColor")} value={value.name_color} fallback={accent} onChange={(name_color) => onChange({ name_color })} />
-      </div>
-
-      <GradientControls value={value} accent={accent} onChange={onChange} />
-    </section>
+    </div>
   );
 }
 
-function GradientControls({
+/** Efecto animado de la tarjeta entera. */
+export function CardEffectPicker({
+  value,
+  onChange,
+  accent,
+}: {
+  value: ProfileStyle;
+  onChange: (patch: Partial<ProfileStyle>) => void;
+  accent: string;
+}) {
+  const t = useT();
+  return (
+    <Row
+      label={t("profileStyle.profileEffect")}
+      options={PROFILE_EFFECTS}
+      current={value.profile_effect}
+      onPick={(profile_effect) => onChange({ profile_effect })}
+      render={(id) => (
+        <span
+          className="relative block h-7 w-14 overflow-hidden rounded-md"
+          style={{ background: cardBackground(value, accent, null) }}
+        >
+          <CardEffectLayer effect={id} className="absolute inset-0" />
+        </span>
+      )}
+    />
+  );
+}
+
+/** Los dos colores del tema, su dirección y su punto de mezcla. */
+export function GradientControls({
   value,
   accent,
   onChange,

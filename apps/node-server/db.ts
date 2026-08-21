@@ -256,6 +256,21 @@ const MIGRATIONS: string[] = [
   ALTER TABLE emojis ADD COLUMN icon_attachment_id TEXT REFERENCES attachments(id) ON DELETE SET NULL;
   CREATE INDEX idx_emojis_icon_attachment ON emojis(icon_attachment_id);
   `,
+
+  /* Historial de partidas del perfil ("jugados recientemente", §9.1). Solo
+     partidas TERMINADAS: el "jugando ahora" vive en memoria (gamePresence.ts)
+     y muere con la instancia, igual que las salas de voz. Aquí no entra nada
+     que dure menos de un minuto, y hay un tope de filas por persona. */
+  `
+  CREATE TABLE game_sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game_name TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER NOT NULL
+  );
+  CREATE INDEX idx_game_sessions_user ON game_sessions(user_id, started_at DESC);
+  `,
 ];
 
 const current = (db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;

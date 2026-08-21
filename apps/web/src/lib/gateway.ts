@@ -5,6 +5,7 @@
  */
 import type { ClientCommand, ServerEvent } from "@distop/protocol";
 import { getTokens } from "./api.ts";
+import { absolutizeUrls, wsUrl } from "./instance.ts";
 
 export type ConnectionStatus = "connecting" | "online" | "reconnecting" | "offline";
 
@@ -49,10 +50,7 @@ function receiveMedia(data: ArrayBuffer): void {
  */
 function connectVideo(token: string): void {
   if (closedOnPurpose || videoSocket || socket?.readyState !== WebSocket.OPEN) return;
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  const media = new WebSocket(
-    `${protocol}://${location.host}/realtime?token=${encodeURIComponent(token)}&media=video`,
-  );
+  const media = new WebSocket(wsUrl(`/realtime?token=${encodeURIComponent(token)}&media=video`));
   videoSocket = media;
   media.binaryType = "arraybuffer";
   media.onmessage = (raw) => {
@@ -88,8 +86,7 @@ export function connect(): void {
   closedOnPurpose = false;
   emitStatus(retries === 0 ? "connecting" : "reconnecting");
 
-  const protocol = location.protocol === "https:" ? "wss" : "ws";
-  socket = new WebSocket(`${protocol}://${location.host}/realtime?token=${encodeURIComponent(tokens.access_token)}`);
+  socket = new WebSocket(wsUrl(`/realtime?token=${encodeURIComponent(tokens.access_token)}`));
 
   socket.onopen = () => {
     retries = 0;
@@ -113,6 +110,8 @@ export function connect(): void {
     } catch {
       return;
     }
+    // Misma frontera que api.ts: empaquetado, las rutas de media se absolutizan.
+    absolutizeUrls(event);
     for (const handler of eventHandlers) handler(event);
   };
 

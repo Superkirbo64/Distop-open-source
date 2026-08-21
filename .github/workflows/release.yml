@@ -1,0 +1,78 @@
+# Release (§16): al empujar un tag v* se construyen y publican los instaladores
+# en GitHub Releases — distribución y auto-update sin coste (§3).
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Windows: NSIS .exe + latest.yml (el feed que lee electron-updater).
+# Android: APK. Se firma solo si existen los secretos del keystore
+# (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+# ANDROID_KEY_PASSWORD); sin ellos se publica sin firmar, y se dice.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run dist --workspace @distop/desktop -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+  android:
+    # Tras windows: electron-builder crea la release del tag y este job le
+    # añade el APK; al revés, no habría release a la que subirlo.
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run build
+      - run: npx cap sync android
+        working-directory: apps/mobile
+
+      - name: Preparar keystore (si hay secretos)
+        if: ${{ vars.ANDROID_SIGNING == 'true' }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.keystore"
+            echo "ANDROID_KEYSTORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+            echo "ANDROID_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}"
+            echo "ANDROID_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Construir APK
+        run: ./gradlew assembleRelease
+        working-directory: apps/mobile/android
+
+      - name: Renombrar APK
+        run: |
+          APK=$(ls apps/mobile/android/app/build/outputs/apk/release/*.apk | head -n 1)
+          cp "$APK" "Distop-${GITHUB_REF_NAME}.apk"
+
+      - name: Publicar APK en la release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" "Distop-${GITHUB_REF_NAME}.apk" --clobber

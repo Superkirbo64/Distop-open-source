@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@distop/protocol": "*",
-    "ws": "8.18.0"
+    "ws": "8.21.3"
   },
   "devDependencies": {
     "@types/node": "22.10.5",

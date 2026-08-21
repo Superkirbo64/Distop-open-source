@@ -134,7 +134,16 @@ export const config = {
   ]),
 
   /** Orígenes del cliente web. "*" solo se acepta fuera de producción. */
-  corsOrigins: list("CORS_ORIGINS", ["http://localhost:5173", "http://127.0.0.1:5173"]),
+  corsOrigins: [
+    ...list("CORS_ORIGINS", ["http://localhost:5173", "http://127.0.0.1:5173"]),
+    /* Las apps empaquetadas no las sirve esta instancia: traen su propio origen
+       fijo (el protocolo de la app de escritorio, el WebView de Android). Van
+       siempre, no en la variable: toda instancia debe aceptar a sus clientes
+       instalados sin que cada anfitrión tenga que saber que esto existe. */
+    "app://distop",
+    "capacitor://localhost",
+    "https://localhost",
+  ],
 
   /**
    * Servidores ICE para la voz (§9.4).

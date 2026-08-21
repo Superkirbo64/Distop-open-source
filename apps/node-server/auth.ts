@@ -179,6 +179,7 @@ export function toSelfUser(row: UserRow): SelfUser {
     locale: row.locale,
     theme: row.theme,
     settings: safeJson(row.settings),
+    has_password: row.password_hash !== null,
   };
 }
 

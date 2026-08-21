@@ -6,3 +6,12 @@ data/
 .env.local
 *.log
 .DS_Store
+
+# app de escritorio: artefactos de electron-builder y protocolo transpilado
+apps/desktop/release/
+apps/desktop/staging/
+
+# android: nunca el keystore, ni los APK compilados
+*.keystore
+keystore.properties
+apps/mobile/release/

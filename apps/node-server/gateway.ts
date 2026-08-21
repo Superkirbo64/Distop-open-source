@@ -103,6 +103,18 @@ export function disconnectSession(sessionId: string): void {
   for (const client of videoClients) if (client.sessionId === sessionId) client.ws.close(4001, "sesión revocada");
 }
 
+/**
+ * Cierra TODOS los sockets de una persona. Revocar sesiones solo borra filas:
+ * un socket ya abierto seguiría recibiendo eventos con una sesión que no
+ * existe, y "cerrar sesión en todos los dispositivos" quedaría en mentira.
+ * Cada cliente reintenta con su token guardado: el que lo tenga nuevo vuelve
+ * a entrar; el revocado se queda en la pantalla de acceso, que es el punto.
+ */
+export function disconnectUser(userId: Snowflake): void {
+  for (const client of clients) if (client.userId === userId) client.ws.close(4001, "sesión revocada");
+  for (const client of videoClients) if (client.userId === userId) client.ws.close(4001, "sesión revocada");
+}
+
 function broadcastPresence(communityId: Snowflake): void {
   publish(communityId, { t: "PRESENCE_UPDATE", d: { community_id: communityId, online: onlineIn(communityId) } });
 }

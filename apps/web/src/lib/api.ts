@@ -4,8 +4,10 @@
  * petición una sola vez: la sesión se cae sola solo cuando el refresh muere.
  */
 import type { ApiError } from "@distop/protocol";
+import { absolutizeUrls, apiUrl, relativizeUrls, sessionKey } from "./instance.ts";
 
-const STORAGE_KEY = "distop.session";
+/* Por instancia: la sesión de tu nodo y la del nodo de un amigo no se pisan. */
+const STORAGE_KEY = sessionKey();
 
 export interface Tokens {
   access_token: string;
@@ -61,7 +63,7 @@ async function refresh(): Promise<boolean> {
   if (!tokens) return false;
   refreshing ??= (async () => {
     try {
-      const res = await fetch("/api/v1/auth/refresh", {
+      const res = await fetch(apiUrl("/api/v1/auth/refresh"), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ refresh_token: tokens!.refresh_token }),
@@ -108,19 +110,24 @@ async function parse<T>(res: Response): Promise<T> {
       },
     );
   }
-  return body as T;
+  // Empaquetado, las rutas de media de la instancia se vuelven absolutas aquí,
+  // en la única puerta de entrada, y no en cada <img> del árbol.
+  return absolutizeUrls(body) as T;
 }
 
 export async function api<T>(method: string, path: string, body?: unknown, retry = true): Promise<T> {
+  // El espejo de absolutizeUrls: lo que se guarda en la instancia vuelve a ser
+  // ruta relativa, no una URL absoluta que caduca cuando el túnel cambia.
+  const payload = body === undefined ? undefined : relativizeUrls(structuredClone(body));
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await fetch(apiUrl(path), {
       method,
       headers: {
-        ...(body === undefined ? {} : { "content-type": "application/json" }),
+        ...(payload === undefined ? {} : { "content-type": "application/json" }),
         ...(tokens ? { authorization: `Bearer ${tokens.access_token}` } : {}),
       },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
     throw new RequestError({
@@ -137,7 +144,7 @@ export async function api<T>(method: string, path: string, body?: unknown, retry
 }
 
 export async function upload(file: File): Promise<{ id: string; url: string; filename: string; size: number; content_type: string }> {
-  const res = await fetch("/api/v1/uploads", {
+  const res = await fetch(apiUrl("/api/v1/uploads"), {
     method: "POST",
     headers: {
       "content-type": file.type || "application/octet-stream",
@@ -151,7 +158,7 @@ export async function upload(file: File): Promise<{ id: string; url: string; fil
 
 /** Descarga que respeta la sesión: el export no es una URL pública. */
 export async function download(path: string, filename: string): Promise<void> {
-  const res = await fetch(path, { headers: tokens ? { authorization: `Bearer ${tokens.access_token}` } : {} });
+  const res = await fetch(apiUrl(path), { headers: tokens ? { authorization: `Bearer ${tokens.access_token}` } : {} });
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");

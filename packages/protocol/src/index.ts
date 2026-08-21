@@ -104,6 +104,26 @@ export type UserKind = "local" | "guest";
 export const USER_STATUSES = ["online", "idle", "dnd", "invisible"] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
 
+/**
+ * "Jugando a X" (§9.1). Efímero como la presencia de conexión: lo alimenta la
+ * app de escritorio de quien juega y muere con un timeout, nunca se persiste.
+ * Solo viaja el NOMBRE ya casado con el catálogo local del jugador: la lista
+ * de procesos de su equipo no sale de su máquina (§8).
+ */
+export interface GamePresence {
+  user_id: Snowflake;
+  game_name: string;
+  started_at: number;
+}
+
+/** Una partida ya terminada, del historial "jugados recientemente" del perfil. */
+export interface GameSession {
+  id: Snowflake;
+  game_name: string;
+  started_at: number;
+  ended_at: number;
+}
+
 export interface PublicUser {
   id: Snowflake;
   username: string;
@@ -127,6 +147,9 @@ export interface SelfUser extends PublicUser {
   locale: string;
   theme: string;
   settings: Record<string, unknown>;
+  /** Si la cuenta tiene contraseña. Decide qué ofrece Ajustes → Cuenta:
+      ponerla (invitado o anfitrión recién puesto en marcha) o cambiarla. */
+  has_password: boolean;
 }
 
 /* ── personalización del perfil (§10.1, §10.2) ─────────────────────────
@@ -142,9 +165,10 @@ export interface SelfUser extends PublicUser {
    de la comunidad (§22). Con catálogo, lo peor que puede mandar es un id que
    no existe, y ese se descarta al normalizar.
 
-   Los efectos son CSS y nada más: ni imágenes que descargar, ni una librería
-   de animación, ni un asset por decoración. Cuestan cero bytes de red y se
-   ven igual en cualquier instancia recién instalada. */
+   Los efectos no dependen de ningún asset remoto: los primeros cinco son CSS
+   puro y los últimos cuatro son presets de tsParticles (MIT) empaquetados en
+   el build del cliente. Cero bytes de red en runtime y se ven igual en
+   cualquier instancia recién instalada. */
 
 export const NAMEPLATES = ["none", "mist", "aurora", "sunset", "forest", "ocean", "ember"] as const;
 export type Nameplate = (typeof NAMEPLATES)[number];
@@ -155,7 +179,14 @@ export type NameFont = (typeof NAME_FONTS)[number];
 export const NAME_EFFECTS = ["plain", "gradient", "neon", "pop", "animated"] as const;
 export type NameEffect = (typeof NAME_EFFECTS)[number];
 
-export const PROFILE_EFFECTS = ["none", "sparkles", "confetti", "rain", "embers", "aurora"] as const;
+export const PROFILE_EFFECTS = [
+  "none",
+  "embers",
+  "aurora",
+  "snow",
+  "fireworks",
+  "bubbles",
+] as const;
 export type ProfileEffect = (typeof PROFILE_EFFECTS)[number];
 
 export interface ProfileStyle {
@@ -512,6 +543,9 @@ export interface InstanceHealth {
   memory_used_mb: number;
   memory_total_mb: number;
   storage_used_mb: number;
+  /** Lo que queda libre en el disco donde viven los archivos. Quien hospeda
+      decide con esto cuándo limpiar, no cuando el disco ya se llenó (§26). */
+  storage_free_mb: number;
   max_upload_mb: number;
   registration_enabled: boolean;
   guest_mode_enabled: boolean;
@@ -534,6 +568,7 @@ export const GATEWAY_EVENTS = [
   "MEMBER_LEAVE",
   "MEMBER_UPDATE",
   "PRESENCE_UPDATE",
+  "GAME_PRESENCE_UPDATE",
   "TYPING_START",
   "VOICE_STATE_UPDATE",
   "VOICE_SIGNAL",
@@ -543,6 +578,7 @@ export const GATEWAY_EVENTS = [
   "ROLE_DELETE",
   "READ_UPDATE",
   "EMOJI_UPDATE",
+  "MESSAGES_PURGED",
   "ERROR",
   "PONG",
 ] as const;
@@ -571,6 +607,9 @@ export type ServerEvent =
   | { t: "MEMBER_LEAVE"; d: { community_id: Snowflake; user_id: Snowflake } }
   | { t: "MEMBER_UPDATE"; d: Member }
   | { t: "PRESENCE_UPDATE"; d: { community_id: Snowflake; online: Snowflake[] } }
+  /* La lista entera por comunidad, como PRESENCE_UPDATE: es corta y así no hay
+     dos maneras de tenerla desincronizada entre quien estaba y quien llega. */
+  | { t: "GAME_PRESENCE_UPDATE"; d: { community_id: Snowflake; presences: GamePresence[] } }
   | { t: "TYPING_START"; d: { channel_id: Snowflake; user_id: Snowflake; until: number } }
   | { t: "VOICE_STATE_UPDATE"; d: { channel_id: Snowflake; community_id: Snowflake; states: VoiceState[] } }
   | { t: "VOICE_SIGNAL"; d: VoiceSignal }
@@ -594,6 +633,11 @@ export type ServerEvent =
   /* La lista entera y no el que cambió: es corta y así no hay dos formas de
      tenerla desincronizada entre quien estaba conectado y quien acaba de entrar. */
   | { t: "EMOJI_UPDATE"; d: { community_id: Snowflake; emojis: CustomEmoji[] } }
+  /* Quien hospeda vació el historial de la instancia (§28.4): mensajes y
+     archivos de chat fuera. La comunidad, sus miembros, roles y canales siguen.
+     Sin este aviso, los demás clientes enseñarían una conversación que ya no
+     existe hasta la próxima recarga. */
+  | { t: "MESSAGES_PURGED"; d: { community_id: Snowflake } }
   | { t: "ERROR"; d: ApiError }
   | { t: "PONG"; d: { at: number } };
 

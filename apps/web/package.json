@@ -10,6 +10,14 @@
   },
   "dependencies": {
     "@distop/protocol": "*",
+    "@fontsource-variable/bricolage-grotesque": "5.3.0",
+    "@fontsource-variable/inter": "5.3.0",
+    "@tsparticles/engine": "^4.3.2",
+    "@tsparticles/plugin-interactivity": "^4.3.2",
+    "@tsparticles/preset-bubbles": "^4.3.2",
+    "@tsparticles/preset-fireworks": "^4.3.2",
+    "@tsparticles/preset-snow": "^4.3.2",
+    "@tsparticles/react": "^4.3.2",
     "lottie-web": "5.13.0",
     "lucide-react": "0.469.0",
     "motion": "^12.23.24",
@@ -23,6 +31,6 @@
     "@types/react-dom": "19.0.3",
     "@vitejs/plugin-react": "4.3.4",
     "tailwindcss": "4.3.3",
-    "vite": "6.0.7"
+    "vite": "6.4.3"
   }
 }

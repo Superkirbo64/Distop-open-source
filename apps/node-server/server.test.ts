@@ -308,6 +308,28 @@ test("publicar la instancia deja de tratar a nadie como local", async () => {
   }
 });
 
+test("los clientes empaquetados pasan el CORS y un origen ajeno no", async () => {
+  // La app de escritorio y la de Android no las sirve la instancia: llegan con
+  // su propio origen fijo y toda instancia debe aceptarlas sin configurar nada.
+  for (const origin of ["app://distop", "capacitor://localhost", "https://localhost"]) {
+    const res = await fetch(`${base}/api/v1/info`, { headers: { origin } });
+    assert.equal(res.headers.get("access-control-allow-origin"), origin, `${origin} debe estar admitido`);
+  }
+
+  const ajeno = await fetch(`${base}/api/v1/info`, { headers: { origin: "https://ajeno.example" } });
+  assert.equal(ajeno.headers.get("access-control-allow-origin"), null, "una web cualquiera no lee la API desde el navegador");
+
+  // El preflight tiene que admitir TODOS los verbos de la API. PUT faltó una
+  // vez y solo se notó cross-origin: same-origin no hace preflight.
+  const preflight = await fetch(`${base}/api/v1/users/me/game-presence`, {
+    method: "OPTIONS",
+    headers: { origin: "app://distop", "access-control-request-method": "PUT" },
+  });
+  for (const verbo of ["GET", "POST", "PUT", "PATCH", "DELETE"]) {
+    assert.ok(preflight.headers.get("access-control-allow-methods")?.includes(verbo), `falta ${verbo} en el preflight`);
+  }
+});
+
 test("uuidv7 ordena por tiempo de creación", () => {
   const ids = Array.from({ length: 50 }, uuidv7);
   assert.deepEqual([...ids].sort(), ids, "el orden lexicográfico coincide con el de creación");

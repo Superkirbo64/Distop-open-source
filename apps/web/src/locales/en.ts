@@ -68,10 +68,42 @@ export const en: Record<keyof typeof es, string> = {
   "instance.uptime": "Uptime",
   "instance.memory": "Memory",
   "instance.storage": "Storage",
+  "instance.storageFree": "{free} free",
+  "instance.purge": "Clean up data",
+  "instance.purgeHint":
+    "Empties the history to reclaim disk space: chats, photos, GIFs and files from every community are deleted. Communities stay, with their members, roles, channels, emojis and avatars.",
+  "instance.purgeWarning":
+    "This PERMANENTLY deletes every message and its files, across all communities on this instance. There is no trash bin and no way back. Your community is not deleted — only its history.",
+  "instance.purgeDo": "Delete the history forever",
+  "instance.purgeDone": "Done: {messages} messages deleted, {mb} MB reclaimed.",
   "instance.users": "People connected",
   "instance.version": "Version",
   "instance.offlineHelp":
     "The community lives on the host's machine. If that machine is off, there is no service until it returns.",
+
+  "connect.title": "Connect to an instance",
+  "connect.hint":
+    "The app travels with you; each community lives on its own server. Paste the address of the instance you want to join.",
+  "connect.url": "Instance address",
+  "connect.urlHint": "The same one you would use in the browser, with https:// in front.",
+  "connect.action": "Connect",
+  "connect.checking": "Checking…",
+  "connect.invalid": "That address is not valid. Only http or https addresses are accepted.",
+  "connect.unreachable":
+    "Nobody answers there. The instance may be off, the tunnel may have closed, or the address has a typo.",
+  "connect.notInstance": "Something answers at that address, but it is not a Distop instance.",
+  "connect.known": "Recent instances",
+  "connect.forget": "Forget",
+  "connect.hostHere": "Host here",
+  "connect.hostHint":
+    "Your community runs on this computer, inside the app: your data stays with you. It will be available while this machine is on, and speed depends on your connection.",
+  "connect.hostEnter": "Enter my instance",
+  "connect.hostStarting": "Starting the instance…",
+
+  "game.playing": "Playing {name}",
+  "game.for": "for {time}",
+  "game.recent": "Recent games",
+  "game.duration": "{time} · {date}",
 
   "share.title": "Share your instance",
   "share.address": "Address to invite people to",
@@ -219,6 +251,12 @@ export const en: Record<keyof typeof es, string> = {
   "voice.qualityLow": "Light — up to 30 fps · camera 1.5 / screen 3 Mbit/s",
   "voice.qualityMedium": "Balanced — up to 60 fps · camera 4 / screen 8 Mbit/s",
   "voice.qualityHigh": "Maximum — up to 120 fps · camera 12 / screen 24 Mbit/s",
+  "voice.priority": "What to prioritize",
+  "voice.priorityHint":
+    "When bandwidth can't cover everything, something gives. Here you pick what: frames or detail.",
+  "voice.priorityFluid": "Smoothness — fluid motion, slightly less sharpness",
+  "voice.priorityBalanced": "Balanced — fluid camera, sharp screen",
+  "voice.prioritySharp": "Sharpness — defined image, half the frames",
   "voice.link.new": "connecting",
   "voice.link.connecting": "connecting",
   "voice.link.disconnected": "no connection",
@@ -267,6 +305,9 @@ export const en: Record<keyof typeof es, string> = {
   "voice.deviceAllow": "Show names",
   "voice.micVolume": "Microphone volume",
   "voice.micVolumeHint": "Applied before sending. Above 100% it amplifies and may clip.",
+  "voice.micTest": "Test the microphone",
+  "voice.micTestStop": "Stop the test",
+  "voice.micTestHint": "Speak: if the bar moves, you can be heard. Nothing leaves this device.",
   "voice.outVolume": "Call volume",
   "voice.outVolumeHint": "Affects voices and room sounds, not the rest of the machine.",
   "voice.outputFixed": "This browser cannot pick where sound comes out: it uses the system output.",
@@ -389,6 +430,13 @@ export const en: Record<keyof typeof es, string> = {
   "settings.bio": "About you",
   "settings.pronouns": "Pronouns",
   "settings.accent": "Accent colour",
+  "settings.gameActivity": "Game activity",
+  "settings.gameActivityHint":
+    "Detection runs in the desktop app, on your machine. Only the game's name ever reaches the server — never your list of programs.",
+  "settings.gameShare": "Show what I'm playing",
+  "settings.gameShareHint": "Off, nobody sees your current game and detection stops reporting.",
+  "settings.gameHistory": "Show my recent games on my profile",
+  "settings.gameHistoryHint": "Off, your play history stays yours alone.",
   "settings.avatar": "Your avatar",
   "settings.avatarHint":
     "Upload a PNG, JPG, GIF or WebP, or paste a link. Animated GIFs work too: nothing is charged for that here.",
@@ -448,6 +496,12 @@ export const en: Record<keyof typeof es, string> = {
   "settings.upgradeHint":
     "You keep your messages, communities and identity. You only add a username and password.",
   "settings.revokeAll": "Sign out everywhere",
+  "settings.changePassword": "Change password",
+  "settings.changePasswordHint":
+    "Changing it signs out every other device. This session stays open.",
+  "settings.currentPassword": "Current password",
+  "settings.newPassword": "New password",
+  "settings.passwordChanged": "Password changed. All other sessions were signed out.",
 
   "manage.title": "Manage {name}",
   "manage.overview": "General",
@@ -583,9 +637,16 @@ export const en: Record<keyof typeof es, string> = {
   "emoji.none": "None yet.",
   "emoji.deleteConfirm":
     "Remove this from the community? Messages using it will show its name instead.",
+  "profile.identity": "Identity",
+  "profile.avatarDeco": "Avatar & decoration",
+  "profile.bannerPlate": "Banner & name plate",
+  "profile.nameStyle": "Name style",
+  "profile.theme": "Profile theme",
+  "profile.memberSince": "Member since",
   "profileStyle.title": "Profile look",
   "profileStyle.hint":
     "All free, nothing to unlock. The whole catalogue ships with the instance.",
+  "profileStyle.deco": "Avatar decoration",
   "profileStyle.rings": "Bundled rings",
   "profileStyle.ringsCredit":
     "Rings: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
@@ -623,10 +684,10 @@ export const en: Record<keyof typeof es, string> = {
   "style.gradient": "Gradient",
   "style.pop": "Pop",
   "style.animated": "Animated",
-  "style.sparkles": "Sparkles",
-  "style.confetti": "Confetti",
-  "style.rain": "Rain",
   "style.embers": "Embers",
+  "style.snow": "Snow",
+  "style.fireworks": "Fireworks",
+  "style.bubbles": "Bubbles",
   "emoji.usedBy": "Created by",
   "emoji.telegramImport": "Import from a Telegram pack",
   "emoji.telegramHint":

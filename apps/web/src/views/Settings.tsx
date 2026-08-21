@@ -3,18 +3,27 @@
  * Toda la personalización es gratuita por definición: aquí no hay nada bloqueado
  * ni ningún aviso de "mejora tu plan".
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_PROFILE_STYLE, type SelfUser } from "@distop/protocol";
-import { ExternalLink, Pipette } from "lucide-react";
+import { ChevronDown, ExternalLink, Pipette } from "lucide-react";
 import { useStore, type BackdropChoice, type Density, type FontChoice, type ThemeChoice } from "../store.ts";
-import { api } from "../lib/api.ts";
+import { api, setTokens, type Tokens } from "../lib/api.ts";
 import { inputDevice, probeNetwork, setIceServers, setInputDevice, setVideoMode } from "../lib/voice.ts";
 import * as audio from "../lib/relay.ts";
 import { LOCALES, LOCALE_LABELS } from "../i18n.ts";
-import { Avatar, Button, ErrorNote, Field, ImageField, Modal, Toggle, useT, useErrorText } from "../components/ui.tsx";
+import { Avatar, Button, DisplayName, ErrorNote, Field, ImageField, Modal, Toggle, useT, useErrorText } from "../components/ui.tsx";
 import { WallpaperField, WallpaperPicker } from "../components/Wallpaper.tsx";
 import { Gallery } from "../components/Gallery.tsx";
-import { ProfileStyleEditor } from "../components/ProfileStyle.tsx";
+import {
+  AvatarDecoPicker,
+  CardEffectLayer,
+  CardEffectPicker,
+  GradientControls,
+  NameStylePicker,
+  PlatePicker,
+  ProfileCardPreview,
+  profileGradient,
+} from "../components/ProfileStyle.tsx";
 import { askNotifyPermission, notifyPermission, type NotifyLevel } from "../lib/notify.ts";
 
 /** Paleta de partida. Cualquier otro color sale del selector, sin cortapisas. */
@@ -112,114 +121,280 @@ function ProfileTab() {
     }
   }
 
+  const style = form.profile_style;
+  const patchStyle = (patch: Partial<typeof style>) =>
+    setForm((prev) => ({ ...prev, profile_style: { ...prev.profile_style, ...patch } }));
+
+  /* Editor estilo Discord: carril de categorías a la izquierda —cada cabecera
+     enseña la elección actual en miniatura— y la tarjeta viva a la derecha,
+     que reacciona a cada cambio sin guardar. Una categoría abierta a la vez:
+     el catálogo entero desplegado era una pared de opciones. */
+  const [section, setSection] = useState<string | null>("avatar");
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-3 rounded-[10px] border border-line p-3">
-        <Avatar name={form.display_name || "?"} url={form.avatar_url || null} id={user?.id} size={72} profile={form.profile_style} />
-        <div className="min-w-0">
-          <p className="display truncate font-bold">{form.display_name}</p>
-          <p className="truncate text-sm text-muted">{form.pronouns || `@${user?.username}`}</p>
-        </div>
+    <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="flex min-w-0 flex-col gap-2">
+        <EditorSection
+          id="identity"
+          current={section}
+          onOpen={setSection}
+          title={t("profile.identity")}
+          preview={<span className="max-w-28 truncate text-xs text-muted">{form.display_name || `@${user?.username}`}</span>}
+        >
+          <div className="flex flex-col gap-3">
+            <Field label={t("settings.displayName")}>
+              {(id) => (
+                <input
+                  id={id}
+                  className="field"
+                  value={form.display_name}
+                  onChange={(e) => setForm({ ...form, display_name: e.target.value })}
+                  maxLength={48}
+                />
+              )}
+            </Field>
+            <Field label={t("settings.pronouns")} hint={t("common.optional")}>
+              {(id) => (
+                <input
+                  id={id}
+                  className="field"
+                  value={form.pronouns}
+                  onChange={(e) => setForm({ ...form, pronouns: e.target.value })}
+                  maxLength={32}
+                />
+              )}
+            </Field>
+            <Field label={t("settings.bio")} hint={t("common.optional")}>
+              {(id) => (
+                <textarea
+                  id={id}
+                  className="field min-h-24"
+                  value={form.bio}
+                  onChange={(e) => setForm({ ...form, bio: e.target.value })}
+                  maxLength={500}
+                />
+              )}
+            </Field>
+            <Field label={t("settings.accent")}>
+              {(id) => (
+                <input
+                  id={id}
+                  type="color"
+                  className="field h-11 p-1"
+                  value={form.accent_color}
+                  onChange={(e) => setForm({ ...form, accent_color: e.target.value })}
+                />
+              )}
+            </Field>
+          </div>
+        </EditorSection>
+
+        <EditorSection
+          id="avatar"
+          current={section}
+          onOpen={setSection}
+          title={t("profile.avatarDeco")}
+          preview={<Avatar name={form.display_name || "?"} url={form.avatar_url || null} id={user?.id} size={28} profile={style} />}
+        >
+          <div className="flex flex-col gap-3">
+            <ImageField
+              label={t("settings.avatar")}
+              hint={t("settings.avatarHint")}
+              value={form.avatar_url}
+              onChange={(url) => setForm({ ...form, avatar_url: url })}
+              preview="round"
+            />
+            <Expander label={t("settings.galleryAvatar")}>
+              <Gallery current={form.avatar_url} onPick={(url) => setForm({ ...form, avatar_url: url })} />
+            </Expander>
+            <AvatarDecoPicker value={style} onChange={patchStyle} name={form.display_name} avatarUrl={form.avatar_url} userId={user?.id} />
+          </div>
+        </EditorSection>
+
+        {/* Banner y placa juntos: los dos son "el fondo sobre el que va tu
+            nombre" — el banner en la tarjeta, la placa en la lista de miembros.
+            La cabecera enseña las dos miniaturas. */}
+        <EditorSection
+          id="banner"
+          current={section}
+          onOpen={setSection}
+          title={t("profile.bannerPlate")}
+          preview={
+            <>
+              <span
+                className="block h-7 w-12 rounded-md border border-line"
+                style={{
+                  background: form.banner_url
+                    ? `center/cover no-repeat url(${JSON.stringify(form.banner_url)})`
+                    : profileGradient(style, form.accent_color),
+                }}
+              />
+              <span className={`block h-7 w-12 rounded-md border border-line plate plate-${style.nameplate}`} />
+            </>
+          }
+        >
+          <div className="flex flex-col gap-3">
+            <ImageField
+              label={t("settings.banner")}
+              hint={t("settings.bannerHint")}
+              value={form.banner_url}
+              onChange={(url) => setForm({ ...form, banner_url: url })}
+              preview="wide"
+            />
+            {/* Dos galerías porque son dos cosas distintas: paisajes de
+                Wallhaven, y arte animado de la galería de perfiles. */}
+            <Expander label={t("settings.galleryBanner")}>
+              <Gallery current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
+            </Expander>
+            <WallpaperPicker current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
+
+            <PlatePicker value={style} onChange={patchStyle} />
+          </div>
+        </EditorSection>
+
+        <EditorSection
+          id="name"
+          current={section}
+          onOpen={setSection}
+          title={t("profile.nameStyle")}
+          preview={
+            <span className="text-sm font-bold">
+              <DisplayName name="Ag" style={style} accent={form.accent_color} />
+            </span>
+          }
+        >
+          <NameStylePicker value={style} onChange={patchStyle} accent={form.accent_color} />
+        </EditorSection>
+
+        <EditorSection
+          id="theme"
+          current={section}
+          onOpen={setSection}
+          title={t("profile.theme")}
+          preview={<span className="block h-7 w-12 rounded-md border border-line" style={{ background: profileGradient(style, form.accent_color) }} />}
+        >
+          <GradientControls value={style} accent={form.accent_color} onChange={patchStyle} />
+        </EditorSection>
+
+        <EditorSection
+          id="effect"
+          current={section}
+          onOpen={setSection}
+          title={t("profileStyle.profileEffect")}
+          preview={
+            <span
+              className="relative block h-7 w-12 overflow-hidden rounded-md border border-line"
+              style={{ background: profileGradient(style, form.accent_color) }}
+            >
+              <CardEffectLayer effect={style.profile_effect} className="absolute inset-0" />
+            </span>
+          }
+        >
+          <CardEffectPicker value={style} onChange={patchStyle} accent={form.accent_color} />
+        </EditorSection>
+
+        <GameActivityCard />
       </div>
 
-      {/* Avatar y banner ARRIBA, y no al final tras el nombre y los pronombres:
-          es lo primero que se viene a cambiar, y enterrados al pie no se
-          encontraban. Tampoco se llaman ya "URL de...": el campo sube ficheros
-          además de aceptar enlaces, y el nombre viejo hacía pensar lo contrario. */}
-      <ImageField
-        label={t("settings.avatar")}
-        hint={t("settings.avatarHint")}
-        value={form.avatar_url}
-        onChange={(url) => setForm({ ...form, avatar_url: url })}
-        preview="round"
-      />
+      {/* La tarjeta manda: es lo que verán los demás, y por eso vive fija al
+          lado mientras se prueba, con el guardar debajo. En pantalla estrecha
+          va PRIMERO: editar debajo de la tarjeta que cambia, no a ciegas. */}
+      <div className="order-first flex min-w-0 flex-col gap-3 lg:order-last lg:sticky lg:top-2">
+        <ProfileCardPreview
+          style={style}
+          name={form.display_name}
+          username={user?.username ?? ""}
+          pronouns={form.pronouns}
+          bio={form.bio}
+          avatarUrl={form.avatar_url}
+          bannerUrl={form.banner_url}
+          accent={form.accent_color}
+          userId={user?.id}
+          createdAt={user?.created_at}
+        />
 
-      <Expander label={t("settings.galleryAvatar")}>
-        <Gallery current={form.avatar_url} onPick={(url) => setForm({ ...form, avatar_url: url })} />
-      </Expander>
+        {error ? <ErrorNote>{error}</ErrorNote> : null}
 
-      <ImageField
-        label={t("settings.banner")}
-        hint={t("settings.bannerHint")}
-        value={form.banner_url}
-        onChange={(url) => setForm({ ...form, banner_url: url })}
-        preview="wide"
-      />
-
-      {/* Dos galerías para el banner porque son dos cosas distintas: paisajes de
-          Wallhaven, y arte animado de la galería de perfiles. */}
-      <Expander label={t("settings.galleryBanner")}>
-        <Gallery current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
-      </Expander>
-
-      <WallpaperPicker current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
-
-      <Field label={t("settings.displayName")}>
-        {(id) => (
-          <input
-            id={id}
-            className="field"
-            value={form.display_name}
-            onChange={(e) => setForm({ ...form, display_name: e.target.value })}
-            maxLength={48}
-          />
-        )}
-      </Field>
-
-      <Field label={t("settings.bio")} hint={t("common.optional")}>
-        {(id) => (
-          <textarea
-            id={id}
-            className="field min-h-24"
-            value={form.bio}
-            onChange={(e) => setForm({ ...form, bio: e.target.value })}
-            maxLength={500}
-          />
-        )}
-      </Field>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label={t("settings.pronouns")} hint={t("common.optional")}>
-          {(id) => (
-            <input
-              id={id}
-              className="field"
-              value={form.pronouns}
-              onChange={(e) => setForm({ ...form, pronouns: e.target.value })}
-              maxLength={32}
-            />
-          )}
-        </Field>
-
-        <Field label={t("settings.accent")}>
-          {(id) => (
-            <input
-              id={id}
-              type="color"
-              className="field h-11 p-1"
-              value={form.accent_color}
-              onChange={(e) => setForm({ ...form, accent_color: e.target.value })}
-            />
-          )}
-        </Field>
+        <Button variant="primary" onClick={save} disabled={state === "saving"} className="self-start">
+          {state === "saved" ? t("common.saved") : t("common.save")}
+        </Button>
       </div>
-
-      <ProfileStyleEditor
-        value={form.profile_style}
-        onChange={(patch) => setForm((prev) => ({ ...prev, profile_style: { ...prev.profile_style, ...patch } }))}
-        name={form.display_name}
-        avatarUrl={form.avatar_url}
-        bannerUrl={form.banner_url}
-        accent={form.accent_color}
-        userId={user?.id}
-      />
-
-      {error ? <ErrorNote>{error}</ErrorNote> : null}
-
-      <Button variant="primary" onClick={save} disabled={state === "saving"} className="self-start">
-        {state === "saved" ? t("common.saved") : t("common.save")}
-      </Button>
     </div>
+  );
+}
+
+/**
+ * Actividad de juego (§9.1, §29.6): los dos interruptores de privacidad.
+ * Guardan al momento, sin botón: un interruptor de privacidad que espera a un
+ * "Guardar" es un interruptor que la gente cree activado sin estarlo. Ausente
+ * en los ajustes = activado — instalar la app de escritorio y dejar que detecte
+ * ya fue el acto de consentimiento; esto es la pausa.
+ */
+function GameActivityCard() {
+  const t = useT();
+  const user = useStore((s) => s.user);
+  const refreshUser = useStore((s) => s.refreshUser);
+  if (!user) return null;
+
+  const share = user.settings.share_game_activity !== false;
+  const history = user.settings.show_game_history !== false;
+
+  async function toggle(key: "share_game_activity" | "show_game_history", value: boolean) {
+    try {
+      refreshUser(await api("PATCH", "/api/v1/users/me", { settings: { ...user!.settings, [key]: value } }));
+    } catch {
+      // El interruptor vuelve solo: refreshUser no llegó a cambiar nada.
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-[10px] border border-line p-3">
+      <div>
+        <h3 className="text-sm font-semibold">{t("settings.gameActivity")}</h3>
+        <p className="text-xs text-muted">{t("settings.gameActivityHint")}</p>
+      </div>
+      <Toggle checked={share} onChange={(v) => void toggle("share_game_activity", v)} label={t("settings.gameShare")} hint={t("settings.gameShareHint")} />
+      <Toggle checked={history} onChange={(v) => void toggle("show_game_history", v)} label={t("settings.gameHistory")} hint={t("settings.gameHistoryHint")} />
+    </section>
+  );
+}
+
+/**
+ * Una categoría del editor de perfil, plegada en una fila.
+ * La cabecera enseña la elección ACTUAL en miniatura —como hace Discord— para
+ * que el carril entero se lea de un vistazo sin abrir nada.
+ */
+function EditorSection({
+  id,
+  current,
+  onOpen,
+  title,
+  preview,
+  children,
+}: {
+  id: string;
+  current: string | null;
+  onOpen: (id: string | null) => void;
+  title: string;
+  preview: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const open = current === id;
+  return (
+    <section className="overflow-hidden rounded-[10px] border border-line">
+      <button
+        onClick={() => onOpen(open ? null : id)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:bg-raise"
+      >
+        <span className="text-sm font-semibold">{title}</span>
+        <span className="flex shrink-0 items-center gap-2">
+          {preview}
+          <ChevronDown size={15} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+        </span>
+      </button>
+      {open ? <div className="border-t border-line p-3">{children}</div> : null}
+    </section>
   );
 }
 
@@ -503,6 +678,8 @@ interface RelayState {
   mode: "direct" | "custom" | "cloudflare" | "metered";
   video: "host" | "direct";
   quality: "low" | "medium" | "high";
+  /** Qué sacrificar cuando el bitrate no da para todo: fotogramas o detalle. */
+  priority: "fluid" | "balanced" | "sharp";
   url: string;
   username: string;
   keyId: string;
@@ -585,6 +762,55 @@ function AudioSetup() {
   const name = (device: MediaDeviceInfo, index: number, key: "voice.deviceUnnamed" | "voice.deviceUnnamedOut") =>
     device.label || t(key, { n: index + 1 });
 
+  /* ── prueba del micrófono ─────────────────────────────────────────────
+     La barra se mueve si el aparato capta algo: es la manera de saber ANTES de
+     entrar en una sala que el micrófono elegido funciona. Nada sale del
+     equipo: el audio muere en el AnalyserNode, sin red ni grabación. */
+  const [testing, setTesting] = useState(false);
+  const [level, setLevel] = useState(0);
+  const testRef = useRef<{ stream: MediaStream; ctx: AudioContext; raf: number } | null>(null);
+
+  function stopTest(): void {
+    const test = testRef.current;
+    if (!test) return;
+    testRef.current = null;
+    cancelAnimationFrame(test.raf);
+    for (const track of test.stream.getTracks()) track.stop();
+    void test.ctx.close();
+    setTesting(false);
+    setLevel(0);
+  }
+
+  async function startTest(deviceId = mic): Promise<void> {
+    stopTest();
+    try {
+      const stream = await media!.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true });
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const data = new Uint8Array(analyser.fftSize);
+      const tick = () => {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (const value of data) sum += (value - 128) ** 2;
+        const rms = Math.sqrt(sum / data.length) / 128;
+        setLevel(Math.min(100, Math.round(rms * 250)));
+        if (testRef.current) testRef.current.raf = requestAnimationFrame(tick);
+      };
+      testRef.current = { stream, ctx, raf: requestAnimationFrame(tick) };
+      setTesting(true);
+      // Con el permiso ya concedido, los nombres de los aparatos aparecen.
+      await list();
+    } catch {
+      // Permiso negado o aparato ocupado: el botón simplemente no arranca.
+      setTesting(false);
+    }
+  }
+
+  // El micrófono se suelta al salir de Ajustes, no cuando lo recuerde el GC.
+  useEffect(() => stopTest, []);
+
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -604,6 +830,9 @@ function AudioSetup() {
                   onChange={(e) => {
                     setMic(e.target.value);
                     void setInputDevice(e.target.value);
+                    // Si la prueba está en marcha, sigue con el aparato nuevo:
+                    // es justo lo que se quiere comprobar al cambiarlo.
+                    if (testRef.current) void startTest(e.target.value);
                   }}
                 >
                   <option value="">{t("voice.deviceDefault")}</option>
@@ -644,6 +873,30 @@ function AudioSetup() {
               />
             )}
           </Field>
+
+          <div className="flex flex-col gap-2 rounded-[10px] border border-line p-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="ghost" onClick={() => (testing ? stopTest() : void startTest())}>
+                {testing ? t("voice.micTestStop") : t("voice.micTest")}
+              </Button>
+              <p className="text-xs text-muted">{t("voice.micTestHint")}</p>
+            </div>
+            {testing ? (
+              <div
+                className="h-2 overflow-hidden rounded-full bg-raise"
+                role="meter"
+                aria-label={t("voice.micTest")}
+                aria-valuenow={level}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
+                <div
+                  className="h-full rounded-full"
+                  style={{ width: `${level}%`, background: "var(--accent)", transition: "width 80ms linear" }}
+                />
+              </div>
+            ) : null}
+          </div>
 
           <Field
             label={t("voice.outputDevice")}
@@ -761,7 +1014,7 @@ function VoiceTab() {
       setRelayState(value);
       setElegido(value.mode);
       // Que valga ya para la próxima llamada, sin recargar la página.
-      setVideoMode(value.video, value.quality);
+      setVideoMode(value.video, value.quality, value.priority);
       await currentServers();
       setSaved(true);
       /* Guardar no es lo mismo que funcionar. Un proveedor puede aceptar tus
@@ -866,6 +1119,24 @@ function VoiceTab() {
             <option value="low">{t("voice.qualityLow")}</option>
             <option value="medium">{t("voice.qualityMedium")}</option>
             <option value="high">{t("voice.qualityHigh")}</option>
+          </select>
+        )}
+      </Field>
+
+      {/* El techo de arriba dice CUÁNTO; esto dice QUÉ SACRIFICAR cuando no
+          alcanza, que con vídeo es siempre: fotogramas o detalle por fotograma. */}
+      <Field label={t("voice.priority")} hint={t("voice.priorityHint")}>
+        {(id) => (
+          <select
+            id={id}
+            className="field"
+            value={relay.priority}
+            disabled={relay.locked}
+            onChange={(e) => void save({ priority: e.target.value as RelayState["priority"] })}
+          >
+            <option value="fluid">{t("voice.priorityFluid")}</option>
+            <option value="balanced">{t("voice.priorityBalanced")}</option>
+            <option value="sharp">{t("voice.prioritySharp")}</option>
           </select>
         )}
       </Field>
@@ -1090,7 +1361,9 @@ function AccountTab({ onClose }: { onClose: () => void }) {
   const logout = useStore((s) => s.logout);
   const refreshUser = useStore((s) => s.refreshUser);
 
-  const [username, setUsername] = useState("");
+  // Prellenado con el nombre actual: quien puso en marcha la instancia ya
+  // eligió uno, y obligar a teclearlo de nuevo invita a errores de tipeo.
+  const [username, setUsername] = useState(user?.username ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -1111,7 +1384,10 @@ function AccountTab({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="flex flex-col gap-5">
-      {user?.kind === "guest" ? (
+      {/* Por contraseña y no por tipo de cuenta: quien puso en marcha la
+          instancia es `local` sin contraseña, y también necesita poder ponerla
+          para volver desde otro equipo. */}
+      {user && !user.has_password ? (
         <section className="flex flex-col gap-3 rounded-[10px] border border-line p-4">
           <h3 className="display font-bold">{t("settings.upgrade")}</h3>
           <p className="text-sm text-muted">{t("settings.upgradeHint")}</p>
@@ -1154,9 +1430,12 @@ function AccountTab({ onClose }: { onClose: () => void }) {
           </Button>
         </section>
       ) : (
-        <p className="text-sm text-muted">
-          @{user?.username} · {t("settings.account")}
-        </p>
+        <>
+          <p className="text-sm text-muted">
+            @{user?.username} · {t("settings.account")}
+          </p>
+          <ChangePassword />
+        </>
       )}
 
       <div className="flex flex-wrap gap-2">
@@ -1183,6 +1462,89 @@ function AccountTab({ onClose }: { onClose: () => void }) {
 
       <DeleteAccount onDone={onClose} />
     </div>
+  );
+}
+
+/**
+ * Cambiar una contraseña que ya existe (§22).
+ * Pide la actual —tener el equipo desbloqueado no debe bastar— y el servidor
+ * cierra las demás sesiones al cambiarla: esta recibe tokens nuevos y sigue
+ * dentro, y aquí se dice claramente que el resto quedó fuera.
+ */
+function ChangePassword() {
+  const t = useT();
+  const errorText = useErrorText();
+  const refreshUser = useStore((s) => s.refreshUser);
+
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  async function change() {
+    setState("saving");
+    setError(null);
+    try {
+      const result = await api<Tokens & { user: SelfUser }>("POST", "/api/v1/users/me/password", {
+        current_password: current,
+        password: next,
+      });
+      setTokens({ access_token: result.access_token, refresh_token: result.refresh_token });
+      refreshUser(result.user);
+      setCurrent("");
+      setNext("");
+      setState("saved");
+    } catch (err) {
+      setError(errorText(err));
+      setState("idle");
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-[10px] border border-line p-4">
+      <h3 className="display font-bold">{t("settings.changePassword")}</h3>
+      <p className="text-sm text-muted">{t("settings.changePasswordHint")}</p>
+
+      <Field label={t("settings.currentPassword")}>
+        {(id) => (
+          <input
+            id={id}
+            type="password"
+            className="field"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            maxLength={200}
+            autoComplete="current-password"
+          />
+        )}
+      </Field>
+
+      <Field label={t("settings.newPassword")} hint={t("auth.passwordHint")}>
+        {(id) => (
+          <input
+            id={id}
+            type="password"
+            className="field"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            maxLength={200}
+            autoComplete="new-password"
+          />
+        )}
+      </Field>
+
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+      {state === "saved" ? <p className="text-sm text-ok">{t("settings.passwordChanged")}</p> : null}
+
+      <Button
+        variant="primary"
+        onClick={change}
+        disabled={state === "saving" || current.length === 0 || next.length < 10}
+        className="self-start"
+      >
+        {t("settings.changePassword")}
+      </Button>
+    </section>
   );
 }
 

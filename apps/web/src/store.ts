@@ -12,6 +12,7 @@ import type {
   Channel,
   Community,
   CustomEmoji,
+  GamePresence,
   InstanceHealth,
   Member,
   Message,
@@ -39,6 +40,8 @@ export interface CommunityData {
   roles: Role[];
   members: Member[];
   online: string[];
+  /** Quién está jugando a qué ahora mismo, de los que lo comparten (§9.1). */
+  game_presences: GamePresence[];
   voice_states: VoiceState[];
   /** Permisos en la comunidad, como bitfield decimal. */
   permissions: string;
@@ -302,7 +305,7 @@ export const useStore = create<State>()((set, get) => ({
         setup_required: boolean;
         setup_requires_code: boolean;
         ice_servers: RTCIceServer[];
-        video: { mode: "host" | "direct"; quality: "low" | "medium" | "high" };
+        video: { mode: "host" | "direct"; quality: "low" | "medium" | "high"; priority?: "fluid" | "balanced" | "sharp" };
         public_url: string;
         gif_enabled: boolean;
         sticker_gallery_enabled: boolean;
@@ -314,7 +317,7 @@ export const useStore = create<State>()((set, get) => ({
         stickerGalleryEnabled: Boolean(info.sticker_gallery_enabled),
       });
       iceServers = info.ice_servers ?? [];
-      setVideoMode(info.video?.mode ?? "host", info.video?.quality ?? "medium");
+      setVideoMode(info.video?.mode ?? "host", info.video?.quality ?? "medium", info.video?.priority ?? "balanced");
     } catch {
       // Instancia inalcanzable: el propio cliente lo dirá al intentar entrar.
     }
@@ -758,6 +761,15 @@ onEvent((event: ServerEvent) => {
       return;
     }
 
+    case "GAME_PRESENCE_UPDATE": {
+      const data = state.data[event.d.community_id];
+      if (!data) return;
+      useStore.setState({
+        data: { ...state.data, [event.d.community_id]: { ...data, game_presences: event.d.presences } },
+      });
+      return;
+    }
+
     case "ROLE_UPDATE": {
       const data = state.data[event.d.community_id];
       if (!data) return;
@@ -789,6 +801,26 @@ onEvent((event: ServerEvent) => {
           ...state.expressions.filter((e) => e.community_id !== event.d.community_id),
           ...event.d.emojis,
         ],
+      });
+      return;
+    }
+
+    /* Quien hospeda vació el historial (§28.4): fuera los mensajes, contadores
+       y la línea de "nuevos" de esa comunidad. Canales, miembros y roles se
+       quedan — fue una limpieza de disco, no un cierre. */
+    case "MESSAGES_PURGED": {
+      const data = state.data[event.d.community_id];
+      const ids = new Set(data?.channels.map((c) => c.id) ?? []);
+      for (const [channelId, owner] of Object.entries(state.channelOwner)) {
+        if (owner === event.d.community_id) ids.add(channelId);
+      }
+      const wipe = <T,>(record: Record<string, T>, empty: T): Record<string, T> =>
+        Object.fromEntries(Object.entries(record).map(([id, value]) => [id, ids.has(id) ? empty : value]));
+      useStore.setState({
+        messages: wipe(state.messages, []),
+        hasMore: wipe(state.hasMore, false),
+        unread: wipe(state.unread, { count: 0, mentions: 0 }),
+        divider: wipe(state.divider, null),
       });
       return;
     }
@@ -850,3 +882,16 @@ document.addEventListener("visibilitychange", () => {
   const { activeChannelId } = useStore.getState();
   if (activeChannelId) useStore.getState().markRead(activeChannelId);
 });
+
+/**
+ * A qué está jugando alguien, mirando en las comunidades ya cargadas. Cota
+ * inferior honesta, como `mutual` en la tarjeta de perfil: no se pregunta al
+ * servidor por cada fila pintada.
+ */
+export function gameOf(data: Record<string, CommunityData>, userId: string): GamePresence | undefined {
+  for (const community of Object.values(data)) {
+    const found = community.game_presences?.find((presence) => presence.user_id === userId);
+    if (found) return found;
+  }
+  return undefined;
+}

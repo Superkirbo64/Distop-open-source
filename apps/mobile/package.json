@@ -1,0 +1,19 @@
+{
+  "name": "@distop/mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cliente Android de Distop: el mismo cliente web, empaquetado con Capacitor.",
+  "scripts": {
+    "sync": "npm run build --workspace @distop/web --prefix ../.. && cap sync android",
+    "open": "cap open android",
+    "assets": "capacitor-assets generate --android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.0",
+    "@capacitor/core": "^7.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.4.0"
+  }
+}

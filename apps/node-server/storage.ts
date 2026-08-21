@@ -3,7 +3,7 @@
  * El nombre que sube el usuario nunca toca el sistema de ficheros: se guarda en
  * la base y en disco vive un UUID, lo que cierra path traversal por construcción.
  */
-import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { uuidv7 } from "@distop/protocol";
 import type { Attachment } from "@distop/protocol";
@@ -257,6 +257,46 @@ export function deleteAttachmentsOwnedBy(userId: string): void {
     if (full.startsWith(ROOT) && existsSync(full)) unlinkSync(full);
   }
   db.prepare("DELETE FROM attachments WHERE owner_id = ?").run(userId);
+}
+
+/**
+ * Vaciar el chat de la instancia entera (§28.4): los ficheros de los mensajes
+ * —fotos, GIF, adjuntos— fuera del disco, y sus filas con ellos.
+ *
+ * SOLO lo que cuelga de un mensaje (`message_id IS NOT NULL`). Lo demás se
+ * queda a propósito: emojis y sonidos de la comunidad, avatares, banners y
+ * fondos también son adjuntos, pero con message_id NULL — son personalización,
+ * no historial, y borrarlos rompería perfiles enteros (ver el aviso en db.ts).
+ */
+export function purgeChatFiles(): { files: number; mb: number } {
+  const rows = db.prepare("SELECT id, path, size FROM attachments WHERE message_id IS NOT NULL").all() as {
+    id: string;
+    path: string;
+    size: number;
+  }[];
+  let bytes = 0;
+  for (const row of rows) {
+    // Reenviado (§22): sin fichero propio, path queda vacío y no hay nada que borrar.
+    if (!row.path) continue;
+    const full = resolve(ROOT, row.path);
+    if (full.startsWith(ROOT) && existsSync(full)) {
+      unlinkSync(full);
+      bytes += row.size;
+    }
+  }
+  db.prepare("DELETE FROM attachments WHERE message_id IS NOT NULL").run();
+  return { files: rows.length, mb: Math.round((bytes / 1024 / 1024) * 10) / 10 };
+}
+
+/** Lo que queda libre en el disco donde viven los archivos, en MB. */
+export function storageFreeMb(): number {
+  try {
+    const stats = statfsSync(ROOT);
+    return Math.round((stats.bavail * stats.bsize) / 1024 / 1024);
+  } catch {
+    // Sistema de ficheros que no sabe contestar: mejor 0 que inventar un número.
+    return 0;
+  }
 }
 
 export function storageUsedMb(): number {
