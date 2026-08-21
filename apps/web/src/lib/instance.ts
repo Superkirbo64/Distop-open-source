@@ -111,6 +111,85 @@ export function sessionKey(): string {
   return instanceBase ? `distop.session::${instanceBase}` : "distop.session";
 }
 
+/** ¿La instancia activa corre en este mismo equipo? (la que hospeda la app) */
+export function isLocalInstance(base: string): boolean {
+  return /^http:\/\/(127\.0\.0\.1|localhost)(:|$)/.test(base);
+}
+
+/**
+ * Origen que se puede ENSEÑAR y compartir: la instancia activa o, en la web,
+ * el propio origen de la página. Nunca location.origin a secas en la app
+ * empaquetada — eso es app://distop, una dirección interna que a nadie sirve.
+ */
+export function clientOrigin(): string {
+  return instanceBase || location.origin;
+}
+
+/* Una invitación pegada antes de conectar sobrevive a la recarga: se apunta
+   aquí y App.tsx la abre en cuanto la aplicación vuelve a estar en pie. */
+const PENDING_INVITE = "distop.pendingInvite";
+
+export function storePendingInvite(code: string): void {
+  localStorage.setItem(PENDING_INVITE, code);
+}
+
+export function takePendingInvite(): string | null {
+  const code = localStorage.getItem(PENDING_INVITE);
+  if (code) localStorage.removeItem(PENDING_INVITE);
+  return code;
+}
+
+/* "Cambiar de instancia" pone esta marca antes de recargar: sin ella, la app
+   de escritorio volvería a hospedar y conectar sola, y sería una trampa. */
+const MANUAL_FLAG = "distop.chooseInstance";
+
+export function requestManualConnect(): void {
+  sessionStorage.setItem(MANUAL_FLAG, "1");
+}
+
+export function takeManualConnect(): boolean {
+  const flagged = sessionStorage.getItem(MANUAL_FLAG) === "1";
+  if (flagged) sessionStorage.removeItem(MANUAL_FLAG);
+  return flagged;
+}
+
+/**
+ * Un enlace pegado puede ser una invitación (…/invite/abc) o una dirección a
+ * secas. Se separa aquí para que la pantalla de conexión acepte los dos sin
+ * pedirle a nadie que sepa la diferencia.
+ */
+export function parseInvite(raw: string): { origin: string; code: string | null } | null {
+  const origin = normalizeInstanceUrl(raw);
+  if (!origin) return null;
+  const match = /\/invite\/([A-Za-z0-9_-]+)/.exec(raw);
+  return { origin, code: match?.[1] ?? null };
+}
+
+export type ConnectResult = "invalid" | "unreachable" | "not-instance" | "ok";
+
+/**
+ * Valida que en esa dirección vive un servidor de Distop y, si es así, lo hace
+ * el activo (con recarga). Si lo pegado era una invitación, el código queda
+ * apuntado y App la abre al volver a estar en pie.
+ */
+export async function connectToInstance(raw: string): Promise<ConnectResult> {
+  const parsed = parseInvite(raw);
+  if (!parsed) return "invalid";
+  try {
+    const res = await fetch(`${parsed.origin}/api/v1/info`, { signal: AbortSignal.timeout(8000) });
+    const info = (await res.json()) as { name?: string; version?: string };
+    // Una web cualquiera también responde 200: lo que identifica a un servidor
+    // de Distop es que /api/v1/info devuelva su carné con nombre y versión.
+    if (!res.ok || typeof info.name !== "string" || typeof info.version !== "string") return "not-instance";
+    rememberInstance(parsed.origin, info.name);
+    if (parsed.code) storePendingInvite(parsed.code);
+    setActiveInstance(parsed.origin);
+    return "ok";
+  } catch {
+    return "unreachable";
+  }
+}
+
 /**
  * Cambia la instancia activa y recarga. La recarga no es pereza: el store, el
  * gateway y la voz están construidos alrededor de UNA instancia; arrancar de

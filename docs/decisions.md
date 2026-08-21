@@ -61,6 +61,33 @@ type stripping (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`). Por eso
 `scripts/stage-protocol.mjs` lo transpila a JS en el paso de `dist`. El resto
 del monorepo sigue sin paso de build.
 
+## 2026-08: Hospedar en Android — motor Node embebido en el APK (sin Termux)
+
+El teléfono también puede ser el servidor de su comunidad, con un botón y sin
+instalar nada. Cómo: **Capacitor-NodeJS (beta.9) → nodejs-mobile 18.20.4**, el
+único runtime Node que existe para Android (precedente de producción: CoMapeo).
+El mismo node-server del repo se transpila a JS (`scripts/stage-server.mjs
+--mobile`) y `node:sqlite` (que exige Node ≥22.5) se sustituye por
+**node-sqlite3-wasm** — SQLite en WASM con VFS sobre node:fs, persistencia real
+a disco — mediante un shim con la forma de `DatabaseSync`
+(`scripts/mobile/sqlite-shim.js`). Validado contra un Node 18.20.4 real:
+registro, comunidades, mensajes, invitaciones, game presence y persistencia
+tras reinicio, todo en verde.
+
+Piezas nativas: un foreground service `specialUse` propio (`HostForegroundService`,
+~70 líneas Java) sostiene el aviso "comunidad en el aire" para que Android no
+duerma el proceso — `dataSync` tiene tope de 6 h desde Android 15 y no vale.
+El plugin `DistopHost` (enable/disable) es la única superficie que el WebView
+puede tocar.
+
+Limitaciones dichas sin adornos (§29.3): el motor embebido es **Node 18 (EOL)**
+— sin parches del runtime; mitigado porque el servidor lo expone su dueño a su
+comunidad, no a internet abierto (sin túnel: cloudflared no existe para
+Android). La comunidad del teléfono sirve a su Wi-Fi; para invitar por
+internet, un PC. Cerrar la app del todo la apaga. Alternativa avanzada con
+túnel incluido: `scripts/termux-host.sh` (Termux tiene Node 24 y cloudflared),
+fuera de la interfaz para no pedirle terminal a nadie.
+
 ## 2026-08: "Jugando a X" — el servidor nunca ve la lista de procesos
 
 La detección corre en el main process de la app de escritorio contra un

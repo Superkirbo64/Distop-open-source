@@ -1,0 +1,196 @@
+/**
+ * Por dónde se conectan dos navegadores (§9.4, §6).
+ *
+ * La voz siempre pasa por la instancia y usa la misma ruta de la aplicación.
+ * Esta configuración solo decide el camino del vídeo cuando está en modo directo:
+ * cámara y pantalla van de un navegador a otro, con TURN como respaldo opcional.
+ *
+ * Cuándo no existe, en la práctica:
+ *   · Los dos en la misma casa, si el router no deja hablarse a dos aparatos
+ *     suyos (aislamiento de clientes) o bloquea el descubrimiento local.
+ *   · Uno con datos móviles: la operadora usa NAT simétrica y no hay agujero que
+ *     perforar.
+ *   · Redes de oficina o universidad que solo dejan salir por 80 y 443.
+ *
+ * Si esa ruta no existe, falla el vídeo directo; la voz continúa por la instancia.
+ *
+ * Tres cosas distintas, y solo la tercera cuesta ancho de banda a alguien:
+ *   STUN  — responde "esta es tu dirección pública". Gratis e ilimitado.
+ *   TURN  — reenvía los paquetes cuando no hay ruta directa. Cifrados: ve por
+ *           dónde pasan, no qué llevan.
+ *   SFU   — reenvía y además procesa. No lo hay aquí (fase 3).
+ */
+import { config } from "./config.js";
+import { meta, setMeta } from "./db.js";
+import { badRequest } from "./http.js";
+/** Descubrimiento de dirección pública. Varios porque uno solo puede estar caído. */
+const STUN = [{ urls: ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"] }];
+const QUALITIES = ["low", "medium", "high"];
+const PRIORITIES = ["fluid", "balanced", "sharp"];
+const DEFAULT = {
+    mode: "direct",
+    // Por defecto por la instancia: es lo único que funciona sin configurar nada,
+    // y una comunidad casera son cuatro personas, no cuarenta.
+    video: "host",
+    quality: "medium",
+    priority: "balanced",
+    url: "",
+    username: "",
+    credential: "",
+    keyId: "",
+    apiToken: "",
+    appName: "",
+    apiKey: "",
+};
+function stored() {
+    try {
+        const saved = { ...DEFAULT, ...JSON.parse(meta("voice_relay", () => JSON.stringify(DEFAULT))) };
+        // Un modo que ya no existe (o escrito a mano) no puede dejar la instancia en
+        // un estado que la interfaz no sepa dibujar: se cae al de siempre.
+        if (!MODES.includes(saved.mode))
+            saved.mode = "direct";
+        if (saved.video !== "direct")
+            saved.video = "host";
+        if (!QUALITIES.includes(saved.quality))
+            saved.quality = "medium";
+        if (!PRIORITIES.includes(saved.priority))
+            saved.priority = "balanced";
+        return saved;
+    }
+    catch {
+        return DEFAULT;
+    }
+}
+/** Si quien hospeda puso ICE_SERVERS a mano, manda eso: es una decisión explícita. */
+function fromEnv() {
+    return config.iceServers.length > 0;
+}
+/* ── proveedores con cuenta ───────────────────────────────────────────────
+   Los dos funcionan igual de cara a la instancia: se guarda una clave larga que
+   NUNCA sale al navegador, y con ella se piden credenciales cortas que sí se
+   reparten. Cambian el sitio al que se pregunta y la forma de la respuesta.
+
+   Cloudflare — 1000 GB al mes, pero exige datos de facturación en la cuenta.
+   Metered   — 0,5 GB al mes sin tarjeta (20 GB si añades una), y al agotarse
+               deja de retransmitir en vez de cobrar. */
+const MODES = ["direct", "custom", "cloudflare", "metered"];
+/** Cloudflare no acepta más de 48 h; 24 basta y sobra para cualquier llamada. */
+const TTL_SECONDS = 86_400;
+let minted = null;
+async function cloudflareServers(relay) {
+    const response = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(relay.keyId)}/credentials/generate-ice-servers`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${relay.apiToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ ttl: TTL_SECONDS }),
+    });
+    if (!response.ok)
+        throw new Error(`Cloudflare respondió ${response.status}`);
+    const body = (await response.json());
+    // Devuelve un objeto cuando solo hay un servidor y un array cuando hay varios.
+    return body.iceServers ? (Array.isArray(body.iceServers) ? body.iceServers : [body.iceServers]) : [];
+}
+async function meteredServers(relay) {
+    const host = `${encodeURIComponent(relay.appName)}.metered.live`;
+    const response = await fetch(`https://${host}/api/v1/turn/credentials?apiKey=${encodeURIComponent(relay.apiKey)}`);
+    if (!response.ok)
+        throw new Error(`Metered respondió ${response.status}`);
+    const body = (await response.json());
+    if (!Array.isArray(body))
+        throw new Error("Metered no devolvió ningún servidor");
+    return body;
+}
+/** Credenciales del proveedor configurado, reaprovechadas mientras valgan. */
+async function fromProvider(relay) {
+    const key = `${relay.mode}:${relay.keyId}${relay.appName}`;
+    // Sin caché, cada carga de la página sería una llamada a la API del proveedor.
+    if (minted && minted.key === key && minted.until > Date.now())
+        return minted.servers;
+    const servers = relay.mode === "cloudflare" ? await cloudflareServers(relay) : await meteredServers(relay);
+    if (servers.length === 0)
+        throw new Error("no devolvió ningún servidor");
+    // Se renueva una hora antes de caducar: una llamada en curso no se queda sin relevo.
+    minted = { servers, until: Date.now() + (TTL_SECONDS - 3600) * 1000, key };
+    return servers;
+}
+function configured(relay) {
+    if (relay.mode === "cloudflare")
+        return Boolean(relay.keyId && relay.apiToken);
+    if (relay.mode === "metered")
+        return Boolean(relay.appName && relay.apiKey);
+    return false;
+}
+export async function iceServers() {
+    if (fromEnv())
+        return config.iceServers;
+    const relay = stored();
+    if (configured(relay)) {
+        try {
+            return await fromProvider(relay);
+        }
+        catch {
+            // Proveedor caído, clave revocada o cuota agotada: mejor seguir con STUN,
+            // que arregla la mayoría de los casos, que dejar la aplicación sin arrancar.
+            return STUN;
+        }
+    }
+    if (relay.mode === "custom" && relay.url) {
+        return [...STUN, { urls: relay.url, username: relay.username, credential: relay.credential }];
+    }
+    return STUN;
+}
+/** Nunca devuelve secretos: ni la contraseña del TURN ni las claves de los proveedores. */
+export function relayState() {
+    const relay = stored();
+    return {
+        mode: relay.mode,
+        video: relay.video,
+        quality: relay.quality,
+        priority: relay.priority,
+        url: relay.url,
+        username: relay.username,
+        keyId: relay.keyId,
+        appName: relay.appName,
+        locked: fromEnv(),
+    };
+}
+/** Lo necesita cualquiera que entre, no solo quien hospeda: va en /info. */
+export function videoMode() {
+    const relay = stored();
+    return { mode: relay.video, quality: relay.quality, priority: relay.priority };
+}
+export async function setRelay(next) {
+    const relay = { ...stored(), ...next };
+    if (relay.video !== "direct")
+        relay.video = "host";
+    if (!QUALITIES.includes(relay.quality))
+        relay.quality = "medium";
+    if (!PRIORITIES.includes(relay.priority))
+        relay.priority = "balanced";
+    // Con el vídeo pasando por la instancia no hay conexión directa que arreglar,
+    // así que un relevo TURN no pintaría nada: se guarda igual por si se cambia.
+    if (relay.mode === "cloudflare" || relay.mode === "metered") {
+        if (!configured(relay))
+            throw badRequest("Faltan las credenciales del proveedor.");
+        minted = null;
+        // Se comprueba AHORA, no en la primera llamada: guardar unas credenciales que
+        // no funcionan deja la sala rota y con aspecto de configurada.
+        try {
+            await fromProvider(relay);
+        }
+        catch (err) {
+            throw badRequest(`No aceptó esas credenciales: ${err instanceof Error ? err.message : "error"}`);
+        }
+    }
+    else if (relay.mode === "custom") {
+        // Un "stun:" donde va un TURN no relevaría nada: quedaría con aspecto de
+        // configurado y fallando igual. Mejor rechazarlo que fingir.
+        if (!/^turns?:/.test(relay.url))
+            throw badRequest("La dirección tiene que empezar por turn: o turns:");
+    }
+    else {
+        relay.mode = "direct";
+        minted = null;
+    }
+    setMeta("voice_relay", JSON.stringify(relay));
+    return relayState();
+}

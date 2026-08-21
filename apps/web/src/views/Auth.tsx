@@ -6,6 +6,7 @@
 import { useEffect, useState } from "react";
 import { BRAND } from "../brand.ts";
 import { api } from "../lib/api.ts";
+import { isPackaged, requestManualConnect, setActiveInstance } from "../lib/instance.ts";
 import { useStore } from "../store.ts";
 import { Button, ErrorNote, Field, useT, useErrorText } from "../components/ui.tsx";
 
@@ -72,9 +73,11 @@ export function Auth({ onDone }: { onDone?: () => void }) {
           <p className="display relative text-3xl font-bold text-white">{BRAND.name}</p>
           <div className="relative flex flex-col gap-4 text-white">
             <p className="display text-2xl leading-snug font-bold">{t("auth.tagline")}</p>
+            {/* Lo que le importa a una PERSONA entrando, no a quien administra:
+                los detalles de exportar y hospedar viven en Ajustes, no aquí. */}
             <ul className="flex flex-col gap-1.5 text-sm text-white/85">
-              <li>· {t("manage.exportHint")}</li>
-              <li>· {t("instance.offlineHelp")}</li>
+              <li>· {t("auth.point1")}</li>
+              <li>· {t("auth.point2")}</li>
             </ul>
           </div>
           <p className="relative text-xs text-white/70">
@@ -202,6 +205,21 @@ export function Auth({ onDone }: { onDone?: () => void }) {
 
             {info && !info.registration_enabled && mode === "login" ? (
               <p className="text-xs text-muted">{t("auth.registrationClosed")}</p>
+            ) : null}
+
+            {/* Empaquetada, esta pantalla pertenece a UNA instancia. Si no es
+                la que querías —o no responde— tiene que haber puerta de salida:
+                sin esto, una instancia apagada dejaba la app secuestrada. */}
+            {isPackaged() ? (
+              <button
+                className="text-left text-accent hover:underline"
+                onClick={() => {
+                  requestManualConnect();
+                  setActiveInstance(null);
+                }}
+              >
+                {t("connect.changeInstance")}
+              </button>
             ) : null}
           </div>
         </section>

@@ -14,6 +14,25 @@ const config: CapacitorConfig = {
   appId: "com.distop.app",
   appName: "Distop",
   webDir: "../web/dist",
+  server: {
+    /* http y no https, a conciencia: http://localhost sigue siendo un contexto
+       seguro (getUserMedia y WebCodecs funcionan igual) y evita que el WebView
+       bloquee como "contenido mixto" los servidores http de la red local — tu
+       PC en la Wi-Fi de casa o el de este mismo teléfono. */
+    androidScheme: "http",
+    cleartext: true,
+  },
+  plugins: {
+    /* El servidor de la comunidad DENTRO del APK (Capacitor-NodeJS →
+       nodejs-mobile). manual: solo arranca cuando la persona hospeda aquí;
+       quien es solo cliente no paga la memoria de un motor Node de fondo.
+       El proyecto Node vive en webDir/nodejs (lo genera scripts/stage-server
+       --mobile). */
+    CapacitorNodeJS: {
+      nodeDir: "nodejs",
+      startMode: "manual",
+    },
+  },
 };
 
 export default config;

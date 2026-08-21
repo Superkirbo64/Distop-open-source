@@ -14,7 +14,10 @@ import { handleUpgrade } from "./gateway.ts";
 import { setState, VERSION } from "./instance.ts";
 import "./api.ts"; // registra las rutas
 
-const WEB_DIST = resolve(import.meta.dirname, "..", "web", "dist");
+/* Junto al servidor por convención (repo y paquetes de escritorio/Termux); la
+   variable existe para los entornos donde esa convención no puede cumplirse,
+   como el motor Node embebido en el APK de Android. */
+const WEB_DIST = process.env.WEB_DIST_PATH ? resolve(process.env.WEB_DIST_PATH) : resolve(import.meta.dirname, "..", "web", "dist");
 const hasClient = existsSync(join(WEB_DIST, "index.html"));
 
 const MIME: Record<string, string> = {

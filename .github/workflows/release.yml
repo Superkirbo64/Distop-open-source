@@ -49,6 +49,8 @@ jobs:
           java-version: 21
       - run: npm ci
       - run: npm run build
+      # El servidor embebido del APK (motor Node 18 + sqlite WASM).
+      - run: node scripts/stage-server.mjs --mobile apps/web/dist/nodejs
       - run: npx cap sync android
         working-directory: apps/mobile
 
@@ -69,10 +71,29 @@ jobs:
 
       - name: Renombrar APK
         run: |
-          APK=$(ls apps/mobile/android/app/build/outputs/apk/release/*.apk | head -n 1)
+          APK=$(ls apps/mobile/android/app/build/outputs/apk/release/*arm64*.apk | head -n 1)
           cp "$APK" "Distop-${GITHUB_REF_NAME}.apk"
 
       - name: Publicar APK en la release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" "Distop-${GITHUB_REF_NAME}.apk" --clobber
+
+      # El paquete que usa scripts/termux-host.sh: la instancia lista para
+      # correr con solo Node (Termux en Android, o cualquier equipo sin git).
+      # Misma disposición que los recursos de la app de escritorio.
+      - name: Empaquetar host bundle (Termux / self-host)
+        run: |
+          node scripts/stage-protocol.mjs
+          mkdir -p bundle/node-server/node_modules/@distop/protocol bundle/web
+          cp apps/node-server/*.ts apps/node-server/package.json bundle/node-server/
+          rm -f bundle/node-server/*.test.ts
+          cp -r apps/desktop/staging/protocol/. bundle/node-server/node_modules/@distop/protocol/
+          cp -r node_modules/ws bundle/node-server/node_modules/ws
+          cp -r apps/web/dist bundle/web/dist
+          (cd bundle && zip -rq ../distop-host-bundle.zip .)
+
+      - name: Publicar host bundle y script de Termux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" distop-host-bundle.zip scripts/termux-host.sh --clobber

@@ -143,6 +143,10 @@ export const config = {
     "app://distop",
     "capacitor://localhost",
     "https://localhost",
+    /* La app Android sirve su cliente desde http://localhost (esquema http a
+       propósito: sigue siendo contexto seguro y permite hablar con instancias
+       http de la red local sin el bloqueo de contenido mixto del WebView). */
+    "http://localhost",
   ],
 
   /**

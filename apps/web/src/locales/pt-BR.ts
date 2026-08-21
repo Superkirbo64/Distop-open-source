@@ -24,6 +24,15 @@ export const ptBR: Record<keyof typeof es, string> = {
 
   "auth.tagline":
     "Sua comunidade, no seu servidor, sem recursos trancados atrás de assinatura.",
+  "auth.point1": "Chat, voz, seu perfil do seu jeito e o seu «jogando…»: tudo grátis, sempre.",
+  "auth.point2": "Convide com um link: seus amigos entram sem criar conta.",
+
+  "welcome.title": "Você já está dentro, {name}",
+  "welcome.body":
+    "Crie sua comunidade para convidar seus colegas, ou entre em uma que já exista com um link de convite.",
+  "welcome.create": "Criar minha comunidade",
+  "welcome.join": "Tenho um convite",
+  "welcome.later": "Agora não",
   "auth.login": "Entrar",
   "auth.register": "Criar conta",
   "auth.guest": "Entrar como convidado",
@@ -39,15 +48,15 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Você faz exatamente o mesmo que com conta: criar comunidades, canais, convidar e falar. Coloque senha quando quiser, sem perder nada.",
   "auth.guestEqual":
     "Sem senha você faz o mesmo; ela só serve para voltar de outro dispositivo.",
-  "auth.recoverTitle": "Você é quem hospeda esta instância?",
+  "auth.recoverTitle": "Você é quem hospeda este servidor?",
   "auth.recoverHint":
     "Estas contas não têm senha e têm comunidade própria. Como você está no equipamento que hospeda, pode entrar direto.",
-  "auth.registrationClosed": "Esta instância está com o cadastro fechado.",
-  "auth.guestClosed": "Esta instância não aceita convidados.",
+  "auth.registrationClosed": "Este servidor está com o cadastro fechado.",
+  "auth.guestClosed": "Este servidor não aceita convidados.",
 
-  "setup.title": "Esta instância é sua",
+  "setup.title": "Crie seu usuário",
   "setup.subtitle":
-    "Acabou de ser instalada e ainda não tem dono. Coloque seu nome e o da sua comunidade: não precisa criar conta.",
+    "Escolha um nome e entre: sem e-mails nem verificações. Sua comunidade você cria já lá dentro, quando quiser.",
   "setup.yourName": "Seu nome",
   "setup.communityName": "Nome da sua comunidade",
   "setup.password": "Senha",
@@ -55,7 +64,7 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Opcional por ora. Sem ela você entra só neste dispositivo; dá para definir quando quiser em Configurações.",
   "setup.code": "Código de instalação",
   "setup.codeHint":
-    "Está impresso no terminal onde você subiu a instância. É pedido porque você está reivindicando de outra máquina.",
+    "Está impresso no terminal onde você iniciou o servidor. É pedido porque você está reivindicando de outra máquina.",
   "setup.start": "Colocar no ar",
   "setup.noPasswordWarning":
     "Sem senha, esta conta vive só neste navegador. Se limpar, perde o acesso de administração.",
@@ -64,8 +73,8 @@ export const ptBR: Record<keyof typeof es, string> = {
   "instance.online": "On-line",
   "instance.offline": "Sem conexão",
   "instance.reconnecting": "Reconectando…",
-  "instance.status": "Estado da instância",
-  "instance.uptime": "Ligada há",
+  "instance.status": "Seu servidor",
+  "instance.uptime": "Ligado há",
   "instance.memory": "Memória",
   "instance.storage": "Armazenamento",
   "instance.storageFree": "restam {free} livres",
@@ -73,7 +82,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "instance.purgeHint":
     "Esvazia o histórico para recuperar espaço em disco: apaga os chats, fotos, GIFs e arquivos de todas as comunidades. As comunidades ficam, com seus membros, cargos, canais, emojis e avatares.",
   "instance.purgeWarning":
-    "Isto apaga PARA SEMPRE todas as mensagens e seus arquivos, de todas as comunidades desta instância. Não há lixeira nem como recuperar. Sua comunidade não é excluída: só o histórico dela.",
+    "Isto apaga PARA SEMPRE todas as mensagens e seus arquivos, de todas as comunidades deste servidor. Não há lixeira nem como recuperar. Sua comunidade não é excluída: só o histórico dela.",
   "instance.purgeDo": "Apagar o histórico para sempre",
   "instance.purgeDone": "Feito: {messages} mensagens apagadas e {mb} MB recuperados.",
   "instance.users": "Pessoas conectadas",
@@ -81,50 +90,74 @@ export const ptBR: Record<keyof typeof es, string> = {
   "instance.offlineHelp":
     "A comunidade vive na máquina de quem hospeda. Se ela estiver desligada, não há serviço até voltar.",
 
-  "connect.title": "Conectar a uma instância",
+  "connect.title": "Conectar a uma comunidade",
   "connect.hint":
-    "O aplicativo viaja com você; cada comunidade vive no seu próprio servidor. Cole o endereço da instância em que você quer entrar.",
-  "connect.url": "Endereço da instância",
+    "O aplicativo viaja com você; cada comunidade vive no seu próprio servidor. Cole o endereço da comunidade em que você quer entrar.",
+  "connect.url": "Endereço da comunidade",
   "connect.urlHint": "O mesmo que você usaria no navegador, com https:// na frente.",
   "connect.action": "Conectar",
   "connect.checking": "Verificando…",
   "connect.invalid": "Esse endereço não é válido. Só são aceitos endereços http ou https.",
   "connect.unreachable":
-    "Ninguém responde aí. A instância pode estar desligada, o túnel pode ter fechado ou o endereço tem um erro de digitação.",
-  "connect.notInstance": "Algo responde nesse endereço, mas não é uma instância do Distop.",
-  "connect.known": "Instâncias recentes",
+    "Ninguém responde aí. O servidor dessa comunidade pode estar desligado, o túnel pode ter fechado ou o endereço tem um erro de digitação.",
+  "connect.notInstance": "Algo responde nesse endereço, mas não é um servidor do Distop.",
+  "connect.known": "Comunidades recentes",
   "connect.forget": "Esquecer",
   "connect.hostHere": "Hospedar aqui",
   "connect.hostHint":
     "Sua comunidade roda neste computador, dentro do aplicativo: seus dados ficam com você. Ela estará disponível enquanto esta máquina estiver ligada, e a velocidade depende da sua conexão.",
-  "connect.hostEnter": "Entrar na minha instância",
-  "connect.hostStarting": "Iniciando a instância…",
+  "connect.hostEnter": "Entrar na minha comunidade",
+  "connect.hostStarting": "Iniciando o servidor…",
+  "connect.androidHint":
+    "Escolha em qual comunidade entrar: um link de convite, seu PC nesta mesma Wi-Fi, ou um servidor rodando neste próprio celular.",
+  "connect.preparing": "Iniciando seu servidor…",
+  "connect.preparingHint":
+    "Na primeira vez, seu banco de dados é criado nesta máquina. Sua comunidade e seus dados vivem aqui, com você.",
+  "connect.autoFailed": "Seu servidor não conseguiu iniciar nesta máquina.",
+  "connect.hostMine": "Seu servidor nesta máquina",
+  "connect.inviteOrUrl": "Link de convite ou endereço",
+  "connect.inviteHint": "Vale um link …/invite/abc ou o endereço de uma comunidade.",
+  "connect.scan": "Buscar na minha rede Wi-Fi",
+  "connect.scanHint":
+    "Encontra servidores ligados na sua mesma rede — seu PC, por exemplo. Nada sai da sua rede.",
+  "connect.scanning": "Buscando… {done}/{total}",
+  "connect.scanNone":
+    "Nenhum apareceu. O servidor precisa estar ligado, nesta mesma Wi-Fi e com a porta 5000 aberta.",
+  "connect.changeInstance": "Trocar de comunidade",
+  "connect.phoneHost": "Sua comunidade neste celular",
+  "connect.phoneFound": "O servidor deste celular já está ligado: entre.",
+  "connect.phoneHostHint":
+    "O servidor roda dentro deste próprio app, sem instalar nada: seus dados vivem no seu celular. Sua comunidade fica no ar enquanto o app estiver aberto (um aviso fixo impede o Android de adormecê-lo). Seus amigos entram pela sua mesma Wi-Fi com o seu link de convite; para convidar pela internet, hospede em um PC.",
+  "connect.phoneCreate": "Criar minha comunidade aqui",
+  "connect.phoneStarting": "Ligando o servidor do celular…",
+  "connect.phoneStartingHint": "Na primeira vez demora um pouco mais: o servidor é copiado e seu banco de dados é criado.",
+  "connect.phoneError": "O servidor do celular não ligou. Feche o app por completo, abra de novo e tente outra vez.",
 
   "game.playing": "Jogando {name}",
   "game.for": "há {time}",
   "game.recent": "Jogos recentes",
   "game.duration": "{time} · {date}",
 
-  "share.title": "Compartilhar sua instância",
+  "share.title": "Compartilhar sua comunidade",
   "share.address": "Endereço para convidar",
   "share.localOnly":
-    "Agora sua instância só existe neste computador. Um link com este endereço não vai funcionar para mais ninguém.",
+    "Agora seu servidor só existe neste computador. Um link com este endereço não vai funcionar para mais ninguém.",
   "share.howTo":
     "Dois caminhos para abrir ao mundo: um túnel (mais fácil, sem mexer no roteador) ou abrir a porta e apontar um domínio.",
   "share.tunnel": "Túnel rápido com Cloudflare, sem conta nem configuração:",
   "share.thenSet":
     "Copie a URL devolvida e coloque em PUBLIC_URL no seu .env. A partir daí os convites já saem com esse endereço.",
   "share.ready":
-    "Sua instância está acessível de fora. Os convites já usam este endereço.",
+    "Seu servidor está acessível de fora. Os convites já usam este endereço.",
   "share.createLink": "Criar link público",
   "share.createLinkHint":
-    "Abre um túnel e dá um endereço https que funciona fora da sua casa. Sem conta e sem mexer no roteador.",
+    "Abre um túnel da Cloudflare e dá um endereço https que funciona fora da sua casa. Sem conta e sem mexer no roteador; na primeira vez o aplicativo baixa sozinho o motor do túnel (uma única vez).",
   "share.closeLink": "Fechar o link público",
   "share.opening": "Abrindo o túnel…",
   "share.linkTemporary":
-    "Este link vive enquanto a instância estiver ligada. Ao reiniciar, o endereço é outro.",
+    "Este link vive enquanto o servidor estiver ligado. Ao reiniciar, o endereço será outro.",
   "share.needsCloudflared":
-    "Falta o cloudflared neste equipamento. Instale pelo site da Cloudflare e tente de novo.",
+    "Não deu para preparar o motor do túnel automaticamente. Costuma ser a conexão: confira a internet e tente de novo; o download acontece uma única vez.",
   "share.failed":
     "Não deu para abrir o túnel. Verifique sua conexão com a internet.",
   "share.hostReminder":
@@ -153,7 +186,7 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Não responde. Quem receber o link não vai conseguir entrar.",
   "invite.localOnly": "É um endereço local: só funciona neste equipamento.",
   "invite.tunnelHere":
-    "Abre um link público e refaz o convite com ele. Não fica salvo em nenhum arquivo: vive enquanto a instância estiver ligada.",
+    "Abre um link público e refaz o convite com ele. Não fica salvo em nenhum arquivo: vive enquanto o servidor estiver ligado.",
   "invite.asSomeoneElse": "Entrar como outra pessoa",
   "invite.asSomeoneElseHint":
     "Encerra a sessão de {name} neste navegador e deixa você entrar com outro nome.",
@@ -163,7 +196,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.deleteConfirmLabel": "Escreva {username} para confirmar",
   "settings.deleteForever": "Excluir para sempre",
   "invite.fixHint":
-    "Abra um link público em Estado da instância e crie o convite de novo.",
+    "Abra um link público no painel «Seu servidor» e crie o convite de novo.",
   "community.joinLabel": "Link ou código de convite",
   "community.joinHint":
     "Cole o link inteiro ou só o código: os dois funcionam.",
@@ -208,7 +241,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "message.searchEmpty": "Sem resultados",
   "message.noPermission": "Você não pode escrever neste canal.",
   "message.timedOut": "Você está silenciado no momento.",
-  "message.tooLarge": "O arquivo passa do limite da instância ({mb} MB).",
+  "message.tooLarge": "O arquivo passa do limite do servidor ({mb} MB).",
 
   "voice.inChannel": "Em canal de voz",
   "voice.invite": "Convidar para a chamada",
@@ -225,13 +258,13 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.chatTitle": "Chat de voz",
   "voice.chatEmpty": "O chat de voz está vazio",
   "voice.chatEmptyHint": "Escreva sem sair da chamada.",
-  "voice.soundError.not_in_voice": "A instância não reconhece mais você nesta sala. Saia e entre novamente.",
+  "voice.soundError.not_in_voice": "O servidor não reconhece mais você nesta sala. Saia e entre novamente.",
   "voice.soundError.muted": "Você não pode tocar sons enquanto o microfone estiver silenciado.",
   "voice.soundError.rate_limited": "Você tocou sons demais em sequência. Aguarde alguns segundos.",
   "voice.soundError.not_available": "Esse som não está mais disponível nesta comunidade.",
   "voice.soundError.unsupported": "Este navegador não consegue reproduzir os sons da sala.",
   "voice.soundError.blocked": "O navegador bloqueou o áudio. Interaja com a página e tente novamente.",
-  "voice.soundError.download": "Não foi possível baixar o som da instância.",
+  "voice.soundError.download": "Não foi possível baixar o som do servidor.",
   "voice.soundError.decode": "O arquivo não contém um áudio que este navegador consiga reproduzir.",
   "voice.soundError.too_long": "O som tem mais de 30 segundos e não pode ser usado como efeito.",
   "voice.mute": "Silenciar",
@@ -274,7 +307,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.videoDenied":
     "Você não liberou a câmera, ou cancelou a janela de compartilhar tela.",
   "voice.videoUnsupported":
-    "Este navegador não consegue codificar vídeo pela instância. Tente o modo direto ou um navegador Chromium atualizado.",
+    "Este navegador não consegue codificar vídeo pelo servidor. Tente o modo direto ou um navegador Chromium atualizado.",
   "voice.noCamera": "Nenhuma câmera encontrada. Conecte uma e tente de novo.",
   "voice.emptyRoom": "Sala de voz vazia",
   "voice.emptyRoomHint": "Entre primeiro: quem chegar depois te ouve na hora.",
@@ -314,7 +347,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.outVolumeHint": "Afeta as vozes e os sons da sala, não o resto do computador.",
   "voice.outputFixed": "Este navegador não deixa escolher por onde o som sai: usa a saída do sistema.",
   "voice.noMedia":
-    "O navegador só dá acesso ao microfone em https ou em localhost. Abra a instância por https para escolher o aparelho.",
+    "O navegador só dá acesso ao microfone em https ou em localhost. Entre por https para poder escolher o aparelho.",
   "voice.userVolume": "Volume — {value}%",
   "voice.userVolumeHint": "Só para você. Mais ninguém percebe.",
   "voice.denied":
@@ -323,15 +356,15 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.peerToPeer":
     "Áudio direto com {count} pessoa(s). Não passa pelo servidor.",
   "voice.throughHost":
-    "Voz pela instância com {count} pessoa(s). Funciona enquanto ela estiver ligada.",
+    "Voz pelo servidor com {count} pessoa(s). Funciona enquanto ele estiver ligado.",
   "voice.videoDirect": "O vídeo vai direto entre navegadores.",
   "voice.unsupported":
     "Este navegador não sabe codificar voz. Tente Chrome, Edge ou um navegador recente.",
   "voice.relayTitle": "Câmera e compartilhamento de tela",
   "voice.relayIntro":
-    "A voz sempre passa pela instância e não se configura: se você consegue abrir o aplicativo, consegue falar. Para a imagem há dois caminhos, e quem hospeda escolhe.",
+    "A voz sempre passa pelo servidor e não se configura: se você consegue abrir o aplicativo, consegue falar. Para a imagem há dois caminhos, e quem hospeda escolhe.",
   "voice.videoWay": "Por onde vai a imagem",
-  "voice.videoHost": "Pela instância (recomendado)",
+  "voice.videoHost": "Pelo servidor (recomendado)",
   "voice.videoHostHint":
     "Igual à voz: funciona sempre, sem configurar nada. Em troca consome a subida de quem hospeda, uma cópia por pessoa assistindo. Para um grupo de amigos nem se nota.",
   "voice.videoP2p": "Direta entre navegadores",
@@ -369,7 +402,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.relayCustomOpen": "Criar conta grátis na ExpressTURN",
   "voice.relayCf": "Relé da Cloudflare (1 TB por mês, pede cartão)",
   "voice.relayCfHint":
-    "Só entra quando não há rota direta, então quase nunca gasta. Vê pacotes cifrados e os IPs de vocês; não consegue ver nem ouvir o conteúdo. Sua chave fica na instância e nunca chega ao navegador.",
+    "Só entra quando não há rota direta, então quase nunca gasta. Vê pacotes cifrados e os IPs de vocês; não consegue ver nem ouvir o conteúdo. Sua chave fica no servidor e nunca chega ao navegador.",
   "voice.relayCfStep1":
     "Entre no painel da Cloudflare → Realtime → TURN e crie uma chave (Create TURN key).",
   "voice.relayCfStep2":
@@ -392,11 +425,11 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.relayUser": "Usuário",
   "voice.relayPassword": "Senha",
   "voice.relayPasswordHint":
-    "Fica guardada na instância e não aparece de novo.",
+    "Fica guardada no servidor e não aparece de novo.",
   "voice.relaySaved": "Salvo. Vale para as próximas chamadas.",
   "voice.relayLocked":
-    "Fixado por ICE_SERVERS no ambiente da instância. Tire essa variável para mudar aqui.",
-  "voice.relayHostOnly": "Só quem hospeda a instância pode mudar isso.",
+    "Fixado com ICE_SERVERS no ambiente do servidor. Tire essa variável para mudar aqui.",
+  "voice.relayHostOnly": "Só quem hospeda pode mudar isso.",
   "voice.device": "Microfone",
   "voice.deviceDefault": "O do sistema",
   "voice.test": "Teste seu microfone",
@@ -534,7 +567,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "manage.inviteUnlimited": "Sem limite",
   "manage.export": "Exportar comunidade",
   "manage.exportHint":
-    "Baixe um JSON com canais, mensagens, cargos e membros. É seu: serve para migrar de instância ou guardar como cópia.",
+    "Baixe um JSON com canais, mensagens, cargos e membros. É seu: serve para migrar para outro servidor ou guardar como cópia.",
   "manage.dangerZone": "Zona sensível",
   "manage.deleteCommunity": "Excluir comunidade",
   "manage.deleteConfirm":
@@ -551,11 +584,11 @@ export const ptBR: Record<keyof typeof es, string> = {
   "invite.invalid": "Este convite não existe, expirou ou esgotou os usos.",
   "invite.back": "Ir para minhas comunidades",
 
-  "error.generic": "Algo falhou na instância.",
+  "error.generic": "Algo falhou no servidor.",
   "error.network":
-    "Não deu para falar com a instância. Confira se ela está ligada.",
+    "Não deu para falar com o servidor. Confira se ele está ligado.",
   "error.unreachable":
-    "A instância não respondeu (HTTP {status}). Normalmente está desligada ou o túnel caiu.",
+    "O servidor não respondeu (HTTP {status}). Normalmente está desligado ou o túnel caiu.",
   "skip.toMessages": "Pular para as mensagens",
 
   "unread.some": "Mensagens não lidas",
@@ -578,7 +611,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.notifyMentions": "Só quando me mencionam",
   "settings.notifyOff": "Nenhum",
   "settings.notifyHint":
-    "Vale para todas as comunidades desta instância. Nada disso sai do dispositivo.",
+    "Vale para todas as comunidades deste servidor. Nada disso sai do dispositivo.",
   "settings.sounds": "Som ao receber",
   "settings.soundsHint":
     "Um tom curto gerado no próprio navegador; não baixa nenhum arquivo.",
@@ -620,11 +653,11 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Quem envia \u00e9 quem tem permiss\u00e3o para gerenciar a comunidade.",
   "picker.gifError": "A busca de GIF não respondeu.",
   "picker.open": "Emojis, stickers e GIF",
-  "picker.gifSaving": "Salvando o GIF na instância…",
+  "picker.gifSaving": "Salvando o GIF no servidor…",
 
   "emoji.title": "Emojis, stickers e sons",
   "emoji.hint":
-    "Ficam no disco de quem hospeda a instância. Não há número máximo.",
+    "Ficam no disco de quem hospeda. Não há número máximo.",
   "emoji.add": "Adicionar",
   "emoji.name": "Nome",
   "emoji.nameHint":
@@ -651,7 +684,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "profile.memberSince": "Membro desde",
   "profileStyle.title": "Aparência do perfil",
   "profileStyle.hint":
-    "Tudo grátis, sem desbloquear nada. O catálogo inteiro vem com a instância.",
+    "Tudo grátis, sem desbloquear nada. O catálogo inteiro vem com o servidor.",
   "profileStyle.deco": "Decoração do avatar",
   "profileStyle.rings": "Anéis inclusos",
   "profileStyle.ringsCredit":

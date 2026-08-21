@@ -14,6 +14,10 @@ files:
 extraResources:
   - from: ../web/dist
     to: web/dist
+    filter:
+      # El proyecto Node del APK (si se generó) no pinta nada en el escritorio.
+      - "**/*"
+      - "!nodejs/**"
   - from: ../node-server
     to: node-server
     filter:

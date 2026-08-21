@@ -10,6 +10,7 @@ import { Cross } from "./icons.tsx";
 import { useStore } from "../store.ts";
 import { Button, ErrorNote, Field, IconButton, Modal, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
 import { api } from "../lib/api.ts";
+import { clientOrigin, connectToInstance, isPackaged, parseInvite } from "../lib/instance.ts";
 import { formatDuration } from "../i18n.ts";
 import type { Community } from "@distop/protocol";
 
@@ -196,6 +197,21 @@ export function JoinCommunity({ open, onClose }: { open: boolean; onClose: () =>
   async function join(): Promise<void> {
     setBusy(true);
     setError(null);
+
+    /* Empaquetada, una invitación puede ser de OTRA comunidad en OTRO servidor:
+       ahí no se hace join aquí — se cambia de servidor con el código apuntado,
+       y App abre la invitación al volver a estar en pie (§4). */
+    if (isPackaged()) {
+      const parsed = parseInvite(value);
+      if (parsed?.code && parsed.origin !== clientOrigin()) {
+        const result = await connectToInstance(value);
+        if (result === "ok") return; // recarga en marcha
+        setError(t(result === "unreachable" ? "connect.unreachable" : "connect.notInstance"));
+        setBusy(false);
+        return;
+      }
+    }
+
     try {
       const result = await api<{ community: Community | null }>("POST", `/api/v1/invites/${encodeURIComponent(code)}/join`);
       await reload();
@@ -265,7 +281,16 @@ export function JoinCommunity({ open, onClose }: { open: boolean; onClose: () =>
  * todavía no tiene ninguna comunidad no llegaba a ella. El diálogo lo monta el
  * cascarón, así que se puede abrir desde donde haga falta.
  */
-export function CreateCommunity({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function CreateCommunity({
+  open,
+  onClose,
+  onCreated,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Se llama con la comunidad ya creada y abierta: App encadena el invitar. */
+  onCreated?: () => void;
+}) {
   const t = useT();
   const errorText = useErrorText();
   const openCommunity = useStore((s) => s.openCommunity);
@@ -285,6 +310,7 @@ export function CreateCommunity({ open, onClose }: { open: boolean; onClose: () 
       await openCommunity(community.id);
       setName("");
       onClose();
+      onCreated?.();
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -424,8 +450,8 @@ function ShareInstance() {
       .catch(() => setIsHost(false));
   }, []);
 
-  const address = publicUrl || location.origin;
-  const isLocal = !publicUrl && /localhost|127\.0\.0\.1|\[::1\]/.test(location.origin);
+  const address = publicUrl || clientOrigin();
+  const isLocal = !publicUrl && /localhost|127\.0\.0\.1|\[::1\]/.test(address);
 
   async function toggle(): Promise<void> {
     setBusy(true);

@@ -20,7 +20,8 @@ import { WallpaperTuner } from "./components/Wallpaper.tsx";
 import { Manage } from "./views/Manage.tsx";
 import { Button, ErrorNote, Field, Modal, Spinner, Toggle, useErrorText, useT } from "./components/ui.tsx";
 import { api } from "./lib/api.ts";
-import { instanceBase, isPackaged } from "./lib/instance.ts";
+import { clientOrigin, instanceBase, isLocalInstance, isPackaged, takePendingInvite } from "./lib/instance.ts";
+import { phoneCanHost, startPhoneServer } from "./lib/phoneHost.ts";
 import { onStaleBuild, watchBuild } from "./lib/version.ts";
 import type { Invite as InviteEntity } from "@distop/protocol";
 
@@ -133,8 +134,26 @@ export function App() {
   useEffect(() => {
     // Empaquetado y sin instancia elegida no hay a quién preguntar todavía.
     if (isPackaged() && !instanceBase) return;
-    void boot();
+    void (async () => {
+      /* Si la comunidad activa vive en ESTE aparato, su servidor se enciende
+         antes de preguntar nada: abrir la app debe encender tu comunidad, no
+         recibirte con un error por tu propio servidor apagado. En el
+         escritorio lo arranca Electron; en el teléfono, el motor embebido.
+         Ambos arranques son idempotentes: si ya corre, vuelven al instante. */
+      if (isPackaged() && isLocalInstance(instanceBase)) {
+        if (window.distop?.host) await window.distop.host.start().catch(() => {});
+        else if (phoneCanHost()) await startPhoneServer();
+      }
+      await boot();
+    })();
   }, [boot]);
+
+  // Una invitación pegada antes de conectar se abre en cuanto la app está en pie.
+  useEffect(() => {
+    const code = takePendingInvite();
+    if (code) navigate(`/invite/${code}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
+  }, []);
 
   // Ctrl/⌘+U pliega el lateral derecho sin ratón: miembros en texto, chat en voz.
   useEffect(() => {
@@ -221,11 +240,69 @@ export function App() {
       <Settings open={settings} onClose={() => setSettings(false)} />
       <Manage open={manage} onClose={() => setManage(false)} />
       <CreateInvite open={invite} onClose={() => setInvite(false)} />
-      <CreateCommunity open={creating} onClose={() => setCreating(false)} />
+      {/* Crear la comunidad desemboca en invitar: una comunidad de uno no es
+          una comunidad, y el enlace es el siguiente paso natural, no un menú
+          que haya que descubrir. */}
+      <CreateCommunity open={creating} onClose={() => setCreating(false)} onCreated={() => setInvite(true)} />
       <JoinCommunity open={joining} onClose={() => setJoining(false)} />
+      <WelcomeCreate
+        onCreate={() => setCreating(true)}
+        onJoin={() => setJoining(true)}
+        blocked={creating || joining || invite || Boolean(inviteCode)}
+      />
       <WallpaperTuner />
       <StaleBuild />
     </div>
+  );
+}
+
+/**
+ * La bienvenida de quien entra sin ninguna comunidad (§34).
+ * Es la "notificación" que pide el flujo: creas tu usuario, entras, y lo
+ * primero que ves es el siguiente paso — crear tu comunidad o entrar a una.
+ * Se puede cerrar ("ahora no") y no vuelve a insistir en esta sesión: la
+ * pantalla vacía del chat conserva sus propios botones.
+ */
+function WelcomeCreate({ onCreate, onJoin, blocked }: { onCreate: () => void; onJoin: () => void; blocked: boolean }) {
+  const t = useT();
+  const ready = useStore((s) => s.ready);
+  const user = useStore((s) => s.user);
+  const communities = useStore((s) => s.communities);
+  const [dismissed, setDismissed] = useState(false);
+
+  const open = ready && Boolean(user) && communities.length === 0 && !dismissed && !blocked;
+  if (!open) return null;
+
+  return (
+    <Modal
+      open
+      onClose={() => setDismissed(true)}
+      title={t("welcome.title", { name: user!.display_name })}
+      footer={
+        <Button onClick={() => setDismissed(true)}>{t("welcome.later")}</Button>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted">{t("welcome.body")}</p>
+        <Button
+          variant="primary"
+          onClick={() => {
+            setDismissed(true);
+            onCreate();
+          }}
+        >
+          {t("welcome.create")}
+        </Button>
+        <Button
+          onClick={() => {
+            setDismissed(true);
+            onJoin();
+          }}
+        >
+          {t("welcome.join")}
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -243,7 +320,7 @@ function CreateInvite({ open, onClose }: { open: boolean; onClose: () => void })
   const [reach, setReach] = useState<"idle" | "checking" | "ok" | "fail" | "local" | "opening">("idle");
   const [isHost, setIsHost] = useState(false);
 
-  const address = (publicUrl || location.origin).replace(/\/$/, "");
+  const address = (publicUrl || clientOrigin()).replace(/\/$/, "");
   const isLocal = /localhost|127\.0\.0\.1|\[::1\]/.test(address);
 
   useEffect(() => {
@@ -315,7 +392,7 @@ function CreateInvite({ open, onClose }: { open: boolean; onClose: () => void })
         expires_in_s: temporary ? 60 * 60 * 24 * 7 : null,
       });
       // La dirección pública manda: un enlace a localhost no le sirve a nadie más.
-      const base = (overrideAddress || publicUrl || location.origin).replace(/\/$/, "");
+      const base = (overrideAddress || publicUrl || clientOrigin()).replace(/\/$/, "");
       setLink(`${base}/invite/${created.code}`);
     } catch (err) {
       setError(errorText(err));

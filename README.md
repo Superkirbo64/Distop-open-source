@@ -138,11 +138,15 @@ avisará de "editor desconocido" al instalar: es esperable, no un fallo.
 
 ## Aplicación Android (APK)
 
-El mismo cliente, empaquetado con Capacitor (`apps/mobile`). Es **cliente
-puro**: en Android no hay Node, así que no puede hospedar instancias — se
-conecta a la tuya o a la de cualquiera. La voz necesita un Android System
-WebView ≥94 (se actualiza solo por Play Store); si falta, la app lo dice y el
-resto funciona.
+El mismo cliente, empaquetado con Capacitor (`apps/mobile`) — y también puede
+**hospedar la comunidad en el propio teléfono, sin instalar nada**: el APK
+lleva un motor Node embebido (nodejs-mobile vía Capacitor-NodeJS; el porqué y
+sus límites, en `docs/decisions.md`) que ejecuta el mismo node-server con
+SQLite en WASM. Un botón en la bienvenida lo enciende; los amigos entran desde
+la misma Wi-Fi con el enlace de invitación, y un aviso fijo evita que Android
+duerma el servidor. Para invitar por internet, hospeda en un PC (el teléfono no
+tiene túnel). La voz necesita un Android System WebView ≥94 (se actualiza solo
+por Play Store); si falta, la app lo dice y el resto funciona.
 
 ```bash
 npm run sync --workspace @distop/mobile    # build del cliente + cap sync

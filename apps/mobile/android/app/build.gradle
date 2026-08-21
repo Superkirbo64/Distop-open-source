@@ -16,6 +16,18 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // El motor Node embebido (libnode.so) pesa ~45 MB por arquitectura: un APK
+    // por ABI en vez de uno universal. A la gente se le da el arm64 (todos los
+    // teléfonos reales de la última década); x86_64 es para el emulador.
+    splits {
+        abi {
+            enable true
+            reset()
+            include "arm64-v8a", "x86_64"
+            universalApk false
+        }
+    }
+
     // Firma de release por variables de entorno: el keystore JAMÁS entra al
     // repo (§22). En CI llega como secreto; sin variables, el build queda sin
     // firmar y sirve igual para probar en local con la variante debug.

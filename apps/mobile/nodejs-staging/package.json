@@ -1,0 +1,5 @@
+{
+  "name": "distop-phone-server",
+  "private": true,
+  "main": "./start.cjs"
+}

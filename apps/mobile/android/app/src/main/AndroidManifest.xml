@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- usesCleartextTraffic: las instancias de red local (tu PC, Termux en
+         este teléfono) hablan http sin certificado; los túneles siguen en https. -->
     <application
         android:allowBackup="true"
+        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -27,6 +30,18 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- El aviso fijo mientras este teléfono hospeda su comunidad. specialUse:
+             dataSync tiene tope de 6 h desde Android 15, y un servidor comunitario
+             no es una sincronización. -->
+        <service
+            android:name=".HostForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Servidor de comunidad self-hosted elegido por la persona; debe seguir sirviendo a sus miembros conectados mientras la app está en segundo plano." />
+        </service>
     </application>
 
     <!-- Permissions -->
@@ -38,4 +53,9 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Hospedar en el teléfono (§5): el aviso fijo que evita que Android
+         duerma el servidor, y su permiso de notificación. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

@@ -20,6 +20,7 @@ import {
 } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api, download, upload } from "../lib/api.ts";
+import { clientOrigin } from "../lib/instance.ts";
 import { formatDate } from "../i18n.ts";
 import { Button, ErrorNote, Field, ImageField, Modal, Spinner, Toggle, useConfirm, useLocale, useT, useErrorText } from "../components/ui.tsx";
 
@@ -361,7 +362,7 @@ function Invites({ communityId }: { communityId: string }) {
 
       <ul className="flex flex-col gap-2">
         {list.map((invite) => {
-          const url = `${(publicUrl || location.origin).replace(/\/$/, "")}/invite/${invite.code}`;
+          const url = `${(publicUrl || clientOrigin()).replace(/\/$/, "")}/invite/${invite.code}`;
           return (
             <li key={invite.code} className="flex flex-wrap items-center gap-2 rounded-[10px] border border-line p-2 text-sm">
               <code className="min-w-0 flex-1 truncate">{url}</code>

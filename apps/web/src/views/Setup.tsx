@@ -1,25 +1,22 @@
 /**
- * Puesta en marcha de una instancia recién instalada (§34, §37).
- * Quien la hospeda no pasa por ningún formulario de acceso: pone su nombre y el
- * de su comunidad, y ya está dentro y administrando. La contraseña es un paso
+ * Primera entrada a un servidor recién instalado (§34, §37).
+ * Solo pide QUIÉN ERES: tu comunidad la creas ya dentro, cuando quieras, con
+ * el aviso de bienvenida. Separarlo no es capricho: crear el usuario es un
+ * segundo, y ponerle nombre a una comunidad es una decisión que nadie debería
+ * tomar delante de un formulario de acceso. La contraseña sigue siendo un paso
  * posterior y opcional, no un peaje de entrada.
  */
 import { useState } from "react";
 import { BRAND } from "../brand.ts";
-import { api } from "../lib/api.ts";
 import { useStore } from "../store.ts";
 import { Button, ErrorNote, Field, useErrorText, useT } from "../components/ui.tsx";
-import type { Community } from "@distop/protocol";
 
 export function Setup({ requiresCode }: { requiresCode: boolean }) {
   const t = useT();
   const errorText = useErrorText();
   const authenticate = useStore((s) => s.authenticate);
-  const reloadCommunities = useStore((s) => s.reloadCommunities);
-  const openCommunity = useStore((s) => s.openCommunity);
 
   const [name, setName] = useState("");
-  const [community, setCommunity] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -35,16 +32,14 @@ export function Setup({ requiresCode }: { requiresCode: boolean }) {
         ...(password ? { password } : {}),
         ...(requiresCode ? { setup_code: code.trim() } : {}),
       });
-      const created = await api<Community>("POST", "/api/v1/communities", { name: community.trim() });
-      await reloadCommunities();
-      await openCommunity(created.id);
+      // Sin crear comunidad aquí: al entrar sin ninguna, la bienvenida la ofrece.
     } catch (err) {
       setError(errorText(err));
       setBusy(false);
     }
   }
 
-  const ready = name.trim().length >= 2 && community.trim().length >= 2 && (!requiresCode || code.trim().length > 0);
+  const ready = name.trim().length >= 2 && (!requiresCode || code.trim().length > 0);
 
   return (
     <main className="grid min-h-dvh place-items-center bg-bg p-4 sm:p-8">
@@ -70,20 +65,6 @@ export function Setup({ requiresCode }: { requiresCode: boolean }) {
                 minLength={2}
                 autoComplete="nickname"
                 autoFocus
-              />
-            )}
-          </Field>
-
-          <Field label={t("setup.communityName")}>
-            {(id) => (
-              <input
-                id={id}
-                className="field"
-                value={community}
-                onChange={(e) => setCommunity(e.target.value)}
-                maxLength={64}
-                required
-                minLength={2}
               />
             )}
           </Field>
