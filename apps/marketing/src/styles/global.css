@@ -870,6 +870,50 @@ section {
   color: var(--accent-text);
 }
 
+/* ── Lista sencilla y seccion plegada ───────────────────────────────────── */
+.list-plain {
+  display: grid;
+  gap: 0.5rem;
+  color: var(--muted);
+  max-width: 62ch;
+  padding-inline-start: 1.2rem;
+}
+
+/* Lo tecnico no desaparece, se aparta: quien juega no lo ve, quien lo busca
+   lo abre. El navegador ya sabe abrirlo, cerrarlo y anunciarlo (§31). */
+.advanced {
+  margin-block-start: 2.5rem;
+  border-block-start: 2px solid var(--line);
+  padding-block-start: 1.5rem;
+}
+
+.advanced summary {
+  font-family: var(--font-label);
+  font-size: 0.875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.advanced summary:hover {
+  color: var(--accent-text);
+}
+
+.advanced[open] summary {
+  margin-block-end: 1rem;
+}
+
+.advanced__note {
+  color: var(--muted);
+  max-width: 62ch;
+  margin-block-end: 1.5rem;
+}
+
 /* ── Captura del producto ───────────────────────────────────────────────── */
 .shot {
   border: 2px solid var(--line);

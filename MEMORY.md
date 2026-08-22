@@ -672,3 +672,71 @@ así): son workspaces de npm y la instalación ocurre en la raíz del repo, no d
   salen las URL canónicas, así que mientras el sitio viva en `*.vercel.app` los canónicos
   apuntan a un dominio que todavía no sirve nada. O se compra y se apunta el dominio, o
   se cambia esa línea por la dirección real de Vercel.
+
+---
+
+## El sitio deja de hablar como documentación (22 de agosto de 2026)
+
+Se pidió quitar **todo** el tecnicismo: el público es gente que juega, no gente
+que programa, y lo único que quiere es abrir la aplicación y probarla. El aviso
+concreto fue «en un NAS o en una Raspberry», pero el problema era el sitio entero.
+
+### La regla que se aplicó
+
+**Fuera el vocabulario, dentro la verdad.** Borrar que la comunidad vive en el PC
+de alguien sería vender lo que la aplicación no hace, y §29.6 prohíbe justamente
+eso. Así que «tu comunidad funciona mientras tu PC esté encendido, igual que un
+servidor de Minecraft montado en casa» se queda: dice lo mismo que «instancia
+self-hosted» sin pedirle a nadie que busque una palabra.
+
+| Antes | Ahora |
+|---|---|
+| «en un NAS o en una Raspberry» | (fuera) |
+| «Node 24 · SQLite · Docker opcional» | «Windows 10 y 11 · No necesitas instalar nada más» |
+| «malla WebRTC», «haría falta un SFU» | «el audio va directo de una persona a otra» |
+| «la instancia», «self-hosted» | «tu PC», «el equipo donde lo abriste» |
+| «scrypt y tokens opacos» | «cerrar una sesión la cierra de verdad» |
+| «abre un túnel de Cloudflare con HTTPS» | «un botón te da una dirección para compartir» |
+| «Activa TRUST_PROXY=true…» | sustituido por «cuánta gente aguanta» |
+| «Internal Server Error… depurar» | «no hay nadie al otro lado» |
+
+### Decisiones de esta tanda
+
+| Decisión | Por qué | Qué se descartó |
+|---|---|---|
+| **Docker y Node dentro de un `<details>`** en la página de descarga | No desaparecen: se apartan. Quien juega no los ve nunca; quien los busca los abre a la primera. El navegador ya sabe plegar, cerrar con Escape y anunciarlo | Borrar esas dos formas de instalar, que dejaría tirado a quien monta el servidor a mano |
+| **El `docker-compose.yml` sale de la portada** | Un archivo de configuración era lo tercero que veía un visitante | Dejarlo «porque demuestra que es abierto» |
+| **La captura del hero, rehecha entera** | Era el mayor infractor y lo primero que se ve: la conversación de dentro hablaba de SFU, Raspberry, SQLite e «instancia», y la comunidad se llamaba «Taller Píxel» | Recortar la imagen o taparla |
+| **`scripts/seed.mjs` vuelve al repo** | La captura es la aplicación de verdad (§25). El script que la sembraba se había perdido, así que rehacer la imagen era imposible sin reescribirlo | Un montaje en un editor de imágenes |
+| **«Hospedar» pasa a llamarse «Cómo funciona»** en la navegación | «Hospedar» ya es media palabra técnica | Dejar el nombre |
+| **AGPL-3.0 se queda solo en la línea legal del pie** | Es un aviso legal, no texto de venta. Fuera del hero y del enlace de licencia | Quitarlo del todo, que sería incumplir la licencia |
+| **«router» se queda** | Quien juega sabe lo que es su router: abrió puertos para Minecraft alguna vez. Es vocabulario de casa, no de programador | Buscarle un rodeo que sonara raro |
+
+### Cómo se rehace la captura del hero
+
+```text
+1. Instancia aparte, nunca la base real:
+   PORT=5055 DATABASE_PATH=<scratchpad>/app.db AUTH_SECRET=… node server.ts
+2. node scripts/seed.mjs http://127.0.0.1:5055   → imprime el token
+3. node scripts/shot.mjs http://127.0.0.1:5055/ chat.png 1440 900 <token>
+4. Copiar a apps/marketing/public/shots/chat.png, parar la instancia y borrar sus datos.
+```
+
+`seed.mjs` registra cuatro personas de verdad por la API, crea «La Partida», mete
+al resto por invitación y escribe la conversación. El nombre de usuario lleva un
+sufijo de tiempo para poder sembrar dos veces sin chocar.
+
+### Verificación
+
+Rastreo automático de 26 términos técnicos sobre el **HTML servido** de las 16
+páginas, descontando lo que vive dentro del `<details>`: **cero**. Ojo con el
+rastreo ingenuo: buscar «NAS» encuentra «perso**nas**» y «TURN» encuentra «**turn**
+it off», así que la comprobación usa límites de palabra. `astro check` limpio,
+que es lo que garantiza que los tres idiomas siguen teniendo las mismas claves.
+
+### Pendiente
+
+- **La aplicación en sí sigue hablando técnico** en algunos sitios (Ajustes,
+  Estado de la instancia, mensajes de error). Esta tanda solo tocó el sitio público.
+- La captura se queda desfasada cada vez que cambie la interfaz. Ahora al menos
+  hay un guion para rehacerla en tres órdenes.

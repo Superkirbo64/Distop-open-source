@@ -16,14 +16,14 @@ export const NEWS: Entry[] = [
   {
     date: "2026-08-02",
     title: {
-      es: "Voz entre pares, sin servidor en medio",
-      en: "Peer-to-peer voice, no server in between",
-      "pt-br": "Voz entre pares, sem servidor no meio",
+      es: "La voz va directa entre vosotros",
+      en: "Voice goes straight between you",
+      "pt-br": "A voz vai direto entre vocês",
     },
     body: {
-      es: "Los canales de voz ya funcionan con una malla WebRTC: el audio va directo entre navegadores y la instancia solo hace de presentadora. Eso es lo que permite que hospedar voz quepa en un PC doméstico. El techo práctico son unas seis personas por canal; por encima haría falta un SFU, y el protocolo no cambiaría.",
-      en: "Voice channels now run on a WebRTC mesh: audio goes straight between browsers and the instance only does introductions. That's what makes hosting voice fit on a home PC. The practical ceiling is around six people per channel; above that you'd want an SFU, and the protocol wouldn't change.",
-      "pt-br": "Os canais de voz já funcionam com uma malha WebRTC: o áudio vai direto entre navegadores e a instância só apresenta as pessoas. É isso que faz hospedar voz caber num PC doméstico. O teto prático é de umas seis pessoas por canal; acima disso seria preciso um SFU, e o protocolo não mudaria.",
+      es: "Los canales de voz ya funcionan. El audio viaja directo de una persona a otra, sin pasar por ningún sitio en medio, y por eso un PC de casa aguanta perfectamente una sala. Hasta unas seis personas por canal se oye bien; a partir de ahí la cosa se resiente y ya estamos en ello.",
+      en: "Voice channels work now. Audio travels straight from one person to another, without passing through anywhere in between, which is why a home PC handles a room just fine. Up to around six people per channel sounds good; past that it starts to suffer, and we are on it.",
+      "pt-br": "Os canais de voz já funcionam. O áudio vai direto de uma pessoa para a outra, sem passar por lugar nenhum no meio, e por isso um PC de casa aguenta bem uma sala. Até umas seis pessoas por canal se ouve bem; daí para cima a coisa piora, e já estamos cuidando disso.",
     },
   },
   {
@@ -47,9 +47,9 @@ export const NEWS: Entry[] = [
       "pt-br": "Hospedar não exige mais fazer login antes",
     },
     body: {
-      es: "La primera pantalla de una instancia recién instalada era un muro de acceso a un sitio que es tuyo. Ahora es la puesta en marcha: creas tu cuenta y tu comunidad en un paso. Desde el propio equipo no se pide código; desde fuera sí, y se imprime en el terminal al arrancar.",
-      en: "The first screen of a freshly installed instance was a login wall to a place that is yours. Now it's the setup: you create your account and your community in one step. From the machine itself no code is asked for; from outside it is, and it's printed to the terminal on boot.",
-      "pt-br": "A primeira tela de uma instância recém-instalada era um muro de login para um lugar que é seu. Agora é a configuração inicial: você cria sua conta e sua comunidade num passo. Da própria máquina não se pede código; de fora sim, e ele é impresso no terminal ao subir.",
+      es: "La primera pantalla al abrirlo era un muro de acceso a un sitio que ya era tuyo. Ahora es la puesta en marcha: pones tu nombre y creas tu comunidad de una vez. Desde tu propio equipo no te pide nada más, porque estar sentado delante ya es prueba suficiente.",
+      en: "The first screen when you opened it was a login wall to a place that was already yours. Now it is the setup: you put in your name and create your community in one go. From your own machine it asks for nothing else, because sitting in front of it is proof enough.",
+      "pt-br": "A primeira tela ao abrir era um muro de login para um lugar que já era seu. Agora é a configuração inicial: você põe seu nome e cria sua comunidade de uma vez. Da sua própria máquina não pede mais nada, porque estar sentado na frente já é prova suficiente.",
     },
   },
   {
@@ -60,9 +60,9 @@ export const NEWS: Entry[] = [
       "pt-br": "Erros que dizem a verdade",
     },
     body: {
-      es: "«Internal Server Error» aparecía cuando la instancia simplemente estaba apagada, y mandaba a depurar el sitio equivocado. Ahora el cliente distingue «la instancia contestó un error» de «no había instancia», y lo dice en pantalla con ese nombre.",
-      en: "«Internal Server Error» showed up when the instance was simply switched off, sending you to debug the wrong place. The client now tells «the instance answered with an error» apart from «there was no instance», and says so on screen.",
-      "pt-br": "«Internal Server Error» aparecia quando a instância estava simplesmente desligada, e mandava depurar o lugar errado. Agora o cliente distingue «a instância respondeu um erro» de «não havia instância», e diz isso na tela.",
+      es: "Antes, si el equipo que hospedaba estaba apagado, salía un error en inglés que no decía nada y hacía buscar el fallo donde no estaba. Ahora la pantalla distingue «hay alguien y ha fallado algo» de «no hay nadie al otro lado», y lo dice con esas palabras.",
+      en: "Before, if the machine hosting was switched off, you got a meaningless error that sent you looking for the problem in the wrong place. The screen now tells «someone is there and something went wrong» apart from «there is nobody on the other side», and says so in those words.",
+      "pt-br": "Antes, se a máquina que hospedava estava desligada, aparecia um erro em inglês que não dizia nada e fazia procurar o problema no lugar errado. Agora a tela distingue «tem alguém e algo deu errado» de «não tem ninguém do outro lado», e diz isso com essas palavras.",
     },
   },
 ];

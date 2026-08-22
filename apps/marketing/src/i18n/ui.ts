@@ -2,6 +2,10 @@
  * Todo el texto del sitio vive aquí (§32): ningún literal dentro de un componente.
  * `es` define la forma; `en` y `pt-BR` la implementan, así que olvidar una clave
  * es un error de tipos, no una cadena en blanco en producción.
+ *
+ * Quien lee esto es alguien que juega, no alguien que programa: nada de Docker,
+ * Node, SQLite ni «instancia» en el texto visible. Los términos técnicos que
+ * quedan viven plegados en la sección para quien monta el servidor a mano.
  */
 export const LOCALES = ["es", "en", "pt-br"] as const;
 export type Locale = (typeof LOCALES)[number];
@@ -19,6 +23,7 @@ export const HTML_LANG: Record<Locale, string> = {
   "pt-br": "pt-BR",
 };
 
+/** Solo aparece dentro de la sección plegada de la página de descarga. */
 const COMPOSE = `services:
   distop:
     image: ghcr.io/distop/distop:latest
@@ -30,31 +35,31 @@ const COMPOSE = `services:
 
 const es = {
   meta: {
-    title: "Distop — Tu comunidad, en tu servidor",
+    title: "Distop — Tu comunidad, sin peajes",
     description:
-      "Plataforma libre de chat de voz y texto que instalas tú. Todo lo que otras plataformas cobran viene incluido. AGPL-3.0.",
+      "Chat de voz y texto para tu comunidad. Todo lo que otras apps te cobran, aquí viene incluido y gratis.",
   },
   skip: "Saltar al contenido",
   nav: {
     features: "Funciones",
-    install: "Instalar",
-    hosting: "Hospedar",
+    install: "Descargar",
+    hosting: "Cómo funciona",
     news: "Novedades",
     code: "Código",
   },
   hero: {
-    eyebrow: "v0.1.0 · AGPL-3.0 · self-hosted",
+    eyebrow: "Gratis · Sin cuenta · Sin tarjeta",
     line1: "Tu comunidad,",
-    line2: "en tu servidor",
-    sub: "Distop es una plataforma de voz y texto que instalas tú: en tu PC, en un NAS o en una Raspberry. Los mensajes viven en tu disco. Todo lo que otras plataformas te cobran, aquí viene puesto.",
-    cta1: "Instalar Distop",
-    cta2: "Cómo hospedar",
-    note: "Node 24 · SQLite · Docker opcional",
+    line2: "sin peajes",
+    sub: "Chat de voz y texto para jugar con los tuyos. Lo descargas, lo abres y ya tienes tu sitio. Emojis, calidad de audio, temas, tamaño del grupo: todo lo que otras apps te venden, aquí viene puesto.",
+    cta1: "Descargar para Windows",
+    cta2: "Cómo funciona",
+    note: "Windows 10 y 11 · No necesitas instalar nada más",
   },
   free: {
     eyebrow: "Créditos necesarios: 0",
     title: "Nada de esto se paga",
-    sub: "No hay plan gratis ni plan de pago. Hay una sola versión, y la tienes entera desde el primer minuto.",
+    sub: "No hay una versión gratis y otra de pago. Hay una sola, y la tienes entera desde el primer minuto.",
     items: [
       "Emojis y reacciones",
       "Calidad de audio",
@@ -63,92 +68,92 @@ const es = {
       "Avatares y perfil",
       "Tamaño de la comunidad",
       "Historial completo",
-      "Exportar tus datos",
+      "Llevarte tus datos",
     ],
     tag: "Incluido",
     footnote:
-      "Los únicos límites son los de tu máquina: disco, memoria y subida. Y los ajustas tú, en la configuración.",
+      "El único límite es tu propio equipo: el espacio que tengas y lo rápida que sea tu conexión. Nada está capado a propósito para venderte la versión buena.",
   },
   features: {
     eyebrow: "Select player",
     title: "Lo que ya funciona",
-    sub: "No es una hoja de ruta: es lo que trae la versión de hoy.",
+    sub: "No es una promesa: es lo que hace la versión que puedes descargar hoy.",
     items: [
       {
         tag: "Texto",
-        title: "Canales en tiempo real",
-        body: "Categorías, respuestas, reacciones, mensajes fijados, edición, búsqueda e historial. Llega por WebSocket, sin recargar la página.",
+        title: "Canales de chat",
+        body: "Categorías, respuestas, reacciones, mensajes fijados, editar, buscar y todo el historial. Los mensajes aparecen al momento, sin recargar nada.",
       },
       {
         tag: "Voz",
-        title: "Voz que siempre encuentra camino",
-        body: "El audio viaja por la misma conexión con tu instancia que ya usa el chat. No exige STUN, TURN ni abrir más puertos; a cambio, quien hospeda envía una copia ligera a cada oyente.",
+        title: "Voz que entra a la primera",
+        body: "Entras al canal y hablas. No hay que abrir nada en el router ni pelearse con la configuración de la red: el audio va por el mismo camino que el chat.",
       },
       {
         tag: "Roles",
         title: "Permisos de verdad",
-        body: "33 permisos aplicables por comunidad, categoría, canal, rol y persona. Nadie concede lo que no tiene, y todo queda escrito en el registro de auditoría.",
+        body: "33 permisos que das por comunidad, categoría, canal, rol o persona. Nadie puede repartir lo que no tiene, y queda apuntado quién hizo qué.",
       },
       {
         tag: "Tema",
-        title: "Personalización sin candados",
-        body: "Color de acento, esquinas, tipografía, fondo de la conversación, animaciones y tema claro u oscuro. Ninguna opción dice «pro».",
+        title: "Personalizar sin candados",
+        body: "Color, esquinas, letra, fondo del chat, animaciones y tema claro u oscuro. Ninguna opción tiene un candado al lado.",
       },
       {
         tag: "Gente",
-        title: "Invitar es un enlace",
-        body: "Invitaciones con caducidad y usos limitados. Quien entra puede quedarse sin cuenta, y ponerse contraseña después sin perder nada.",
+        title: "Invitar es pasar un enlace",
+        body: "Enlaces con caducidad y usos contados. Quien entra puede quedarse sin crear cuenta, y ponerse contraseña más tarde sin perder nada.",
       },
       {
         tag: "Datos",
-        title: "Tus datos salen contigo",
-        body: "Exportación completa de la comunidad y descarga de adjuntos. Mudarte a otra instancia no es un favor que te hacemos.",
+        title: "Tus cosas salen contigo",
+        body: "Puedes descargar tu comunidad entera, con mensajes y archivos, cuando te dé la gana. Mudarte a otro sitio no es un favor que te hagamos.",
       },
     ],
   },
   host: {
     eyebrow: "Continue?",
-    title: "Hospedar es una tarde, no un proyecto",
-    sub: "Tres pasos desde cero hasta tener una dirección que puedes pasarle a alguien.",
+    title: "Tres pasos y estás dentro",
+    sub: "Desde darle a descargar hasta pasarle el enlace a tus amigos.",
     steps: [
       {
-        title: "Arranca la instancia",
-        body: "Con Docker o con Node 24 directamente. Crea su base SQLite sola en el primer arranque; no hay que instalar ningún motor de base de datos.",
+        title: "Ábrelo",
+        body: "Descargas, descomprimes y doble clic. No hay que instalar ningún programa aparte ni crear cuenta en ninguna web: la aplicación ya viene con todo lo que necesita.",
       },
       {
-        title: "Recláma­la",
-        body: "La primera pantalla no es un muro de acceso: es la puesta en marcha. Creas tu cuenta y tu comunidad en el mismo paso, y sin contraseña si no la quieres.",
+        title: "Pon tu nombre",
+        body: "La primera pantalla no es un muro de acceso: creas tu perfil y tu comunidad en el mismo paso. Con contraseña o sin ella, tú eliges.",
       },
       {
-        title: "Abre el túnel",
-        body: "Desde la propia app, en Estado de la instancia. Sale una dirección pública con HTTPS aunque no puedas abrir puertos en el router.",
+        title: "Invita",
+        body: "Un botón te da una dirección para compartir, aunque tus amigos vivan en la otra punta. Se la pasas y entran.",
       },
     ],
     code: COMPOSE,
     codeLabel: "docker-compose.yml",
-    warnTitle: "Lo que hay que saber antes",
-    warn: "Tu comunidad está disponible mientras tu equipo esté encendido. La velocidad es la de tu subida, los archivos ocupan tu disco, y las copias de seguridad las haces tú. Preferimos decírtelo aquí que después.",
+    warnTitle: "Esto conviene que lo sepas",
+    warn: "Tu comunidad funciona mientras tu PC esté encendido, igual que un servidor de Minecraft montado en casa. Si lo apagas, tus amigos no entran hasta que vuelvas a encenderlo. Preferimos decírtelo ahora que después.",
   },
   data: {
     eyebrow: "High score",
     title: "Sin intermediarios",
-    sub: "No hay un servidor nuestro en medio de tu conversación, porque no hay servidor nuestro.",
+    sub: "No hay ningún servidor nuestro en medio de vuestras conversaciones, porque no tenemos ninguno.",
     items: [
       {
-        title: "En tu disco",
-        body: "Los mensajes y los adjuntos se guardan en un archivo SQLite y una carpeta de tu máquina. Se copian con arrastrarlos.",
+        title: "En tu equipo",
+        body: "Los mensajes y los archivos se quedan en tu ordenador. Para guardarlos en otro sitio basta con copiar una carpeta.",
       },
       {
-        title: "Sesiones revocables",
-        body: "Contraseñas con scrypt y tokens opacos guardados en tu base: cerrar una sesión la cierra de verdad, hoy, no cuando caduque.",
+        title: "Cerrar sesión cierra de verdad",
+        body: "Si echas a alguien o cierras una sesión, se cierra en ese momento. No se queda abierta por ahí hasta que caduque sola.",
       },
       {
-        title: "Adjuntos aislados",
-        body: "Lista blanca de tipos, nombre real fuera del disco, y se sirven sin ejecutarse ni adivinar su formato.",
+        title: "Los archivos no muerden",
+        body: "Lo que sube la gente se guarda apartado y se muestra sin ejecutarse, así que nadie puede colar un archivo que haga algo raro en tu equipo.",
       },
       {
-        title: "Sin analítica dentro",
-        body: "La app no mide nada. Lo que mide este sitio se puede desactivar, y nunca son mensajes ni nombres de canal.",
+        title: "Nadie te está mirando",
+        body: "La aplicación no manda información a nadie. Ni lo que escribes, ni con quién hablas, ni cuánto tiempo pasas dentro.",
       },
     ],
   },
@@ -160,22 +165,22 @@ const es = {
   },
   cta: {
     title: "¿Jugamos?",
-    sub: "Descarga, arranca, invita. Sin cuenta central, sin tarjeta, sin desbloquear nada.",
-    b1: "Instalar Distop",
+    sub: "Descarga, ábrelo, invita. Sin cuenta, sin tarjeta y sin desbloquear nada.",
+    b1: "Descargar para Windows",
     b2: "Ver el código",
   },
   footer: {
-    tagline: "Comunicación comunitaria libre y self-hosted.",
+    tagline: "Chat de voz y texto para comunidades. Gratis y abierto.",
     product: "Producto",
     project: "Proyecto",
     help: "Ayuda",
     links: {
       features: "Funciones",
-      install: "Instalar",
-      hosting: "Hospedar",
+      install: "Descargar",
+      hosting: "Cómo funciona",
       news: "Novedades",
       code: "Código fuente",
-      license: "Licencia AGPL-3.0",
+      license: "Licencia",
       contributing: "Contribuir",
       security: "Seguridad",
       issues: "Reportar un fallo",
@@ -186,8 +191,8 @@ const es = {
     langLabel: "Idioma",
   },
   install: {
-    title: "Instalar Distop",
-    sub: "En Windows se descarga y se instala. En cualquier otro sistema, se ejecuta desde el código o con Docker.",
+    title: "Descargar Distop",
+    sub: "Para Windows hay descarga directa. Lo abres y funciona: no hace falta instalar nada más.",
     download: {
       tag: "Windows",
       title: "Descargar Distop",
@@ -213,8 +218,18 @@ const es = {
       warnTitle: "Windows va a avisarte",
       warn: "Al abrir el instalador saldrá una pantalla azul que dice «Windows protegió tu PC». Es porque el archivo no está firmado con un certificado de pago, no porque tenga nada raro. Pulsa «Más información» y luego «Ejecutar de todas formas».",
       portableTitle: "Si prefieres no instalar nada",
-      portableBody: "El mismo .zip trae la carpeta win-unpacked. Ábrela y ejecuta Distop.exe directamente: funciona igual, no toca el sistema y cabe en un USB. A cambio, no se actualiza sola.",
+      portableBody:
+        "El mismo .zip trae la carpeta win-unpacked. Ábrela y ejecuta Distop.exe directamente: funciona igual, no toca el sistema y cabe en un USB. A cambio, no se actualiza sola.",
     },
+    reqTitle: "Lo que necesitas",
+    reqs: [
+      "Un PC con Windows 10 u 11.",
+      "Que esté encendido mientras tus amigos estén dentro.",
+      "Nada más: la aplicación trae dentro todo lo que necesita para funcionar.",
+    ],
+    advancedTitle: "¿Prefieres montarlo tú desde el código?",
+    advancedNote:
+      "Esta parte es para quien se maneja con la consola. Si solo quieres usar Distop, el botón de arriba es todo lo que necesitas.",
     ways: [
       {
         tag: "Recomendado",
@@ -229,29 +244,22 @@ const es = {
         code: "git clone … && cd distop\nnpm install\nnpm run host",
       },
     ],
-    reqTitle: "Lo que necesitas",
-    reqs: [
-      "Node 24 o Docker.",
-      "Cualquier equipo que esté encendido: un PC, un mini PC, un NAS o una Raspberry Pi.",
-      "Una variable AUTH_SECRET. Sin ella la instancia se niega a arrancar, a propósito.",
-      "Nada más. No hay cuenta que crear en ningún sitio.",
-    ],
   },
   hosting: {
-    title: "Hospedar tu instancia",
-    sub: "Lo que implica de verdad tener una comunidad en tu propia máquina, con las partes incómodas incluidas.",
-    tunnelTitle: "Si no puedes abrir puertos",
+    title: "Cómo funciona",
+    sub: "Distop no vive en la nube de nadie: vive en tu equipo. Esto es lo que eso significa en la práctica.",
+    tunnelTitle: "Para que entren desde fuera de tu casa",
     tunnelBody:
-      "La mayoría de conexiones domésticas no dejan abrir puertos en el router. Distop abre un túnel de Cloudflare desde la propia interfaz, en Estado de la instancia: te devuelve una dirección pública con HTTPS sin tocar la configuración de tu red.",
-    proxyTitle: "Si pones un proxy delante",
+      "Con un botón, Distop te da una dirección de internet para compartir. No hay que tocar la configuración del router ni saber qué es una IP: se la pasas a quien quieras y entra.",
+    proxyTitle: "Cuánta gente aguanta",
     proxyBody:
-      "Activa TRUST_PROXY=true. Sin eso, cualquiera puede falsear su IP y saltarse los límites; con eso puesto sin proxy delante, pasa exactamente lo mismo. Es una decisión que tienes que tomar tú, y por eso no viene decidida.",
-    backupTitle: "Copias de seguridad",
+      "Depende de tu equipo y de tu conexión, no de un plan que te vendamos. Un PC normal lleva a un grupo de amigos sin despeinarse. Si algún día se queda corto, se nota antes en la voz que en el chat.",
+    backupTitle: "Guardar una copia",
     backupBody:
-      "Toda la instancia son dos cosas: el archivo app.db y la carpeta de subidas. Cópialas y ya está. Además, cada comunidad se exporta entera desde su panel de administración.",
-    offlineTitle: "Cuando tu equipo se apaga",
+      "Todo lo tuyo son unos archivos en una carpeta. Cópiala a un disco externo o a la nube que uses y ya tienes copia de seguridad. Desde la propia aplicación también puedes descargar la comunidad entera de una vez.",
+    offlineTitle: "Cuando apagas el PC",
     offlineBody:
-      "La comunidad deja de estar disponible, y quien entre verá exactamente eso, no un error genérico. Es la contrapartida honesta de no depender de nadie.",
+      "Tus amigos no pueden entrar hasta que lo enciendas otra vez, y verán exactamente eso escrito, no un error raro. Es el precio de que nadie más tenga vuestras conversaciones.",
   },
   newsPage: {
     title: "Novedades",
@@ -259,26 +267,26 @@ const es = {
   },
   privacy: {
     title: "Privacidad",
-    sub: "La versión corta: este sitio no te sigue, y la aplicación tampoco.",
+    sub: "La versión corta: esta página no te sigue, y la aplicación tampoco.",
     items: [
       {
-        title: "Este sitio",
-        body: "Es HTML estático. Sin cookies, sin analítica, sin píxeles de seguimiento y sin peticiones a terceros. Las tipografías se sirven desde este mismo dominio, así que ni siquiera Google sabe que has entrado.",
+        title: "Esta página",
+        body: "Sin cookies, sin anuncios y sin nada que registre por dónde pasas. Ni siquiera las letras que estás leyendo vienen de fuera, así que nadie más sabe que has entrado aquí.",
       },
       {
         title: "La aplicación",
-        body: "Distop no envía telemetría. Tus mensajes, archivos y cuentas viven en la instancia que tú hospedas, en tu disco. Quien la administra es quien puede verlos, y esa persona eres tú.",
+        body: "Distop no manda nada a ningún sitio. Tus mensajes, archivos y cuentas se quedan en el equipo donde la abriste. Quien manda ahí eres tú.",
       },
       {
         title: "Si algún día medimos algo",
-        body: "Se anunciará aquí, se podrá desactivar, y nunca incluirá contenido de mensajes, nombres de canales privados, credenciales ni direcciones.",
+        body: "Se avisará aquí, se podrá apagar, y jamás incluirá lo que escribes, los nombres de tus canales privados ni tus contraseñas.",
       },
       {
-        title: "Enlaces externos",
-        body: "Los enlaces a GitHub te llevan fuera de aquí, donde se aplican sus políticas. No les compartimos nada sobre ti.",
+        title: "Enlaces a otros sitios",
+        body: "Los enlaces a GitHub te sacan de aquí, y allí mandan sus normas. Nosotros no les contamos nada sobre ti.",
       },
     ],
-    updated: "Última revisión: 2 de agosto de 2026.",
+    updated: "Última revisión: 22 de agosto de 2026.",
   },
 };
 
@@ -289,164 +297,164 @@ type Dict = typeof es;
 
 const en: Dict = {
   meta: {
-    title: "Distop — Your community, on your server",
+    title: "Distop — Your community, no tolls",
     description:
-      "Free voice and text chat platform that you host yourself. Everything other platforms charge for is included. AGPL-3.0.",
+      "Voice and text chat for your community. Everything other apps charge for is included here, free.",
   },
   skip: "Skip to content",
   nav: {
     features: "Features",
-    install: "Install",
-    hosting: "Hosting",
+    install: "Download",
+    hosting: "How it works",
     news: "News",
     code: "Code",
   },
   hero: {
-    eyebrow: "v0.1.0 · AGPL-3.0 · self-hosted",
+    eyebrow: "Free · No account · No card",
     line1: "Your community,",
-    line2: "on your server",
-    sub: "Distop is a voice and text platform you install yourself: on your PC, a NAS or a Raspberry Pi. Messages live on your disk. Everything other platforms charge you for is already in the box.",
-    cta1: "Install Distop",
-    cta2: "How to host it",
-    note: "Node 24 · SQLite · Docker optional",
+    line2: "no tolls",
+    sub: "Voice and text chat for gaming with your people. Download it, open it, and the place is yours. Emojis, audio quality, themes, group size: everything other apps sell you comes built in.",
+    cta1: "Download for Windows",
+    cta2: "How it works",
+    note: "Windows 10 and 11 · Nothing else to install",
   },
   free: {
     eyebrow: "Credits required: 0",
     title: "None of this costs money",
-    sub: "There is no free tier and no paid tier. There is one version, and you get all of it from minute one.",
+    sub: "There is no free version and paid version. There is one, and you get all of it from minute one.",
     items: [
-      "Emoji and reactions",
+      "Emojis and reactions",
       "Audio quality",
-      "File uploads",
+      "Uploading files",
       "Themes and colours",
       "Avatars and profile",
       "Community size",
       "Full history",
-      "Exporting your data",
+      "Taking your data with you",
     ],
     tag: "Included",
     footnote:
-      "The only limits are your machine's: disk, memory and upload speed. And you set them yourself, in the settings.",
+      "The only limit is your own machine: the space you have and how fast your connection is. Nothing is held back on purpose to sell you the good version.",
   },
   features: {
     eyebrow: "Select player",
     title: "What already works",
-    sub: "Not a roadmap: this is what today's release ships.",
+    sub: "Not a promise: this is what the version you can download today actually does.",
     items: [
       {
         tag: "Text",
-        title: "Real-time channels",
-        body: "Categories, replies, reactions, pinned messages, editing, search and history. It arrives over WebSocket, with no page reloads.",
+        title: "Chat channels",
+        body: "Categories, replies, reactions, pinned messages, editing, search and the whole history. Messages show up instantly, nothing to reload.",
       },
       {
         tag: "Voice",
-        title: "Voice that always has a path",
-        body: "Audio uses the same connection to your instance as chat. It needs no STUN, TURN or extra open ports; in exchange, the host sends one lightweight copy to each listener.",
+        title: "Voice that works first try",
+        body: "Join the channel and talk. No opening things on your router, no fighting with network settings: the audio travels the same path as the chat.",
       },
       {
         tag: "Roles",
         title: "Permissions that mean it",
-        body: "33 permissions applied per community, category, channel, role and person. Nobody grants what they don't hold, and every change lands in the audit log.",
+        body: "33 permissions you grant per community, category, channel, role or person. Nobody can hand out what they do not have, and who did what gets written down.",
       },
       {
         tag: "Theme",
-        title: "Customisation with no locks",
-        body: "Accent colour, corner radius, typeface, chat background, motion, light and dark themes. No option is labelled «pro».",
+        title: "Customising without locks",
+        body: "Colour, corners, lettering, chat background, animations and light or dark. No option has a padlock next to it.",
       },
       {
         tag: "People",
-        title: "Inviting is just a link",
-        body: "Invites with expiry and a use limit. Whoever joins can stay without an account, and add a password later without losing anything.",
+        title: "Inviting is sending a link",
+        body: "Links that expire and have a limited number of uses. Whoever joins can stay without making an account, and add a password later without losing anything.",
       },
       {
         tag: "Data",
-        title: "Your data leaves with you",
-        body: "Full community export and attachment download. Moving to another instance isn't a favour we do you.",
+        title: "Your stuff leaves with you",
+        body: "You can download your entire community, messages and files included, whenever you feel like it. Moving somewhere else is not a favour we do you.",
       },
     ],
   },
   host: {
     eyebrow: "Continue?",
-    title: "Hosting is an afternoon, not a project",
-    sub: "Three steps from nothing to an address you can hand to someone.",
+    title: "Three steps and you are in",
+    sub: "From hitting download to sending your friends the link.",
     steps: [
       {
-        title: "Start the instance",
-        body: "With Docker, or with Node 24 directly. It creates its own SQLite database on first boot — there is no database engine to install.",
+        title: "Open it",
+        body: "Download, unzip, double-click. No separate programs to install and no account to create on any website: the app already comes with everything it needs.",
       },
       {
-        title: "Claim it",
-        body: "The first screen isn't a login wall, it's the setup. You create your account and your community in the same step, without a password if you'd rather not have one.",
+        title: "Pick your name",
+        body: "The first screen is not a login wall: you create your profile and your community in the same step. With a password or without one, your call.",
       },
       {
-        title: "Open the tunnel",
-        body: "From inside the app, under Instance status. You get a public HTTPS address even if you can't open ports on your router.",
+        title: "Invite people",
+        body: "One button gives you an address to share, even if your friends live on the other side of the country. Send it and they are in.",
       },
     ],
     code: COMPOSE,
     codeLabel: "docker-compose.yml",
-    warnTitle: "What to know first",
-    warn: "Your community is reachable while your machine is on. Speed is your upload speed, files take up your disk, and backups are yours to make. We'd rather tell you here than later.",
+    warnTitle: "Worth knowing up front",
+    warn: "Your community runs while your PC is on, exactly like a Minecraft server set up at home. Turn it off and your friends cannot get in until you turn it back on. We would rather tell you now than later.",
   },
   data: {
     eyebrow: "High score",
     title: "Nobody in the middle",
-    sub: "There is no server of ours between you and your conversation, because there is no server of ours.",
+    sub: "There is no server of ours sitting in the middle of your conversations, because we do not have one.",
     items: [
       {
-        title: "On your disk",
-        body: "Messages and attachments live in one SQLite file and one folder on your machine. Backing them up means copying them.",
+        title: "On your machine",
+        body: "Messages and files stay on your computer. To keep them somewhere else, copying one folder is enough.",
       },
       {
-        title: "Revocable sessions",
-        body: "scrypt passwords and opaque tokens stored in your own database: ending a session ends it today, not whenever it expires.",
+        title: "Logging out really logs out",
+        body: "If you kick someone or close a session, it closes right then. It does not linger somewhere until it expires on its own.",
       },
       {
-        title: "Sandboxed attachments",
-        body: "Allow-list of types, real filenames never touch the disk, and files are served without executing or sniffing them.",
+        title: "Files cannot bite",
+        body: "What people upload is stored off to the side and shown without running, so nobody can slip in a file that does something odd on your machine.",
       },
       {
-        title: "No analytics inside",
-        body: "The app measures nothing. What this site measures can be switched off, and it is never messages or channel names.",
+        title: "Nobody is watching you",
+        body: "The app does not send information to anyone. Not what you type, not who you talk to, not how long you stay.",
       },
     ],
   },
   news: {
     eyebrow: "News",
-    title: "Recent runs",
+    title: "Latest rounds",
     all: "See all",
     readMore: "Read",
   },
   cta: {
-    title: "Shall we?",
-    sub: "Download, boot, invite. No central account, no card, nothing to unlock.",
-    b1: "Install Distop",
-    b2: "Read the code",
+    title: "Shall we play?",
+    sub: "Download, open, invite. No account, no card, nothing to unlock.",
+    b1: "Download for Windows",
+    b2: "See the code",
   },
   footer: {
-    tagline: "Free, self-hosted community communication.",
+    tagline: "Voice and text chat for communities. Free and open.",
     product: "Product",
     project: "Project",
     help: "Help",
     links: {
       features: "Features",
-      install: "Install",
-      hosting: "Hosting",
+      install: "Download",
+      hosting: "How it works",
       news: "News",
       code: "Source code",
-      license: "AGPL-3.0 licence",
+      license: "Licence",
       contributing: "Contributing",
       security: "Security",
       issues: "Report a bug",
       privacy: "Privacy",
     },
     legal:
-      "Distop is free software under AGPL-3.0. An independent project, unaffiliated with Discord Inc. or any other platform.",
+      "Distop is free software under AGPL-3.0. Independent project, unaffiliated with Discord Inc. or any other platform.",
     langLabel: "Language",
   },
   install: {
-    title: "Install Distop",
-    sub: "On Windows you download it and install it. On anything else, run it from source or with Docker.",
+    title: "Download Distop",
+    sub: "For Windows there is a direct download. You open it and it works: nothing else to install.",
     download: {
       tag: "Windows",
       title: "Download Distop",
@@ -472,8 +480,18 @@ const en: Dict = {
       warnTitle: "Windows will warn you",
       warn: "Opening the installer brings up a blue screen saying «Windows protected your PC». That is because the file is not signed with a paid certificate, not because anything is wrong with it. Click «More info», then «Run anyway».",
       portableTitle: "If you would rather not install anything",
-      portableBody: "The same .zip carries a win-unpacked folder. Open it and run Distop.exe directly: it works the same, touches nothing in the system and fits on a USB stick. The trade-off is that it will not update itself.",
+      portableBody:
+        "The same .zip carries a win-unpacked folder. Open it and run Distop.exe directly: it works the same, touches nothing in the system and fits on a USB stick. The trade-off is that it will not update itself.",
     },
+    reqTitle: "What you need",
+    reqs: [
+      "A PC running Windows 10 or 11.",
+      "It on while your friends are inside.",
+      "Nothing else: the app carries everything it needs to run.",
+    ],
+    advancedTitle: "Would you rather build it yourself from source?",
+    advancedNote:
+      "This part is for people comfortable with a terminal. If you just want to use Distop, the button above is all you need.",
     ways: [
       {
         tag: "Recommended",
@@ -488,180 +506,173 @@ const en: Dict = {
         code: "git clone … && cd distop\nnpm install\nnpm run host",
       },
     ],
-    reqTitle: "What you need",
-    reqs: [
-      "Node 24 or Docker.",
-      "Any machine that stays on: a PC, a mini PC, a NAS or a Raspberry Pi.",
-      "An AUTH_SECRET variable. Without it the instance refuses to start, on purpose.",
-      "Nothing else. There is no account to create anywhere.",
-    ],
   },
   hosting: {
-    title: "Hosting your instance",
-    sub: "What running a community on your own machine actually involves, awkward parts included.",
-    tunnelTitle: "If you can't open ports",
+    title: "How it works",
+    sub: "Distop does not live in anyone's cloud: it lives on your machine. Here is what that means in practice.",
+    tunnelTitle: "So people can join from outside your house",
     tunnelBody:
-      "Most home connections won't let you open router ports. Distop opens a Cloudflare tunnel from the interface itself, under Instance status: it hands you a public HTTPS address without touching your network settings.",
-    proxyTitle: "If you put a proxy in front",
+      "With one button, Distop gives you an internet address to share. No touching router settings, no needing to know what an IP is: send it to whoever you want and they are in.",
+    proxyTitle: "How many people it holds",
     proxyBody:
-      "Set TRUST_PROXY=true. Without it, anyone can forge their IP and walk past the rate limits; with it set and no proxy in front, exactly the same thing happens. It's a call you have to make, which is why it doesn't come pre-made.",
-    backupTitle: "Backups",
+      "It depends on your machine and your connection, not on a plan we sell you. A normal PC carries a group of friends without breaking a sweat. If it ever falls short, you notice it in the voice before the chat.",
+    backupTitle: "Keeping a copy",
     backupBody:
-      "The whole instance is two things: the app.db file and the uploads folder. Copy them and you're done. On top of that, every community exports in full from its admin panel.",
-    offlineTitle: "When your machine goes off",
+      "Everything of yours is some files in a folder. Copy it to an external drive or whatever cloud you use and you have a backup. From inside the app you can also download the whole community in one go.",
+    offlineTitle: "When you turn the PC off",
     offlineBody:
-      "The community stops being reachable, and anyone arriving sees exactly that, not a generic error. It's the honest trade for depending on nobody.",
+      "Your friends cannot get in until you turn it back on, and they will see exactly that written out, not some vague error. It is the price of nobody else holding your conversations.",
   },
   newsPage: {
     title: "News",
-    sub: "What has landed, dated and unembellished.",
+    sub: "What has landed, dated and without decoration.",
   },
   privacy: {
     title: "Privacy",
-    sub: "The short version: this site doesn't track you, and neither does the app.",
+    sub: "The short version: this page does not follow you, and neither does the app.",
     items: [
       {
-        title: "This site",
-        body: "It's static HTML. No cookies, no analytics, no tracking pixels and no third-party requests. Fonts are served from this same domain, so not even Google knows you dropped by.",
+        title: "This page",
+        body: "No cookies, no ads and nothing recording where you go. Not even the lettering you are reading comes from outside, so nobody else knows you were here.",
       },
       {
         title: "The app",
-        body: "Distop sends no telemetry. Your messages, files and accounts live on the instance you host, on your disk. Whoever administers it is who can see them, and that person is you.",
+        body: "Distop sends nothing anywhere. Your messages, files and accounts stay on the machine where you opened it. You are the one in charge there.",
       },
       {
         title: "If we ever measure anything",
-        body: "It will be announced here, it will be switchable off, and it will never include message contents, private channel names, credentials or addresses.",
+        body: "It will be announced here, it will be possible to switch off, and it will never include what you write, the names of your private channels or your passwords.",
       },
       {
-        title: "External links",
-        body: "Links to GitHub take you off this site, where their own policies apply. We share nothing about you with them.",
+        title: "Links to other sites",
+        body: "Links to GitHub take you off this page, where their rules apply. We tell them nothing about you.",
       },
     ],
-    updated: "Last reviewed: 2 August 2026.",
+    updated: "Last reviewed: 22 August 2026.",
   },
 };
 
 const ptBR: Dict = {
   meta: {
-    title: "Distop — Sua comunidade, no seu servidor",
+    title: "Distop — Sua comunidade, sem pedágio",
     description:
-      "Plataforma livre de voz e texto que você mesmo hospeda. Tudo o que as outras cobram já vem incluso. AGPL-3.0.",
+      "Chat de voz e texto para a sua comunidade. Tudo o que os outros aplicativos cobram já vem incluído aqui, de graça.",
   },
-  skip: "Ir para o conteúdo",
+  skip: "Pular para o conteúdo",
   nav: {
     features: "Recursos",
-    install: "Instalar",
-    hosting: "Hospedar",
+    install: "Baixar",
+    hosting: "Como funciona",
     news: "Novidades",
     code: "Código",
   },
   hero: {
-    eyebrow: "v0.1.0 · AGPL-3.0 · self-hosted",
+    eyebrow: "Grátis · Sem conta · Sem cartão",
     line1: "Sua comunidade,",
-    line2: "no seu servidor",
-    sub: "Distop é uma plataforma de voz e texto que você instala: no seu PC, num NAS ou num Raspberry Pi. As mensagens ficam no seu disco. Tudo o que as outras plataformas cobram, aqui já vem.",
-    cta1: "Instalar o Distop",
-    cta2: "Como hospedar",
-    note: "Node 24 · SQLite · Docker opcional",
+    line2: "sem pedágio",
+    sub: "Chat de voz e texto para jogar com a sua turma. Você baixa, abre e o lugar já é seu. Emojis, qualidade de áudio, temas, tamanho do grupo: tudo o que os outros vendem, aqui já vem junto.",
+    cta1: "Baixar para Windows",
+    cta2: "Como funciona",
+    note: "Windows 10 e 11 · Não precisa instalar mais nada",
   },
   free: {
-    eyebrow: "Fichas necessárias: 0",
+    eyebrow: "Créditos necessários: 0",
     title: "Nada disso se paga",
-    sub: "Não existe plano grátis nem plano pago. Existe uma versão só, e ela é inteira desde o primeiro minuto.",
+    sub: "Não existe uma versão grátis e outra paga. Existe uma só, e você tem ela inteira desde o primeiro minuto.",
     items: [
       "Emojis e reações",
       "Qualidade de áudio",
       "Enviar arquivos",
       "Temas e cores",
-      "Avatar e perfil",
+      "Avatares e perfil",
       "Tamanho da comunidade",
       "Histórico completo",
-      "Exportar seus dados",
+      "Levar seus dados embora",
     ],
-    tag: "Incluso",
+    tag: "Incluído",
     footnote:
-      "Os únicos limites são os da sua máquina: disco, memória e upload. E quem ajusta é você, nas configurações.",
+      "O único limite é a sua própria máquina: o espaço que você tem e o quão rápida é a sua conexão. Nada fica travado de propósito para te vender a versão boa.",
   },
   features: {
     eyebrow: "Select player",
     title: "O que já funciona",
-    sub: "Não é roteiro futuro: é o que a versão de hoje entrega.",
+    sub: "Não é promessa: é o que a versão que você pode baixar hoje realmente faz.",
     items: [
       {
         tag: "Texto",
-        title: "Canais em tempo real",
-        body: "Categorias, respostas, reações, mensagens fixadas, edição, busca e histórico. Chega por WebSocket, sem recarregar a página.",
+        title: "Canais de chat",
+        body: "Categorias, respostas, reações, mensagens fixadas, editar, buscar e todo o histórico. As mensagens aparecem na hora, sem recarregar nada.",
       },
       {
         tag: "Voz",
-        title: "Voz que sempre encontra um caminho",
-        body: "O áudio usa a mesma conexão com a sua instância que o chat já usa. Não exige STUN, TURN nem portas extras abertas; em troca, quem hospeda envia uma cópia leve para cada ouvinte.",
+        title: "Voz que entra de primeira",
+        body: "Você entra no canal e fala. Não precisa abrir nada no roteador nem brigar com a configuração da rede: o áudio vai pelo mesmo caminho do chat.",
       },
       {
         tag: "Cargos",
         title: "Permissões de verdade",
-        body: "33 permissões aplicáveis por comunidade, categoria, canal, cargo e pessoa. Ninguém concede o que não tem, e tudo fica no registro de auditoria.",
+        body: "33 permissões que você dá por comunidade, categoria, canal, cargo ou pessoa. Ninguém distribui o que não tem, e fica registrado quem fez o quê.",
       },
       {
         tag: "Tema",
-        title: "Personalização sem cadeado",
-        body: "Cor de destaque, cantos, tipografia, fundo da conversa, animações e tema claro ou escuro. Nenhuma opção diz «pro».",
+        title: "Personalizar sem cadeados",
+        body: "Cor, cantos, letra, fundo do chat, animações e tema claro ou escuro. Nenhuma opção tem cadeado do lado.",
       },
       {
-        tag: "Pessoas",
-        title: "Convidar é um link",
-        body: "Convites com validade e limite de usos. Quem entra pode ficar sem conta, e criar senha depois sem perder nada.",
+        tag: "Gente",
+        title: "Convidar é mandar um link",
+        body: "Links com prazo e número de usos contado. Quem entra pode ficar sem criar conta, e colocar senha depois sem perder nada.",
       },
       {
         tag: "Dados",
-        title: "Seus dados saem com você",
-        body: "Exportação completa da comunidade e download dos anexos. Mudar de instância não é um favor que a gente faz.",
+        title: "Suas coisas saem com você",
+        body: "Dá para baixar a comunidade inteira, com mensagens e arquivos, na hora que você quiser. Mudar de lugar não é favor que a gente faz.",
       },
     ],
   },
   host: {
     eyebrow: "Continue?",
-    title: "Hospedar é uma tarde, não um projeto",
-    sub: "Três passos do zero até um endereço que você pode passar para alguém.",
+    title: "Três passos e você está dentro",
+    sub: "De clicar em baixar até mandar o link para os amigos.",
     steps: [
       {
-        title: "Suba a instância",
-        body: "Com Docker ou com Node 24 direto. Ela cria o próprio banco SQLite no primeiro arranque; não há motor de banco para instalar.",
+        title: "Abra",
+        body: "Baixa, descompacta e clica duas vezes. Não tem programa separado para instalar nem conta para criar em site nenhum: o aplicativo já vem com tudo o que precisa.",
       },
       {
-        title: "Reivindique",
-        body: "A primeira tela não é um muro de login: é a configuração inicial. Você cria sua conta e sua comunidade no mesmo passo, sem senha se preferir.",
+        title: "Escolha seu nome",
+        body: "A primeira tela não é um muro de login: você cria seu perfil e sua comunidade no mesmo passo. Com senha ou sem, você decide.",
       },
       {
-        title: "Abra o túnel",
-        body: "Pelo próprio app, em Estado da instância. Sai um endereço público com HTTPS mesmo sem abrir portas no roteador.",
+        title: "Convide",
+        body: "Um botão te dá um endereço para compartilhar, mesmo que seus amigos morem do outro lado do país. Você manda e eles entram.",
       },
     ],
     code: COMPOSE,
     codeLabel: "docker-compose.yml",
-    warnTitle: "O que saber antes",
-    warn: "Sua comunidade fica no ar enquanto sua máquina estiver ligada. A velocidade é a do seu upload, os arquivos ocupam seu disco, e o backup é você quem faz. Preferimos avisar aqui do que depois.",
+    warnTitle: "Isso é bom você saber",
+    warn: "Sua comunidade funciona enquanto o seu PC estiver ligado, igualzinho a um servidor de Minecraft montado em casa. Se desligar, seus amigos não entram até você ligar de novo. A gente prefere avisar agora do que depois.",
   },
   data: {
     eyebrow: "High score",
     title: "Sem intermediários",
-    sub: "Não existe servidor nosso no meio da sua conversa, porque não existe servidor nosso.",
+    sub: "Não tem nenhum servidor nosso no meio das suas conversas, porque a gente não tem nenhum.",
     items: [
       {
-        title: "No seu disco",
-        body: "Mensagens e anexos ficam num arquivo SQLite e numa pasta da sua máquina. Fazer backup é copiar.",
+        title: "Na sua máquina",
+        body: "As mensagens e os arquivos ficam no seu computador. Para guardar em outro lugar, basta copiar uma pasta.",
       },
       {
-        title: "Sessões revogáveis",
-        body: "Senhas com scrypt e tokens opacos guardados no seu banco: encerrar uma sessão encerra hoje, não quando vencer.",
+        title: "Sair da conta sai de verdade",
+        body: "Se você expulsa alguém ou encerra uma sessão, ela encerra naquele momento. Não fica aberta por aí até vencer sozinha.",
       },
       {
-        title: "Anexos isolados",
-        body: "Lista de tipos permitidos, nome real nunca toca o disco, e nada é executado nem adivinhado ao servir.",
+        title: "Os arquivos não mordem",
+        body: "O que o pessoal envia fica guardado separado e é exibido sem executar, então ninguém consegue enfiar um arquivo que faça algo estranho na sua máquina.",
       },
       {
-        title: "Sem análise por dentro",
-        body: "O app não mede nada. O que este site mede pode ser desligado, e nunca são mensagens nem nomes de canal.",
+        title: "Ninguém está te olhando",
+        body: "O aplicativo não manda informação para ninguém. Nem o que você escreve, nem com quem você fala, nem quanto tempo você fica.",
       },
     ],
   },
@@ -672,35 +683,35 @@ const ptBR: Dict = {
     readMore: "Ler",
   },
   cta: {
-    title: "Bora?",
-    sub: "Baixe, suba, convide. Sem conta central, sem cartão, sem nada para desbloquear.",
-    b1: "Instalar o Distop",
+    title: "Bora jogar?",
+    sub: "Baixa, abre, convida. Sem conta, sem cartão e sem desbloquear nada.",
+    b1: "Baixar para Windows",
     b2: "Ver o código",
   },
   footer: {
-    tagline: "Comunicação comunitária livre e self-hosted.",
+    tagline: "Chat de voz e texto para comunidades. Grátis e aberto.",
     product: "Produto",
     project: "Projeto",
     help: "Ajuda",
     links: {
       features: "Recursos",
-      install: "Instalar",
-      hosting: "Hospedar",
+      install: "Baixar",
+      hosting: "Como funciona",
       news: "Novidades",
       code: "Código-fonte",
-      license: "Licença AGPL-3.0",
+      license: "Licença",
       contributing: "Contribuir",
       security: "Segurança",
-      issues: "Relatar um erro",
+      issues: "Relatar um problema",
       privacy: "Privacidade",
     },
     legal:
-      "Distop é software livre sob AGPL-3.0. Projeto independente, sem relação com a Discord Inc. nem com qualquer outra plataforma.",
+      "O Distop é software livre sob AGPL-3.0. Projeto independente, sem relação com a Discord Inc. nem com qualquer outra plataforma.",
     langLabel: "Idioma",
   },
   install: {
-    title: "Instalar o Distop",
-    sub: "No Windows é só baixar e instalar. Em qualquer outro sistema, roda a partir do código ou com Docker.",
+    title: "Baixar o Distop",
+    sub: "Para Windows tem download direto. Você abre e funciona: não precisa instalar mais nada.",
     download: {
       tag: "Windows",
       title: "Baixar o Distop",
@@ -726,8 +737,18 @@ const ptBR: Dict = {
       warnTitle: "O Windows vai avisar",
       warn: "Ao abrir o instalador aparece uma tela azul dizendo «O Windows protegeu o seu PC». É porque o arquivo não está assinado com um certificado pago, não porque tenha algo de errado. Clique em «Mais informações» e depois em «Executar assim mesmo».",
       portableTitle: "Se preferir não instalar nada",
-      portableBody: "O mesmo .zip traz a pasta win-unpacked. Abra e execute o Distop.exe direto: funciona igual, não mexe no sistema e cabe num pendrive. Em troca, não se atualiza sozinho.",
+      portableBody:
+        "O mesmo .zip traz a pasta win-unpacked. Abra e execute o Distop.exe direto: funciona igual, não mexe no sistema e cabe num pendrive. Em troca, não se atualiza sozinho.",
     },
+    reqTitle: "O que você precisa",
+    reqs: [
+      "Um PC com Windows 10 ou 11.",
+      "Ele ligado enquanto seus amigos estiverem dentro.",
+      "Mais nada: o aplicativo traz dentro tudo o que precisa para funcionar.",
+    ],
+    advancedTitle: "Prefere montar você mesmo pelo código?",
+    advancedNote:
+      "Esta parte é para quem se vira no terminal. Se você só quer usar o Distop, o botão lá de cima é tudo o que precisa.",
     ways: [
       {
         tag: "Recomendado",
@@ -742,29 +763,22 @@ const ptBR: Dict = {
         code: "git clone … && cd distop\nnpm install\nnpm run host",
       },
     ],
-    reqTitle: "O que você precisa",
-    reqs: [
-      "Node 24 ou Docker.",
-      "Qualquer máquina que fique ligada: um PC, um mini PC, um NAS ou um Raspberry Pi.",
-      "Uma variável AUTH_SECRET. Sem ela a instância se recusa a subir, de propósito.",
-      "Mais nada. Não há conta para criar em lugar nenhum.",
-    ],
   },
   hosting: {
-    title: "Hospedar sua instância",
-    sub: "O que realmente significa ter uma comunidade na sua máquina, com as partes chatas incluídas.",
-    tunnelTitle: "Se você não pode abrir portas",
+    title: "Como funciona",
+    sub: "O Distop não mora na nuvem de ninguém: mora na sua máquina. É isso que significa na prática.",
+    tunnelTitle: "Para entrarem de fora da sua casa",
     tunnelBody:
-      "A maioria das conexões domésticas não deixa abrir portas no roteador. O Distop abre um túnel da Cloudflare pela própria interface, em Estado da instância: devolve um endereço público com HTTPS sem mexer na sua rede.",
-    proxyTitle: "Se houver um proxy na frente",
+      "Com um botão, o Distop te dá um endereço de internet para compartilhar. Não precisa mexer na configuração do roteador nem saber o que é um IP: você manda para quem quiser e a pessoa entra.",
+    proxyTitle: "Quanta gente aguenta",
     proxyBody:
-      "Ative TRUST_PROXY=true. Sem isso, qualquer um forja o próprio IP e passa por cima dos limites; com isso ligado e sem proxy na frente, acontece exatamente o mesmo. É uma decisão sua, e por isso não vem decidida.",
-    backupTitle: "Backups",
+      "Depende da sua máquina e da sua conexão, não de um plano que a gente te venda. Um PC comum leva um grupo de amigos sem suar. Se um dia ficar apertado, dá para perceber na voz antes do chat.",
+    backupTitle: "Guardar uma cópia",
     backupBody:
-      "A instância inteira são duas coisas: o arquivo app.db e a pasta de uploads. Copie e pronto. Além disso, cada comunidade se exporta inteira pelo painel de administração.",
-    offlineTitle: "Quando sua máquina desliga",
+      "Tudo o que é seu são uns arquivos numa pasta. Copie para um HD externo ou para a nuvem que você usa e já tem backup. De dentro do aplicativo também dá para baixar a comunidade inteira de uma vez.",
+    offlineTitle: "Quando você desliga o PC",
     offlineBody:
-      "A comunidade sai do ar, e quem chegar vê exatamente isso, não um erro genérico. É a contrapartida honesta de não depender de ninguém.",
+      "Seus amigos não conseguem entrar até você ligar de novo, e vão ver exatamente isso escrito, não um erro esquisito. É o preço de mais ninguém ter as conversas de vocês.",
   },
   newsPage: {
     title: "Novidades",
@@ -772,26 +786,26 @@ const ptBR: Dict = {
   },
   privacy: {
     title: "Privacidade",
-    sub: "A versão curta: este site não te rastreia, e o aplicativo também não.",
+    sub: "A versão curta: esta página não te segue, e o aplicativo também não.",
     items: [
       {
-        title: "Este site",
-        body: "É HTML estático. Sem cookies, sem análise de tráfego, sem pixels de rastreamento e sem requisições a terceiros. As fontes são servidas deste mesmo domínio, então nem o Google sabe que você passou por aqui.",
+        title: "Esta página",
+        body: "Sem cookies, sem anúncios e sem nada que registre por onde você passa. Nem as letras que você está lendo vêm de fora, então mais ninguém sabe que você esteve aqui.",
       },
       {
         title: "O aplicativo",
-        body: "O Distop não envia telemetria. Suas mensagens, arquivos e contas ficam na instância que você hospeda, no seu disco. Quem administra é quem pode vê-los, e essa pessoa é você.",
+        body: "O Distop não manda nada para lugar nenhum. Suas mensagens, arquivos e contas ficam na máquina onde você abriu. Quem manda ali é você.",
       },
       {
-        title: "Se um dia medirmos algo",
-        body: "Será anunciado aqui, poderá ser desligado, e nunca incluirá conteúdo de mensagens, nomes de canais privados, credenciais ou endereços.",
+        title: "Se um dia a gente medir alguma coisa",
+        body: "Vai ser avisado aqui, vai dar para desligar, e nunca vai incluir o que você escreve, os nomes dos seus canais privados nem as suas senhas.",
       },
       {
-        title: "Links externos",
-        body: "Os links para o GitHub levam para fora daqui, onde valem as políticas deles. Não compartilhamos nada sobre você com eles.",
+        title: "Links para outros sites",
+        body: "Os links para o GitHub te tiram daqui, e lá valem as regras deles. A gente não conta nada sobre você para eles.",
       },
     ],
-    updated: "Última revisão: 2 de agosto de 2026.",
+    updated: "Última revisão: 22 de agosto de 2026.",
   },
 };
 

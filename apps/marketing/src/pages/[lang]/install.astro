@@ -69,47 +69,45 @@ const DOWNLOAD_URL = "https://www.mediafire.com/file/e0ocnbfmzactpxp/Distop.zip/
   </section>
 
   <section style="padding-block-start:0">
-    <div class="grid-cards">
-      {
-        t.install.ways.map((way) => (
-          <article class="card reveal">
-            <span class="card__tag">{way.tag}</span>
-            <h3>{way.title}</h3>
-            <p>{way.body}</p>
-            {way.code && (
-              <div class="code" style="margin-block-start:0.5rem;box-shadow:none">
-                <pre><code>{way.code}</code></pre>
-              </div>
-            )}
-          </article>
-        ))
-      }
-    </div>
-  </section>
-
-  <section style="padding-block-start:0">
     <div class="stack">
       <h2 class="reveal">{t.install.reqTitle}</h2>
-      <ul class="reveal" style="color:var(--muted);max-width:62ch;padding-inline-start:1.2rem">
-        {t.install.reqs.map((r) => <li style="margin-block-end:0.5rem">{r}</li>)}
+      <ul class="reveal list-plain">
+        {t.install.reqs.map((r) => <li>{r}</li>)}
       </ul>
     </div>
 
-    <div class="code reveal" style="margin-block-start:2rem">
-      <div class="code__bar">
-        <span class="code__dot" aria-hidden="true"></span>
-        {t.host.codeLabel}
+    {/* Docker, Node y la orden de compose viven aqui dentro: quien solo quiere
+        jugar nunca los ve, y quien los busca los encuentra a la primera. */}
+    <details class="advanced reveal">
+      <summary>{t.install.advancedTitle}</summary>
+
+      <p class="advanced__note">{t.install.advancedNote}</p>
+
+      <div class="grid-cards">
+        {
+          t.install.ways.map((way) => (
+            <article class="card">
+              <span class="card__tag">{way.tag}</span>
+              <h3>{way.title}</h3>
+              <p>{way.body}</p>
+              {way.code && (
+                <div class="code" style="margin-block-start:0.5rem;box-shadow:none">
+                  <pre><code>{way.code}</code></pre>
+                </div>
+              )}
+            </article>
+          ))
+        }
       </div>
-      <pre><code>{t.host.code}</code></pre>
-    </div>
 
-    <div class="notice reveal" style="margin-block-start:1.75rem">
-      <h3>{t.host.warnTitle}</h3>
-      <p>{t.host.warn}</p>
-    </div>
-
-    <p style="margin-block-start:2rem">
-      <a class="btn btn--primary" href={`/${locale}/hosting/`}>{t.hero.cta2}</a>
-    </p>
+      <div class="code" style="margin-block-start:1.25rem">
+        <div class="code__bar">
+          <span class="code__dot" aria-hidden="true"></span>
+          {t.host.codeLabel}
+        </div>
+        <pre><code>{t.host.code}</code></pre>
+      </div>
+    </details>
   </section>
+
 </Base>
