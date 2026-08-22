@@ -150,6 +150,9 @@ export const ptBR: Record<keyof typeof es, string> = {
   "share.ready":
     "Seu servidor está acessível de fora. Os convites já usam este endereço.",
   "share.createLink": "Criar link público",
+  "share.autostart": "Abrir o link público ao iniciar",
+  "share.autostartHint":
+    "Sua comunidade ficará acessível pela internet enquanto o aplicativo estiver aberto. Se desligar, só funciona neste computador até você abrir na mão.",
   "share.createLinkHint":
     "Abre um túnel da Cloudflare e dá um endereço https que funciona fora da sua casa. Sem conta e sem mexer no roteador; na primeira vez o aplicativo baixa sozinho o motor do túnel (uma única vez).",
   "share.closeLink": "Fechar o link público",

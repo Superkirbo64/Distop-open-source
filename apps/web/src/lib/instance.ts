@@ -108,7 +108,14 @@ export function wsUrl(pathWithQuery: string): string {
 
 /** Clave de la sesión de ESTA instancia. Same-origin conserva la clave histórica. */
 export function sessionKey(): string {
-  return instanceBase ? `distop.session::${instanceBase}` : "distop.session";
+  if (!instanceBase) return "distop.session";
+  /* La instancia que hospeda la propia app es un caso aparte: su puerto puede
+     cambiar de un arranque a otro —si el preferido esta ocupado, el sistema da
+     otro—, y con la URL dentro de la clave eso equivalia a cerrar la sesion sola.
+     Para la app su servidor es uno solo aunque cambie de puerto. Fuera de la app
+     empaquetada nada cambia: alli si puede haber dos instancias locales a la vez. */
+  if (window.distop && isLocalInstance(instanceBase)) return "distop.session::app-host";
+  return `distop.session::${instanceBase}`;
 }
 
 /** ¿La instancia activa corre en este mismo equipo? (la que hospeda la app) */

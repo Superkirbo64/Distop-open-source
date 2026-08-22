@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { PERMISSIONS, ALL_PERMISSIONS, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
-import { publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
+import { setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
 import { iceServers, relayState, setRelay, videoMode } from "./ice.ts";
 import { audit, db, markCommunityRead, seedCommunity, uniqueSlug } from "./db.ts";
 import {
@@ -118,7 +118,7 @@ route("GET", "/api/v1/info", async (ctx) => ({
       Si hay un túnel abierto desde la app, esa manda sobre la del .env. */
   public_url: publicUrl(),
   /** Estado del túnel, para que la interfaz pueda ofrecer abrirlo o cerrarlo. */
-  tunnel: tunnelState(),
+  tunnel: { ...tunnelState(), autostart: tunnelAutostart() },
   /** Por dónde se buscan los caminos entre navegadores. Sin esto la voz solo
       funciona entre dos equipos de la misma red, y ni siquiera siempre. */
   ice_servers: await iceServers(),
@@ -2056,7 +2056,7 @@ function requireHost(ctx: Ctx): ReturnType<typeof requireAuth> {
 
 route("GET", "/api/v1/instance/tunnel", (ctx) => {
   requireHost(ctx);
-  return tunnelState();
+  return { ...tunnelState(), autostart: tunnelAutostart() };
 });
 
 route("POST", "/api/v1/instance/tunnel", async (ctx) => {
@@ -2068,6 +2068,16 @@ route("POST", "/api/v1/instance/tunnel", async (ctx) => {
 route("DELETE", "/api/v1/instance/tunnel", (ctx) => {
   requireHost(ctx);
   return stopTunnel();
+});
+
+/* Que el enlace publico se abra solo al arrancar es decision de quien hospeda:
+   comodo por defecto, pero su ordenador queda accesible desde internet mientras
+   la aplicacion este abierta, y eso tiene que poder apagarse. */
+route("PUT", "/api/v1/instance/tunnel/autostart", async (ctx) => {
+  requireHost(ctx);
+  const body = await readJson(ctx);
+  setTunnelAutostart(v.bool(body, "enabled", true));
+  return { enabled: tunnelAutostart() };
 });
 
 /* Relevo de voz: quién puede reenviar el audio y el vídeo cuando dos redes no

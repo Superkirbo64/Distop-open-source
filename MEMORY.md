@@ -933,3 +933,57 @@ aparece en la etiqueta en cuanto existe, y un invitado de paso no se cuela.
   recuperable desde el equipo anfitrión, y eso ya no distingue quién la creó.
 - **Este arreglo viaja dentro del instalador.** Quien ya tenga la app instalada
   sigue con el fallo hasta que se publique una versión nueva.
+
+---
+
+## El enlace público se abre solo (22 de agosto de 2026)
+
+Pedido así: «la aplicación ya debería crear un puente en Cloudflare antes de
+abrir todo, para que el usuario solo tenga que crear el enlace de invitación».
+Y además, entrar sin volver a identificarse, «como en Steam».
+
+### El choque que había que resolver primero
+
+`isLocalRequest()` devolvía `false` en cuanto había un túnel abierto, y con
+razón: el agente de cloudflared habla desde `127.0.0.1`, así que sin más datos
+«estoy delante del ordenador» pasaba a significar «tengo la URL». Abrir el túnel
+al arrancar habría resucitado el bloqueo del dueño que se acababa de arreglar.
+
+**Solución:** el borde de Cloudflare marca lo que reenvía (`cf-ray`,
+`cf-connecting-ip`, `cf-visitor`) y quien viene de internet no puede quitar esas
+marcas. Ahora se distingue por ahí. `PUBLIC_URL` puesta a mano **sigue anulando
+la localidad entera**: ahí alguien colgó la instancia por un camino que no
+conocemos y no sabemos reconocer sus reenvíos.
+
+Verificado contra un túnel de Cloudflare de verdad, no con cabeceras simuladas:
+desde `127.0.0.1` con el túnel abierto seguía saliendo la cuenta recuperable;
+entrando por la URL pública, `recoverable` vacío, `setup_requires_code` true, y
+`/auth/recover` devolvía 400 sin código y 403 con uno inventado.
+
+### Decisiones
+
+| Decisión | Por qué |
+|---|---|
+| El túnel lo abre **el servidor al arrancar**, no la app de escritorio | Así vale igual para Docker o para quien arranca a mano, y no hay que resolver una sesión antes de tener sesión |
+| **Nunca en una instancia sin dueño** | Publicarla antes de que alguien la reclame es regalársela al primero que encuentre la dirección |
+| La preferencia vive en la tabla `meta` (`tunnel.autostart`), no en el `.env` | Es una decisión que se toma desde la interfaz, no al instalar |
+| Por defecto **encendido**, con casilla para apagarlo | Lo pedido, pero el ordenador queda accesible desde internet mientras la app esté abierta y eso tiene que poder decidirse |
+
+### La sesión que se perdía sola
+
+«Como en Steam» destapó otro fallo: la clave de la sesión era
+`distop.session::<URL de la instancia>`, **con el puerto dentro**. Como el
+puerto puede cambiar de un arranque a otro (si el 5000 está ocupado, el sistema
+da otro), la sesión guardada quedaba huérfana y volvías al login.
+
+Para la app empaquetada su propio servidor es **uno solo aunque cambie de
+puerto**, así que ahí la clave es fija (`distop.session::app-host`). Fuera de la
+app no cambia nada: en un navegador sí puede haber dos instancias locales a la
+vez y cada una guarda la suya.
+
+### Pendiente
+
+- `local.test.ts` cubre la distinción con cabeceras simuladas. La prueba contra
+  un túnel real se hizo a mano; automatizarla exigiría abrir un túnel en CI.
+- **Todo esto viaja dentro del instalador.** Hace falta publicar una versión
+  nueva para que llegue a quien ya tiene la app instalada.

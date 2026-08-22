@@ -149,6 +149,9 @@ export const en: Record<keyof typeof es, string> = {
   "share.ready":
     "Your server is reachable from outside. Invites already use this address.",
   "share.createLink": "Create public link",
+  "share.autostart": "Open the public link on start-up",
+  "share.autostartHint":
+    "Your community will be reachable from the internet while the app is open. Turn it off and it only works on this machine until you open it by hand.",
   "share.createLinkHint":
     "Opens a Cloudflare tunnel and gives you an https address that works outside your home. No account, no router changes; on first use the app downloads the tunnel engine by itself (one time only).",
   "share.closeLink": "Close public link",

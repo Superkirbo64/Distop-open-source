@@ -18,6 +18,7 @@ import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { meta, setMeta } from "./db.ts";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { gunzipSync } from "node:zlib";
@@ -195,4 +196,43 @@ for (const signal of ["SIGINT", "SIGTERM", "exit"] as const) {
   process.on(signal, () => {
     child?.kill();
   });
+}
+
+/* ── abrirlo solo ────────────────────────────────────────────────────── */
+
+const CLAVE_AUTO = "tunnel.autostart";
+
+/** ¿Debe publicarse la instancia sola al arrancar? Por defecto sí. */
+export function tunnelAutostart(): boolean {
+  return meta(CLAVE_AUTO, () => "1") === "1";
+}
+
+export function setTunnelAutostart(on: boolean): void {
+  setMeta(CLAVE_AUTO, on ? "1" : "0");
+}
+
+/**
+ * Abrir el enlace público sin que nadie lo pida (§5, §6).
+ *
+ * Quien hospeda no tiene por qué saber que existe un túnel: lo que quiere es
+ * una dirección que pasarle a sus amigos. Así que se abre solo al arrancar y
+ * la invitación ya nace pública.
+ *
+ * Dos condiciones, y las dos importan:
+ *  - Solo si la instancia ya tiene dueño. Una recién instalada no se publica
+ *    antes de que alguien la reclame, o el primer desconocido que encuentre la
+ *    dirección se la queda.
+ *  - Solo si nadie lo ha apagado en los ajustes.
+ *
+ * Que falle no es motivo para no arrancar: la instancia sigue sirviendo en
+ * local y la interfaz enseña el error.
+ */
+export async function autostartTunnel(hayDueno: boolean): Promise<void> {
+  if (!hayDueno || !tunnelAutostart() || config.publicUrl) return;
+  try {
+    await startTunnel();
+  } catch (err) {
+    state.error = err instanceof Error ? err.message : String(err);
+    state.status = "error";
+  }
 }

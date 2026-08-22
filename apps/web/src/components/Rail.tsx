@@ -420,6 +420,8 @@ interface TunnelState {
   status: "off" | "starting" | "on" | "error";
   url: string;
   error: string;
+  /** Si se abre solo al arrancar. Solo viene en la respuesta de quien hospeda. */
+  autostart?: boolean;
 }
 
 /**
@@ -438,6 +440,7 @@ function ShareInstance() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [autostart, setAutostart] = useState(true);
 
   // Solo quien hospeda puede abrir el túnel; para el resto, la sección se queda
   // en "esta es la dirección" sin botones que darían 403.
@@ -446,9 +449,20 @@ function ShareInstance() {
       .then((state) => {
         setIsHost(true);
         setTunnel(state);
+        if (typeof state.autostart === "boolean") setAutostart(state.autostart);
       })
       .catch(() => setIsHost(false));
   }, []);
+
+  async function toggleAutostart(enabled: boolean): Promise<void> {
+    setAutostart(enabled);
+    try {
+      await api("PUT", "/api/v1/instance/tunnel/autostart", { enabled });
+    } catch (err) {
+      setAutostart(!enabled);
+      setError(errorText(err));
+    }
+  }
 
   const address = publicUrl || clientOrigin();
   const isLocal = !publicUrl && /localhost|127\.0\.0\.1|\[::1\]/.test(address);
@@ -499,6 +513,22 @@ function ShareInstance() {
           <p className="text-xs text-muted">
             {tunnel?.status === "on" ? t("share.linkTemporary") : t("share.createLinkHint")}
           </p>
+
+          {/* Se abre solo al arrancar, pero el ordenador queda accesible desde
+              internet mientras la app este abierta: tiene que poder apagarse. */}
+          <label className="flex items-start gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={autostart}
+              onChange={(e) => void toggleAutostart(e.target.checked)}
+              style={{ accentColor: "var(--accent)" }}
+            />
+            <span>
+              <span className="font-semibold">{t("share.autostart")}</span>
+              <span className="block text-muted">{t("share.autostartHint")}</span>
+            </span>
+          </label>
+
           {error ? <ErrorNote>{error}</ErrorNote> : null}
         </div>
       ) : null}

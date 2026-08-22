@@ -150,6 +150,9 @@ export const es = {
   "share.ready":
     "Tu servidor es alcanzable desde fuera. Las invitaciones ya usan esta dirección.",
   "share.createLink": "Crear enlace público",
+  "share.autostart": "Abrir el enlace público al arrancar",
+  "share.autostartHint":
+    "Tu comunidad será accesible desde internet mientras la aplicación esté abierta. Si lo apagas, solo funcionará en este equipo hasta que lo abras a mano.",
   "share.createLinkHint":
     "Abre un túnel de Cloudflare y da una dirección https que funciona fuera de tu casa. No hace falta cuenta ni tocar el router; la primera vez la aplicación descarga sola el motor del túnel (una única vez).",
   "share.closeLink": "Cerrar el enlace público",
