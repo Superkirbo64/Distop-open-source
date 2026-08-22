@@ -247,5 +247,5 @@ Conviene decirlo antes de que alguien lo descubra desplegando:
 
 ## Licencia
 
-AGPL-3.0 (§24). Pendiente de añadir el archivo `LICENSE` y de revisar compatibilidad
-con las dependencias antes de publicar.
+AGPL-3.0-only (§24). El texto completo está en `LICENSE`; las licencias de las
+dependencias, en `THIRD_PARTY_NOTICES.md`.
