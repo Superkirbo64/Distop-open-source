@@ -8,6 +8,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "npm run build && electron .",
+    "test": "node --test \"src/*.test.ts\"",
     "dist": "npm run build && node ../../scripts/stage-protocol.mjs && electron-builder --win nsis",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

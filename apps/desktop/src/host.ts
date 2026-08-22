@@ -11,6 +11,7 @@ import { app, utilityProcess, type UtilityProcess } from "electron";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { instanceDataPath, serverPath } from "./paths";
+import { freePort } from "./port";
 
 export type HostState = "off" | "starting" | "on" | "error";
 
@@ -22,17 +23,21 @@ export interface HostStatus {
   log: string[];
 }
 
-const PORT = 5000;
-const URL_LOCAL = `http://127.0.0.1:${PORT}`;
+// El 5000 es solo la preferencia, nunca un requisito: en un equipo cualquiera
+// ya puede estar ocupado (otro servidor de desarrollo, un servicio de Windows)
+// y eso no puede impedir hospedar. Si está tomado, el sistema da otro libre.
+const PREFERRED_PORT = 5000;
+const HOST_ADDRESS = "0.0.0.0";
 
 let child: UtilityProcess | null = null;
+let url = "";
 let state: HostState = "off";
 let lastError = "";
 const log: string[] = [];
 const listeners = new Set<(status: HostStatus) => void>();
 
 export function hostStatus(): HostStatus {
-  return { state, url: state === "on" ? URL_LOCAL : "", error: lastError, log: log.slice(-40) };
+  return { state, url: state === "on" ? url : "", error: lastError, log: log.slice(-40) };
 }
 
 export function onHostStatus(listener: (status: HostStatus) => void): () => void {
@@ -60,7 +65,7 @@ async function waitForHealth(timeoutMs: number): Promise<boolean> {
   while (Date.now() < deadline) {
     if (!child) return false;
     try {
-      const res = await fetch(`${URL_LOCAL}/health`, { signal: AbortSignal.timeout(2000) });
+      const res = await fetch(`${url}/health`, { signal: AbortSignal.timeout(2000) });
       if (res.ok) return true;
     } catch {
       // Aún arrancando: se reintenta hasta el plazo.
@@ -77,6 +82,15 @@ export async function startHost(): Promise<HostStatus> {
   const dataDir = join(instanceDataPath(), "data");
   mkdirSync(dataDir, { recursive: true });
 
+  let port: number;
+  try {
+    port = await freePort(PREFERRED_PORT, HOST_ADDRESS);
+  } catch (err) {
+    setState("error", err instanceof Error ? err.message : String(err));
+    return hostStatus();
+  }
+  url = `http://127.0.0.1:${port}`;
+
   const server = serverPath();
   const proc = utilityProcess.fork(join(server, "server.ts"), [], {
     cwd: server,
@@ -84,7 +98,8 @@ export async function startHost(): Promise<HostStatus> {
     serviceName: "distop-instance",
     env: {
       ...process.env,
-      PORT: String(PORT),
+      PORT: String(port),
+      HOST: HOST_ADDRESS,
       DATABASE_PATH: join(dataDir, "app.db"),
       DEFAULT_STORAGE_PATH: join(dataDir, "uploads"),
     },

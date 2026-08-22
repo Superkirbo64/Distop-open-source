@@ -19,3 +19,4 @@ jobs:
       - run: npm run typecheck
       - run: npm run typecheck --workspace @distop/desktop
       - run: npm test
+      - run: npm test --workspace @distop/desktop
