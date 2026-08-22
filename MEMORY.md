@@ -831,3 +831,49 @@ caso: solo obliga al distribuir el programa, no al ofrecerlo como servicio.
 - **El repositorio es privado.** El enlace a GitHub del pie da 404 a todo el mundo
   hasta que se haga público.
 - Faltan `CONTRIBUTING.md` y `SECURITY.md`. Cuando existan, vuelven al pie.
+
+---
+
+## Auditoría antes de hacer el repositorio público (22 de agosto de 2026)
+
+Se pidió revisar el proyecto entero buscando cualquier cosa que pudiera
+perjudicar a su dueño al publicarlo. **El repositorio ya era público al terminar
+la revisión**, así que lo que salga del historial ya está expuesto: quitar algo
+hoy solo evita que siga creciendo, no lo borra de lo ya publicado.
+
+### Lo que se comprobó y salió limpio
+
+- `.env` existe en disco, está ignorado y **nunca apareció en el historial**.
+- Ningún `.keystore`, `.jks`, `.pem`, `.p12` ni clave privada rastreados.
+- La firma de Android lee `System.getenv(...)`: sin contraseñas en `build.gradle`.
+- Ninguna base de datos, subida de usuario ni `.zip`/`.exe` rastreados.
+- Las cadenas que parecían contraseñas son de relleno de los tests
+  (`contrasena-larga-1`…).
+- `169.254.169.254` aparece en `sounds.test.ts` **verificando que el servidor
+  bloquea** ese destino (metadatos de la nube). Es protección SSRF, no una fuga.
+- Los mensajes de commit y `MEMORY.md` no llevan rutas, credenciales ni correos.
+
+### Lo que sí salió
+
+| Hallazgo | Gravedad | Qué se hizo |
+|---|---|---|
+| **`.claude/settings.local.json` estaba rastreado** y contenía el usuario de Windows y la ruta absoluta del proyecto | Baja: dato personal, no credencial | Sacado del índice y añadido al `.gitignore`. Sigue en el disco y **sigue en el historial ya publicado** |
+| **`KLIPY_API_KEY` escrita a fuego** en `apps/node-server/klipy-key.ts` y en la copia del móvil, y es de **servidor** (la usa `api.ts` contra `api.klipy.com`) | Decisión del proyecto | **Se deja como está**, por decisión explícita de su dueño |
+| El correo del autor (`%ae`) va en los 13 commits, y hay una segunda identidad `melvingarcia-lab` sin correo | Informativo | Sin tocar. GitHub ofrece un correo `noreply` si algún día molesta |
+
+### Incoherencia encontrada de paso
+
+`.env.example` declara `KLIPY_API_KEY=`, pero `config.ts` importa la constante de
+`klipy-key.ts` y **nunca lee esa variable de entorno**. La variable aparenta
+funcionar y no hace nada. No es un problema de seguridad, pero engaña a quien
+intente configurarlo por el camino documentado.
+
+### El pie, repuesto
+
+`LICENSE` (AGPL-3.0) entró en el repositorio y GitHub ya lo reconoce, y el
+repositorio pasó a público. Con eso vuelven al pie el enlace de **Licencia** y la
+mención a **AGPL-3.0** en la línea legal, que antes se habían quitado por ser
+falsos. Comprobado con petición real: los dos enlaces devuelven 200.
+
+**Contribuir y Seguridad siguen fuera**: `CONTRIBUTING.md` y `SECURITY.md` aún no
+existen. Vuelven cuando existan.

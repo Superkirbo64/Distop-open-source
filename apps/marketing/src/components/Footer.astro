@@ -22,10 +22,12 @@ const columns: { heading: string; items: Item[] }[] = [
   },
   {
     heading: t.footer.project,
-    // Solo lo que existe y funciona. Licencia, Contribuir y Seguridad enlazaban
-    // a archivos que no estan en el repo, y las incidencias no se pueden abrir
-    // mientras el repositorio sea privado: eran cuatro 404 en el pie.
-    items: [{ label: L.code, href: REPO, icon: "github" }],
+    // Solo lo que existe. Contribuir y Seguridad siguen fuera porque
+    // CONTRIBUTING.md y SECURITY.md aun no estan en el repositorio.
+    items: [
+      { label: L.code, href: REPO, icon: "github" },
+      { label: L.license, href: `${REPO}/blob/main/LICENSE` },
+    ],
   },
   {
     heading: t.footer.help,
@@ -72,6 +74,6 @@ const columns: { heading: string; items: Item[] }[] = [
 
   <div class="site-footer__legal">
     <p>{t.footer.legal}</p>
-    <p class="mono">v0.1.0</p>
+    <p class="mono">AGPL-3.0 · v0.1.0</p>
   </div>
 </footer>

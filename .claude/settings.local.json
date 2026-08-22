@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell($b = Get-Command bun -ErrorAction SilentlyContinue; if \\($b\\) { \"bun: \" + \\(bun --version\\) + \" @ \" + $b.Source } else { \"BUN_NOT_INSTALLED\" }; $d = Get-Command docker -ErrorAction SilentlyContinue; if \\($d\\) { \"docker present\" } else { \"no docker\" })",
-      "PowerShell(powershell -c \"irm bun.sh/install.ps1 | iex\" 2>&1 | Select-Object -Last 20)",
-      "PowerShell(cd \"C:\\\\Users\\\\medag\\\\Desktop\\\\discord open source\\\\apps\\\\node-server\"; & \"$env:USERPROFILE\\\\.bun\\\\bin\\\\bun.exe\" test 2>&1 | Select-Object -Last 20)"
-    ]
-  }
-}

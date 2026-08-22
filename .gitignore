@@ -17,3 +17,6 @@ apps/desktop/release.zip
 *.keystore
 keystore.properties
 apps/mobile/release/
+
+# ajustes locales de Claude Code: llevan rutas y usuario de esta maquina
+.claude/settings.local.json
