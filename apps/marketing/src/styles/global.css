@@ -873,6 +873,19 @@ section {
   color: var(--accent-text);
 }
 
+/* El icono de GitHub va dentro del enlace, alineado con la linea de texto. */
+.site-footer .with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.site-footer .ico {
+  inline-size: 1.05em;
+  block-size: 1.05em;
+  flex: none;
+}
+
 /* ── Lista sencilla y seccion plegada ───────────────────────────────────── */
 .list-plain {
   display: grid;

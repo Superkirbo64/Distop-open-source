@@ -1,7 +1,6 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { LOCALES, UI, type Locale } from "../../i18n/ui";
-import { NEWS } from "../../i18n/news";
 
 export function getStaticPaths() {
   return LOCALES.map((lang) => ({ params: { lang } }));
@@ -9,15 +8,6 @@ export function getStaticPaths() {
 
 const locale = Astro.params.lang as Locale;
 const t = UI[locale];
-const latest = NEWS.slice(0, 2);
-const fmt = new Intl.DateTimeFormat(locale === "pt-br" ? "pt-BR" : locale, {
-  // Las fechas son ISO sin hora, o sea medianoche UTC: sin fijar la zona, en
-  // cualquier huso al oeste de Greenwich se imprime el dia anterior.
-  timeZone: "UTC",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
 ---
 
 <Base locale={locale} path="" intro>
@@ -147,29 +137,6 @@ const fmt = new Intl.DateTimeFormat(locale === "pt-br" ? "pt-BR" : locale, {
   </section>
 
   <!-- Novedades ---------------------------------------------------------- -->
-  <section id="news">
-    <div class="stack">
-      <p class="eyebrow reveal">{t.news.eyebrow}</p>
-      <h2 class="reveal">{t.news.title}</h2>
-    </div>
-
-    <div style="margin-block-start:1.5rem">
-      {
-        latest.map((entry) => (
-          <article class="entry reveal">
-            <time datetime={entry.date}>{fmt.format(new Date(entry.date))}</time>
-            <h3>{entry.title[locale]}</h3>
-            <p>{entry.body[locale]}</p>
-          </article>
-        ))
-      }
-    </div>
-
-    <p style="margin-block-start:1.75rem">
-      <a class="btn reveal" href={`/${locale}/news/`}>{t.news.all}</a>
-    </p>
-  </section>
-
   <!-- Llamada final ------------------------------------------------------ -->
   <section class="finale bleed">
     <div class="layout" style="width:100%">

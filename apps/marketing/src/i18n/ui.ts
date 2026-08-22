@@ -44,7 +44,6 @@ const es = {
     features: "Funciones",
     install: "Descargar",
     hosting: "Cómo funciona",
-    news: "Novedades",
     code: "Código",
   },
   hero: {
@@ -157,12 +156,6 @@ const es = {
       },
     ],
   },
-  news: {
-    eyebrow: "News",
-    title: "Últimas partidas",
-    all: "Ver todas",
-    readMore: "Leer",
-  },
   cta: {
     title: "¿Jugamos?",
     sub: "Descarga, ábrelo, invita. Sin cuenta, sin tarjeta y sin desbloquear nada.",
@@ -178,16 +171,10 @@ const es = {
       features: "Funciones",
       install: "Descargar",
       hosting: "Cómo funciona",
-      news: "Novedades",
-      code: "Código fuente",
-      license: "Licencia",
-      contributing: "Contribuir",
-      security: "Seguridad",
-      issues: "Reportar un fallo",
+      code: "GitHub",
       privacy: "Privacidad",
     },
-    legal:
-      "Distop es software libre bajo AGPL-3.0. Proyecto independiente, sin relación con Discord Inc. ni con ninguna otra plataforma.",
+    legal: "Distop es un proyecto independiente. Hecho para comunidades, no para accionistas.",
     langLabel: "Idioma",
   },
   install: {
@@ -254,10 +241,6 @@ const es = {
     offlineBody:
       "Tus amigos no pueden entrar hasta que lo enciendas otra vez, y verán exactamente eso escrito, no un error raro. Es el precio de que nadie más tenga vuestras conversaciones.",
   },
-  newsPage: {
-    title: "Novedades",
-    sub: "Lo que ha ido entrando, con fecha y sin adornos.",
-  },
   privacy: {
     title: "Privacidad",
     sub: "La versión corta: esta página no te sigue, y la aplicación tampoco.",
@@ -299,7 +282,6 @@ const en: Dict = {
     features: "Features",
     install: "Download",
     hosting: "How it works",
-    news: "News",
     code: "Code",
   },
   hero: {
@@ -412,12 +394,6 @@ const en: Dict = {
       },
     ],
   },
-  news: {
-    eyebrow: "News",
-    title: "Latest rounds",
-    all: "See all",
-    readMore: "Read",
-  },
   cta: {
     title: "Shall we play?",
     sub: "Download, open, invite. No account, no card, nothing to unlock.",
@@ -433,16 +409,10 @@ const en: Dict = {
       features: "Features",
       install: "Download",
       hosting: "How it works",
-      news: "News",
-      code: "Source code",
-      license: "Licence",
-      contributing: "Contributing",
-      security: "Security",
-      issues: "Report a bug",
+      code: "GitHub",
       privacy: "Privacy",
     },
-    legal:
-      "Distop is free software under AGPL-3.0. Independent project, unaffiliated with Discord Inc. or any other platform.",
+    legal: "Distop is an independent project. Built for communities, not for shareholders.",
     langLabel: "Language",
   },
   install: {
@@ -509,10 +479,6 @@ const en: Dict = {
     offlineBody:
       "Your friends cannot get in until you turn it back on, and they will see exactly that written out, not some vague error. It is the price of nobody else holding your conversations.",
   },
-  newsPage: {
-    title: "News",
-    sub: "What has landed, dated and without decoration.",
-  },
   privacy: {
     title: "Privacy",
     sub: "The short version: this page does not follow you, and neither does the app.",
@@ -549,7 +515,6 @@ const ptBR: Dict = {
     features: "Recursos",
     install: "Baixar",
     hosting: "Como funciona",
-    news: "Novidades",
     code: "Código",
   },
   hero: {
@@ -662,12 +627,6 @@ const ptBR: Dict = {
       },
     ],
   },
-  news: {
-    eyebrow: "News",
-    title: "Últimas partidas",
-    all: "Ver todas",
-    readMore: "Ler",
-  },
   cta: {
     title: "Bora jogar?",
     sub: "Baixa, abre, convida. Sem conta, sem cartão e sem desbloquear nada.",
@@ -683,16 +642,10 @@ const ptBR: Dict = {
       features: "Recursos",
       install: "Baixar",
       hosting: "Como funciona",
-      news: "Novidades",
-      code: "Código-fonte",
-      license: "Licença",
-      contributing: "Contribuir",
-      security: "Segurança",
-      issues: "Relatar um problema",
+      code: "GitHub",
       privacy: "Privacidade",
     },
-    legal:
-      "O Distop é software livre sob AGPL-3.0. Projeto independente, sem relação com a Discord Inc. nem com qualquer outra plataforma.",
+    legal: "O Distop é um projeto independente. Feito para comunidades, não para acionistas.",
     langLabel: "Idioma",
   },
   install: {
@@ -758,10 +711,6 @@ const ptBR: Dict = {
     offlineTitle: "Quando você desliga o PC",
     offlineBody:
       "Seus amigos não conseguem entrar até você ligar de novo, e vão ver exatamente isso escrito, não um erro esquisito. É o preço de mais ninguém ter as conversas de vocês.",
-  },
-  newsPage: {
-    title: "Novidades",
-    sub: "O que foi entrando, com data e sem enfeite.",
   },
   privacy: {
     title: "Privacidade",

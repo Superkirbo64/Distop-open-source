@@ -778,3 +778,53 @@ vuelven a ser tres.
 
 - **La URL de MediaFire sigue escrita a mano en `install.astro`** y la versión,
   en los tres idiomas. Publicar 0.2.0 son cuatro sitios que tocar.
+
+---
+
+## Limpieza del pie y fuera las novedades (22 de agosto de 2026)
+
+### Lo que estaba roto y no se sabía
+
+Al revisar el pie salieron **cuatro enlaces que daban 404**, no dos:
+
+- `LICENSE`, `CONTRIBUTING.md` y `SECURITY.md` **no existen** en el repositorio.
+- **El repositorio es privado** (`isPrivate: true`), así que las incidencias
+  tampoco se pueden abrir, y cualquier enlace a GitHub falla para todo el mundo
+  que no sea su dueño.
+
+Y la línea legal decía «software libre bajo AGPL-3.0», que **era falso**: no hay
+archivo de licencia y el código no es público.
+
+### Decisiones de esta tanda
+
+| Decisión | Por qué | Qué se descartó |
+|---|---|---|
+| **El pie solo enlaza lo que existe**: Funciones, Descargar, Cómo funciona, GitHub, Privacidad | Un enlace que se sabe roto es peor que no tenerlo | Dejar Licencia, Contribuir, Seguridad y Reportar un fallo apuntando a 404 |
+| **«Código fuente» pasa a ser «GitHub»** con su icono en SVG, dentro del enlace | Pedido explícito. El icono es parte del enlace, no una decoración suelta | Un icono aparte, sin texto |
+| **Fuera toda mención a Discord** | Pedido explícito. La línea legal ahora dice «proyecto independiente, hecho para comunidades, no para accionistas» | La fórmula «sin relación con Discord Inc.» |
+| **Fuera «AGPL-3.0» de la línea legal y del sello de versión** | Reclamaba una licencia que no existe. Cuando haya `LICENSE`, se vuelve a poner | Dejarlo «porque la intención es esa» |
+| **Novedades desaparece entera**: pestaña, enlace del pie, sección de la portada, la página `/news/` y `i18n/news.ts` | Pedido explícito. Dejar la página huérfana sería código muerto | Ocultar solo la pestaña |
+| **`type Item` explícito en `Footer.astro`** | Sin él, TypeScript infiere una unión donde `icon` existe en una rama y no se puede leer en el bucle. Lo cazó `astro check` | `as const`, que no arreglaba la unión |
+
+El sitio pasa de 16 páginas a 13 (se van las tres de novedades, una por idioma).
+
+### Qué es la licencia y por qué importa (se preguntó)
+
+Un archivo `LICENSE` en la raíz del repositorio dice qué puede hacer legalmente
+otra gente con el código. **Sin él, el valor por defecto es «todos los derechos
+reservados»**: aunque el código sea visible, nadie puede usarlo, modificarlo ni
+redistribuirlo legalmente. «Open source sin licencia» es una contradicción.
+
+El AGENT.md del proyecto (§24) ya eligió **AGPL-3.0**, y encaja con lo que el
+proyecto defiende: quien coja Distop, lo mejore y lo ofrezca **como servicio en
+internet** está obligado a publicar sus cambios. Es justo lo que impide que una
+empresa lo convierta en un producto de pago cerrado. La GPL normal no cubre ese
+caso: solo obliga al distribuir el programa, no al ofrecerlo como servicio.
+
+### Pendiente
+
+- **No hay `LICENSE`.** Mientras no exista, el proyecto es legalmente cerrado
+  aunque se llame abierto. Es un archivo de texto: el de AGPL-3.0 se copia tal cual.
+- **El repositorio es privado.** El enlace a GitHub del pie da 404 a todo el mundo
+  hasta que se haga público.
+- Faltan `CONTRIBUTING.md` y `SECURITY.md`. Cuando existan, vuelven al pie.
