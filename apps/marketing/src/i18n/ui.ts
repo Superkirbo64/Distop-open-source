@@ -118,7 +118,7 @@ const es = {
     steps: [
       {
         title: "Ábrelo",
-        body: "Descargas, descomprimes y doble clic. No hay que instalar ningún programa aparte ni crear cuenta en ninguna web: la aplicación ya viene con todo lo que necesita.",
+        body: "Descargas el archivo y doble clic. No hay que instalar ningún programa aparte ni crear cuenta en ninguna web: la aplicación ya viene con todo lo que necesita.",
       },
       {
         title: "Pon tu nombre",
@@ -196,30 +196,23 @@ const es = {
     download: {
       tag: "Windows",
       title: "Descargar Distop",
-      sub: "Un .zip con el instalador dentro. Descomprimir, doble clic y listo.",
+      sub: "El instalador de Windows. Doble clic y se instala solo.",
       cta: "Descargar para Windows",
       host: "Se descarga desde MediaFire",
-      meta: ".zip · 246 MB · Windows 10 y 11 (64 bits)",
-      stepsTitle: "Tres pasos",
+      meta: ".exe · 101 MB · Windows 10 y 11 (64 bits)",
+      stepsTitle: "Dos pasos",
       steps: [
         {
-          title: "Descarga el .zip",
+          title: "Descarga el archivo",
           body: "El botón abre la página de MediaFire. Ahí pulsa «Download» y espera a que termine.",
         },
         {
-          title: "Descomprime el archivo",
-          body: "Clic derecho sobre Distop.zip y «Extraer todo». Aparece una carpeta llamada release.",
-        },
-        {
-          title: "Abre el instalador",
-          body: "Dentro de release, doble clic en «Distop Setup 0.1.0.exe». Se instala solo y crea el acceso directo.",
+          title: "Ábrelo",
+          body: "Doble clic en «Distop Setup 0.1.0.exe», donde se te haya descargado. Se instala solo y te deja el acceso directo.",
         },
       ],
       warnTitle: "Windows va a avisarte",
-      warn: "Al abrir el instalador saldrá una pantalla azul que dice «Windows protegió tu PC». Es porque el archivo no está firmado con un certificado de pago, no porque tenga nada raro. Pulsa «Más información» y luego «Ejecutar de todas formas».",
-      portableTitle: "Si prefieres no instalar nada",
-      portableBody:
-        "El mismo .zip trae la carpeta win-unpacked. Ábrela y ejecuta Distop.exe directamente: funciona igual, no toca el sistema y cabe en un USB. A cambio, no se actualiza sola.",
+      warn: "Puede que tu navegador te pregunte si quieres conservar el archivo, y al abrirlo saldrá una pantalla azul que dice «Windows protegió tu PC». Las dos cosas pasan porque el archivo no está firmado con un certificado de pago, no porque tenga nada raro. En la pantalla azul, pulsa «Más información» y luego «Ejecutar de todas formas».",
     },
     reqTitle: "Lo que necesitas",
     reqs: [
@@ -380,7 +373,7 @@ const en: Dict = {
     steps: [
       {
         title: "Open it",
-        body: "Download, unzip, double-click. No separate programs to install and no account to create on any website: the app already comes with everything it needs.",
+        body: "Download the file and double-click. No separate programs to install and no account to create on any website: the app already comes with everything it needs.",
       },
       {
         title: "Pick your name",
@@ -458,30 +451,23 @@ const en: Dict = {
     download: {
       tag: "Windows",
       title: "Download Distop",
-      sub: "A .zip with the installer inside. Extract it, double-click, done.",
+      sub: "The Windows installer. Double-click and it installs itself.",
       cta: "Download for Windows",
       host: "Hosted on MediaFire",
-      meta: ".zip · 246 MB · Windows 10 and 11 (64-bit)",
-      stepsTitle: "Three steps",
+      meta: ".exe · 101 MB · Windows 10 and 11 (64-bit)",
+      stepsTitle: "Two steps",
       steps: [
         {
-          title: "Download the .zip",
+          title: "Download the file",
           body: "The button opens the MediaFire page. Hit «Download» there and wait for it to finish.",
         },
         {
-          title: "Extract the file",
-          body: "Right-click Distop.zip and pick «Extract all». You get a folder called release.",
-        },
-        {
-          title: "Open the installer",
-          body: "Inside release, double-click «Distop Setup 0.1.0.exe». It installs itself and adds the shortcut.",
+          title: "Open it",
+          body: "Double-click «Distop Setup 0.1.0.exe» wherever it landed. It installs itself and leaves you the shortcut.",
         },
       ],
       warnTitle: "Windows will warn you",
-      warn: "Opening the installer brings up a blue screen saying «Windows protected your PC». That is because the file is not signed with a paid certificate, not because anything is wrong with it. Click «More info», then «Run anyway».",
-      portableTitle: "If you would rather not install anything",
-      portableBody:
-        "The same .zip carries a win-unpacked folder. Open it and run Distop.exe directly: it works the same, touches nothing in the system and fits on a USB stick. The trade-off is that it will not update itself.",
+      warn: "Your browser may ask whether you want to keep the file, and opening it brings up a blue screen saying «Windows protected your PC». Both happen because the file is not signed with a paid certificate, not because anything is wrong with it. On the blue screen, click «More info», then «Run anyway».",
     },
     reqTitle: "What you need",
     reqs: [
@@ -637,7 +623,7 @@ const ptBR: Dict = {
     steps: [
       {
         title: "Abra",
-        body: "Baixa, descompacta e clica duas vezes. Não tem programa separado para instalar nem conta para criar em site nenhum: o aplicativo já vem com tudo o que precisa.",
+        body: "Baixa o arquivo e clica duas vezes. Não tem programa separado para instalar nem conta para criar em site nenhum: o aplicativo já vem com tudo o que precisa.",
       },
       {
         title: "Escolha seu nome",
@@ -715,30 +701,23 @@ const ptBR: Dict = {
     download: {
       tag: "Windows",
       title: "Baixar o Distop",
-      sub: "Um .zip com o instalador dentro. Descompactar, clicar duas vezes e pronto.",
+      sub: "O instalador do Windows. Clique duas vezes e ele se instala sozinho.",
       cta: "Baixar para Windows",
       host: "Baixa pelo MediaFire",
-      meta: ".zip · 246 MB · Windows 10 e 11 (64 bits)",
-      stepsTitle: "Três passos",
+      meta: ".exe · 101 MB · Windows 10 e 11 (64 bits)",
+      stepsTitle: "Dois passos",
       steps: [
         {
-          title: "Baixe o .zip",
+          title: "Baixe o arquivo",
           body: "O botão abre a página do MediaFire. Clique em «Download» e espere terminar.",
         },
         {
-          title: "Descompacte o arquivo",
-          body: "Clique com o botão direito em Distop.zip e escolha «Extrair tudo». Aparece uma pasta chamada release.",
-        },
-        {
-          title: "Abra o instalador",
-          body: "Dentro de release, clique duas vezes em «Distop Setup 0.1.0.exe». Ele se instala sozinho e cria o atalho.",
+          title: "Abra",
+          body: "Clique duas vezes em «Distop Setup 0.1.0.exe», onde ele tiver baixado. Ele se instala sozinho e deixa o atalho.",
         },
       ],
       warnTitle: "O Windows vai avisar",
-      warn: "Ao abrir o instalador aparece uma tela azul dizendo «O Windows protegeu o seu PC». É porque o arquivo não está assinado com um certificado pago, não porque tenha algo de errado. Clique em «Mais informações» e depois em «Executar assim mesmo».",
-      portableTitle: "Se preferir não instalar nada",
-      portableBody:
-        "O mesmo .zip traz a pasta win-unpacked. Abra e execute o Distop.exe direto: funciona igual, não mexe no sistema e cabe num pendrive. Em troca, não se atualiza sozinho.",
+      warn: "Pode ser que o seu navegador pergunte se você quer manter o arquivo, e ao abrir aparece uma tela azul dizendo «O Windows protegeu o seu PC». As duas coisas acontecem porque o arquivo não está assinado com um certificado pago, não porque tenha algo de errado. Na tela azul, clique em «Mais informações» e depois em «Executar assim mesmo».",
     },
     reqTitle: "O que você precisa",
     reqs: [

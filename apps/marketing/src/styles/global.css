@@ -832,9 +832,12 @@ section {
   margin-block-start: 1.5rem;
 }
 
+/* Tantas columnas como pasos haya, todas iguales: fijarlas a tres dejaba un
+   hueco vacío el día que los pasos pasaron a ser dos. */
 @media (min-width: 60rem) {
   .steps {
-    grid-template-columns: repeat(3, 1fr);
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
   }
 }
 

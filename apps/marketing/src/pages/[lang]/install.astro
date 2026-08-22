@@ -10,8 +10,8 @@ const locale = Astro.params.lang as Locale;
 const t = UI[locale];
 const d = t.install.download;
 
-/** El .zip publicado: instalador + carpeta portable. Se sube a mano por release. */
-const DOWNLOAD_URL = "https://www.mediafire.com/file/e0ocnbfmzactpxp/Distop.zip/file";
+/** El instalador publicado. Se sube a mano en cada versión: la URL cambia. */
+const DOWNLOAD_URL = "https://www.mediafire.com/file/s4na7z6ka0estct/Distop_Setup_0.1.0.exe/file";
 ---
 
 <Base locale={locale} path="install/" title={t.install.title} description={t.install.sub}>
@@ -62,10 +62,6 @@ const DOWNLOAD_URL = "https://www.mediafire.com/file/e0ocnbfmzactpxp/Distop.zip/
       <p>{d.warn}</p>
     </div>
 
-    <div class="notice notice--soft reveal" style="margin-block-start:1.25rem">
-      <h3>{d.portableTitle}</h3>
-      <p>{d.portableBody}</p>
-    </div>
   </section>
 
   <section style="padding-block-start:0">

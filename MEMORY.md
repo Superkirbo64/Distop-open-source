@@ -740,3 +740,41 @@ que es lo que garantiza que los tres idiomas siguen teniendo las mismas claves.
   Estado de la instancia, mensajes de error). Esta tanda solo tocó el sitio público.
 - La captura se queda desfasada cada vez que cambie la interfaz. Ahora al menos
   hay un guion para rehacerla en tres órdenes.
+
+---
+
+## La descarga pasa a ser el .exe suelto (22 de agosto de 2026)
+
+Se subió a MediaFire el instalador solo, en vez del `.zip` con la carpeta
+`release/` entera. Eso resuelve los dos pendientes de la tanda anterior: la
+descarga baja de 246 MB a **101 MB** y `builder-debug.yml`, que llevaba rutas
+absolutas de la máquina de compilación, ya no viaja con ella.
+
+- **URL nueva**: `mediafire.com/file/s4na7z6ka0estct/Distop_Setup_0.1.0.exe/file`
+- **Verificado, no supuesto**: 105 487 954 bytes y `content-type:
+  application/x-dosexec`, y coincide byte a byte con el instalador construido
+  aquí — comparados tres trozos de 2 KB (principio, mitad y final) contra el
+  archivo local, sin descargar los 100 MB.
+
+### Qué cambió en el texto
+
+- **De tres pasos a dos**: ya no hay nada que descomprimir. También se corrigió
+  la frase de la portada que decía «descargas, descomprimes y doble clic».
+- **Fuera el aviso de la carpeta portable** y sus claves `portableTitle` /
+  `portableBody` en los tres idiomas: `win-unpacked/` ya no viaja en la descarga,
+  así que ofrecerla sería mentir.
+- **El aviso de Windows menciona ahora también al navegador**: al ser un `.exe`
+  suelto, Chrome o Edge preguntan si conservar el archivo *antes* de que aparezca
+  la pantalla azul de SmartScreen. Quien no lo espera piensa que es un virus.
+
+### Lo que se vio mirando
+
+La rejilla de pasos estaba fijada a `repeat(3, 1fr)`, así que al quedarse en dos
+dejaba una tercera columna vacía. Ahora usa `grid-auto-flow: column` con
+`grid-auto-columns: 1fr`: tantas columnas como pasos haya. Aguanta si mañana
+vuelven a ser tres.
+
+### Pendiente
+
+- **La URL de MediaFire sigue escrita a mano en `install.astro`** y la versión,
+  en los tres idiomas. Publicar 0.2.0 son cuatro sitios que tocar.
