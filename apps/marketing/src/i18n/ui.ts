@@ -187,7 +187,34 @@ const es = {
   },
   install: {
     title: "Instalar Distop",
-    sub: "Hoy Distop se ejecuta desde el código o con Docker. La aplicación de escritorio con instalador está en camino, y no vamos a fingir que ya existe.",
+    sub: "En Windows se descarga y se instala. En cualquier otro sistema, se ejecuta desde el código o con Docker.",
+    download: {
+      tag: "Windows",
+      title: "Descargar Distop",
+      sub: "Un .zip con el instalador dentro. Descomprimir, doble clic y listo.",
+      cta: "Descargar para Windows",
+      host: "Se descarga desde MediaFire",
+      meta: ".zip · 246 MB · Windows 10 y 11 (64 bits)",
+      stepsTitle: "Tres pasos",
+      steps: [
+        {
+          title: "Descarga el .zip",
+          body: "El botón abre la página de MediaFire. Ahí pulsa «Download» y espera a que termine.",
+        },
+        {
+          title: "Descomprime el archivo",
+          body: "Clic derecho sobre Distop.zip y «Extraer todo». Aparece una carpeta llamada release.",
+        },
+        {
+          title: "Abre el instalador",
+          body: "Dentro de release, doble clic en «Distop Setup 0.1.0.exe». Se instala solo y crea el acceso directo.",
+        },
+      ],
+      warnTitle: "Windows va a avisarte",
+      warn: "Al abrir el instalador saldrá una pantalla azul que dice «Windows protegió tu PC». Es porque el archivo no está firmado con un certificado de pago, no porque tenga nada raro. Pulsa «Más información» y luego «Ejecutar de todas formas».",
+      portableTitle: "Si prefieres no instalar nada",
+      portableBody: "El mismo .zip trae la carpeta win-unpacked. Ábrela y ejecuta Distop.exe directamente: funciona igual, no toca el sistema y cabe en un USB. A cambio, no se actualiza sola.",
+    },
     ways: [
       {
         tag: "Recomendado",
@@ -200,12 +227,6 @@ const es = {
         title: "Con Node 24",
         body: "Node 24 ejecuta TypeScript sin compilar y trae SQLite dentro, así que no hace falta nada más.",
         code: "git clone … && cd distop\nnpm install\nnpm run host",
-      },
-      {
-        tag: "En camino",
-        title: "Escritorio",
-        body: "Aplicación de escritorio con Tauri: notificaciones nativas, pulsar para hablar global y bandeja del sistema. Todavía no hay binarios que descargar.",
-        code: "",
       },
     ],
     reqTitle: "Lo que necesitas",
@@ -425,7 +446,34 @@ const en: Dict = {
   },
   install: {
     title: "Install Distop",
-    sub: "Today Distop runs from source or with Docker. The desktop app with an installer is on the way, and we're not going to pretend it already exists.",
+    sub: "On Windows you download it and install it. On anything else, run it from source or with Docker.",
+    download: {
+      tag: "Windows",
+      title: "Download Distop",
+      sub: "A .zip with the installer inside. Extract it, double-click, done.",
+      cta: "Download for Windows",
+      host: "Hosted on MediaFire",
+      meta: ".zip · 246 MB · Windows 10 and 11 (64-bit)",
+      stepsTitle: "Three steps",
+      steps: [
+        {
+          title: "Download the .zip",
+          body: "The button opens the MediaFire page. Hit «Download» there and wait for it to finish.",
+        },
+        {
+          title: "Extract the file",
+          body: "Right-click Distop.zip and pick «Extract all». You get a folder called release.",
+        },
+        {
+          title: "Open the installer",
+          body: "Inside release, double-click «Distop Setup 0.1.0.exe». It installs itself and adds the shortcut.",
+        },
+      ],
+      warnTitle: "Windows will warn you",
+      warn: "Opening the installer brings up a blue screen saying «Windows protected your PC». That is because the file is not signed with a paid certificate, not because anything is wrong with it. Click «More info», then «Run anyway».",
+      portableTitle: "If you would rather not install anything",
+      portableBody: "The same .zip carries a win-unpacked folder. Open it and run Distop.exe directly: it works the same, touches nothing in the system and fits on a USB stick. The trade-off is that it will not update itself.",
+    },
     ways: [
       {
         tag: "Recommended",
@@ -438,12 +486,6 @@ const en: Dict = {
         title: "With Node 24",
         body: "Node 24 runs TypeScript without a build step and ships SQLite inside, so nothing else is needed.",
         code: "git clone … && cd distop\nnpm install\nnpm run host",
-      },
-      {
-        tag: "On the way",
-        title: "Desktop",
-        body: "A Tauri desktop app: native notifications, global push-to-talk and a tray icon. There are no binaries to download yet.",
-        code: "",
       },
     ],
     reqTitle: "What you need",
@@ -658,7 +700,34 @@ const ptBR: Dict = {
   },
   install: {
     title: "Instalar o Distop",
-    sub: "Hoje o Distop roda a partir do código ou com Docker. O aplicativo de desktop com instalador está a caminho, e não vamos fingir que já existe.",
+    sub: "No Windows é só baixar e instalar. Em qualquer outro sistema, roda a partir do código ou com Docker.",
+    download: {
+      tag: "Windows",
+      title: "Baixar o Distop",
+      sub: "Um .zip com o instalador dentro. Descompactar, clicar duas vezes e pronto.",
+      cta: "Baixar para Windows",
+      host: "Baixa pelo MediaFire",
+      meta: ".zip · 246 MB · Windows 10 e 11 (64 bits)",
+      stepsTitle: "Três passos",
+      steps: [
+        {
+          title: "Baixe o .zip",
+          body: "O botão abre a página do MediaFire. Clique em «Download» e espere terminar.",
+        },
+        {
+          title: "Descompacte o arquivo",
+          body: "Clique com o botão direito em Distop.zip e escolha «Extrair tudo». Aparece uma pasta chamada release.",
+        },
+        {
+          title: "Abra o instalador",
+          body: "Dentro de release, clique duas vezes em «Distop Setup 0.1.0.exe». Ele se instala sozinho e cria o atalho.",
+        },
+      ],
+      warnTitle: "O Windows vai avisar",
+      warn: "Ao abrir o instalador aparece uma tela azul dizendo «O Windows protegeu o seu PC». É porque o arquivo não está assinado com um certificado pago, não porque tenha algo de errado. Clique em «Mais informações» e depois em «Executar assim mesmo».",
+      portableTitle: "Se preferir não instalar nada",
+      portableBody: "O mesmo .zip traz a pasta win-unpacked. Abra e execute o Distop.exe direto: funciona igual, não mexe no sistema e cabe num pendrive. Em troca, não se atualiza sozinho.",
+    },
     ways: [
       {
         tag: "Recomendado",
@@ -671,12 +740,6 @@ const ptBR: Dict = {
         title: "Com Node 24",
         body: "O Node 24 executa TypeScript sem compilar e já traz SQLite dentro, então não precisa de mais nada.",
         code: "git clone … && cd distop\nnpm install\nnpm run host",
-      },
-      {
-        tag: "A caminho",
-        title: "Desktop",
-        body: "Aplicativo de desktop com Tauri: notificações nativas, apertar para falar global e ícone na bandeja. Ainda não há binários para baixar.",
-        code: "",
       },
     ],
     reqTitle: "O que você precisa",

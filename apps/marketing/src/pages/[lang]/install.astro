@@ -8,6 +8,10 @@ export function getStaticPaths() {
 
 const locale = Astro.params.lang as Locale;
 const t = UI[locale];
+const d = t.install.download;
+
+/** El .zip publicado: instalador + carpeta portable. Se sube a mano por release. */
+const DOWNLOAD_URL = "https://www.mediafire.com/file/e0ocnbfmzactpxp/Distop.zip/file";
 ---
 
 <Base locale={locale} path="install/" title={t.install.title} description={t.install.sub}>
@@ -18,7 +22,54 @@ const t = UI[locale];
       <p class="lead">{t.install.sub}</p>
     </div>
 
-    <div class="grid-cards" style="margin-block-start:2.5rem">
+    <div class="dl reveal">
+      <span class="card__tag">{d.tag}</span>
+      <h2 class="dl__title">{d.title}</h2>
+      <p class="dl__sub">{d.sub}</p>
+
+      <a
+        class="btn btn--primary btn--lg"
+        href={DOWNLOAD_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <svg class="dl__icon" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M5 1h2v4h2v2H7v2H5V7H3V5h2zM2 9h8v2H2z" fill="currentColor" />
+        </svg>
+        {d.cta}
+      </a>
+
+      <p class="dl__host">{d.host}</p>
+      <p class="dl__meta">{d.meta}</p>
+    </div>
+
+    <div class="stack" style="margin-block-start:2.5rem">
+      <h2 class="reveal">{d.stepsTitle}</h2>
+      <ol class="steps reveal">
+        {
+          d.steps.map((step) => (
+            <li class="step">
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+
+    <div class="notice reveal" style="margin-block-start:2rem">
+      <h3>{d.warnTitle}</h3>
+      <p>{d.warn}</p>
+    </div>
+
+    <div class="notice notice--soft reveal" style="margin-block-start:1.25rem">
+      <h3>{d.portableTitle}</h3>
+      <p>{d.portableBody}</p>
+    </div>
+  </section>
+
+  <section style="padding-block-start:0">
+    <div class="grid-cards">
       {
         t.install.ways.map((way) => (
           <article class="card reveal">

@@ -767,6 +767,109 @@ section {
   max-width: 68ch;
 }
 
+/* ── Descarga ───────────────────────────────────────────────────────────── */
+/* El bloque manda sobre el resto de la página: es la acción que casi todo el
+   mundo viene a hacer. Borde de acento en vez del gris de las cards. */
+.dl {
+  display: grid;
+  justify-items: center;
+  gap: 0.6rem;
+  margin-block-start: 2.5rem;
+  padding: clamp(1.75rem, 5vw, 2.75rem) clamp(1.25rem, 4vw, 2.5rem);
+  text-align: center;
+  background: linear-gradient(180deg, var(--raise), var(--surface));
+  border: 2px solid var(--accent);
+  box-shadow: 8px 8px 0 0 var(--accent);
+}
+
+.dl .card__tag {
+  justify-self: center;
+}
+
+.dl__sub {
+  color: var(--muted);
+  max-width: 46ch;
+  margin-block-end: 0.75rem;
+}
+
+.btn--lg {
+  justify-content: center;
+  text-align: center;
+  padding: 1.1rem 2rem;
+  font-size: clamp(0.875rem, 0.8rem + 0.45vw, 1.125rem);
+}
+
+.dl__icon {
+  inline-size: 1em;
+  block-size: 1em;
+  /* Sin esto el arte de píxeles sale con los bordes difuminados. */
+  shape-rendering: crispEdges;
+}
+
+/* Quién sirve el archivo se dice antes de pulsar, no después. */
+.dl__host {
+  font-family: var(--font-label);
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin-block-start: 0.4rem;
+}
+
+.dl__meta {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+/* Los números salen de un contador, no del marcado: el orden lo pone el CSS. */
+.steps {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: 1fr;
+  counter-reset: step;
+  list-style: none;
+  padding: 0;
+  margin-block-start: 1.5rem;
+}
+
+@media (min-width: 60rem) {
+  .steps {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.step {
+  counter-increment: step;
+  display: grid;
+  gap: 0.5rem;
+  align-content: start;
+  padding: 1.4rem;
+  background: var(--surface);
+  border: 2px solid var(--line);
+  border-block-start: 6px solid var(--accent);
+}
+
+.step::before {
+  content: counter(step);
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--accent-text);
+}
+
+.step p {
+  color: var(--muted);
+}
+
+/* Misma caja que .notice pero informativa: el ámbar es para advertir. */
+.notice--soft {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border-left-color: var(--accent);
+}
+
+.notice--soft h3 {
+  color: var(--accent-text);
+}
+
 /* ── Captura del producto ───────────────────────────────────────────────── */
 .shot {
   border: 2px solid var(--line);

@@ -406,8 +406,9 @@ borraron al terminar.
 - **`ws` está en 8.18.0 y tiene dos avisos altos** (divulgación de memoria y DoS por
   fragmentos diminutos). Se arregla subiendo a 8.21.1. Es dependencia de producción de
   la instancia, no del sitio; no se tocó en esta tanda para no mezclar cosas.
-- El repositorio del pie apunta a `github.com/kirbo/distop`, que es un marcador: hay
-  que poner la URL real. Lo mismo con `site: "https://distop.app"` en `astro.config.mjs`.
+- ~~El repositorio del pie apunta a `github.com/kirbo/distop`~~ **resuelto el 21 de
+  agosto de 2026**: ahora es `github.com/Superkirbo64/Distop-open-source`. Sigue
+  pendiente `site: "https://distop.app"` en `astro.config.mjs`.
 - No hay imagen de Open Graph (`og:image`), así que al compartir el enlace sale sin
   tarjeta. Es una captura de 1200×630 en `public/`.
 - Falta la página de descubrimiento de comunidades públicas: la API ya tiene
@@ -564,3 +565,110 @@ Deudas conocidas que se dejaron a propósito (anotadas, no corregidas):
   La cabecera enseña las dos miniaturas. El carril queda en seis categorías:
   Identidad · Avatar y decoración · Banner y placa · Estilo del nombre · Tema ·
   Efecto de la tarjeta. Verificado en navegador (captura con la sección abierta).
+
+---
+
+## Descarga de Windows en el sitio público (21 de agosto de 2026)
+
+Se pidió publicar el binario de escritorio desde el sitio. La decisión de distribución
+la tomó quien lidera el proyecto y no es la que recomendaría por defecto.
+
+### Decisiones de esta tanda
+
+| Decisión | Por qué | Qué se descartó |
+|---|---|---|
+| **MediaFire como único origen de descarga**, enlazado desde `/[lang]/install/` | Decisión explícita del proyecto | **GitHub Releases**, que se ofreció como principal (sin anuncios ni esperas, y es el feed que ya lee `electron-updater`). Se descartó a propósito |
+| **El `.zip` se enlaza, no se sirve** desde el sitio | 246 MB no caben en el repo ni en la capa gratuita de Pages | Subir el binario al repositorio |
+| **Tres pasos numerados con contador CSS** (`counter-increment`) en vez de números en el marcado | El orden lo pone la hoja de estilos; reordenar no toca el HTML ni las tres traducciones | Escribir «1/2/3» en cada idioma |
+| **Una columna o tres, nunca dos** (`@media (min-width: 60rem)`) | Con `auto-fit` salían dos columnas a 768 px y el tercer paso se quedaba huérfano con medio grid vacío | `repeat(auto-fit, minmax(15rem, 1fr))` |
+| **Se dice en la página que Windows va a avisar** («Windows protegió tu PC») | El build no está firmado y SmartScreen lo marca. Callarlo hace que parezca un virus; §29.3 pide no ocultar limitaciones | Dejar que el usuario se lo encuentre |
+| **La tarjeta «Escritorio — en camino» se borró** | Decía que la app era Tauri y que no había binarios. Las dos cosas eran falsas: es Electron y ya se descarga | Actualizarla y dejarla duplicando el bloque de descarga |
+
+### Qué hay dentro del `.zip` (verificado, no supuesto)
+
+`Distop.zip` son **258 342 801 bytes** y su raíz es `release/`, o sea la carpeta de
+salida de electron-builder tal cual:
+
+```text
+release/
+├── Distop Setup 0.1.0.exe        ← el instalador que enlaza la web
+├── Distop Setup 0.1.0.exe.blockmap
+├── builder-debug.yml
+├── latest.yml
+└── win-unpacked/                 ← además, la versión portable
+```
+
+Se comprobó **sin descargar los 246 MB**: se resolvió el enlace directo de MediaFire,
+se leyó el `End of Central Directory` con una petición de rango sobre los últimos
+64 KB (1093 entradas) y luego el directorio central completo (147 546 bytes desde el
+offset 258 195 233). Vale la pena recordar el truco: el índice de un zip está al final,
+así que se puede listar un archivo remoto entero bajando dos rangos pequeños.
+
+### Pendiente de esta tanda
+
+- **El `.zip` publicado pesa 2,5× lo necesario.** Lleva `win-unpacked/` (408 MB sin
+  comprimir) *además* del instalador, que ya contiene lo mismo. Solo con el `.exe`
+  serían ~101 MB. Se mantuvo porque es el archivo que ya está subido, y la página
+  aprovecha la carpeta portable como alternativa de «no instalar nada».
+- **`builder-debug.yml` viaja dentro del zip y lleva rutas absolutas de la máquina de
+  compilación** (con el nombre de usuario de Windows). No es una credencial, pero no
+  pinta nada en una descarga pública. Al regenerar el zip, fuera.
+- **El enlace de MediaFire es una constante en `install.astro`** (`DOWNLOAD_URL`). Cada
+  versión nueva es un archivo nuevo con otra URL: hay que editarla a mano. Si esto se
+  repite, el sitio de descarga debería salir de un solo archivo de configuración.
+- **La versión está escrita a mano en tres sitios** del texto de instalación
+  («Distop Setup 0.1.0.exe» en `es`, `en` y `pt-BR`) y en `meta` («246 MB»). Al publicar
+  0.2.0 hay que tocar los tres idiomas.
+
+---
+
+## Despliegue del sitio en Vercel (22 de agosto de 2026)
+
+Se pidió sacar `apps/marketing` a un repositorio aparte «para poder ponerlo en Vercel».
+**No hizo falta:** Vercel tiene un campo *Root Directory* que apunta a una carpeta del
+repo, así que el sitio se despliega desde el monorepo y no hay dos copias que
+desincronizar. Se ofreció el repo aparte y se descartó por eso.
+
+### Ajustes del proyecto en Vercel
+
+```text
+Repository:       Superkirbo64/Distop-open-source
+Root Directory:   apps/marketing
+Framework Preset: Astro          (se autodetecta)
+Build Command:    npm run build  (por defecto)
+Output Directory: dist           (por defecto)
+Node.js Version:  22.x
+```
+
+**«Include files outside of the Root Directory» tiene que quedarse activado** (viene
+así): son workspaces de npm y la instalación ocurre en la raíz del repo, no dentro de
+`apps/marketing`.
+
+### Decisiones de esta tanda
+
+| Decisión | Por qué | Qué se descartó |
+|---|---|---|
+| **Desplegar desde el monorepo** con Root Directory | Un solo sitio donde vive el código. Cada push a `main` redespliega | Repo `distop-site` aparte, que obligaba a duplicar o sincronizar el sitio a mano |
+| **`engines.node: ">=22.12.0"` en `apps/marketing/package.json`** | La raíz declara `>=24` porque el node-server lo necesita (`node:sqlite`, TS sin compilar). Vercel no ofrece Node 24, y leyendo el `engines` del proyecto habría fallado el build. Astro 7 pide 22.12 | Bajar el `>=24` de la raíz, que rompería el servidor |
+| **`vercel.json` con `trailingSlash: true`** | Astro genera las rutas con barra final (`trailingSlash: "always"`). Sin decírselo a Vercel, cada página existiría con y sin barra: contenido duplicado para Google | Dejar el valor por defecto |
+| **Redirección `/` → `/es/` como 307 en `vercel.json`** | En estático, Astro resuelve esa redirección con un `<meta refresh>` y `noindex`. Un 307 real es más rápido y lo entienden los buscadores | Un 301/308 permanente: el navegador lo cachea para siempre y hoy la elección de idioma por defecto todavía puede cambiar |
+| **La redirección de Astro se queda además de la de Vercel** | §16.1 admite también Cloudflare Pages y Netlify. Quitarla ataría el sitio a Vercel | Borrar `redirects` de `astro.config.mjs` |
+
+### Cosas que hay que saber antes de tocar esto
+
+- **`npm ci` falla en Windows con `EPERM` sobre `astro.win32-x64-msvc.node`**: es un
+  binario nativo que algún proceso de Node tiene mapeado (editor, servidor de lenguaje,
+  un `astro check` anterior). No dice nada del despliegue, que corre en Linux. Para
+  validar la sincronía del lockfile sin tocar el disco: **`npm ci --dry-run`**.
+- **Un `npm ci` interrumpido deja `node_modules` a medias** (se quedó en 51 entradas de
+  527). Se repara con `npm install`, pero si algo falla justo después de un `ci` cortado,
+  mira eso antes de buscar la causa en otro sitio.
+- **Los demonios de esbuild del repo bloquean `node_modules`.** Se cierran sin miedo:
+  se relanzan solos cuando un build los necesita.
+
+### Pendiente
+
+- **`site: "https://distop.app"` en `astro.config.mjs` sigue siendo un marcador.** De ahí
+  salen las URL canónicas, así que mientras el sitio viva en `*.vercel.app` los canónicos
+  apuntan a un dominio que todavía no sirve nada. O se compra y se apunta el dominio, o
+  se cambia esa línea por la dirección real de Vercel.
