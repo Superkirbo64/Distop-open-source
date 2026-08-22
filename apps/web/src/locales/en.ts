@@ -50,7 +50,7 @@ export const en: Record<keyof typeof es, string> = {
     "Without a password you can do the same; you only need one to come back from another device.",
   "auth.recoverTitle": "Are you the one hosting this server?",
   "auth.recoverHint":
-    "These accounts have no password and own a community. Since you are on the machine hosting it, you can walk right in.",
+    "These accounts have no password. Since you are on the machine hosting the server, you can walk right in.",
   "auth.registrationClosed": "Registration is closed on this server.",
   "auth.guestClosed": "This server does not allow guests.",
 

@@ -877,3 +877,59 @@ falsos. Comprobado con petición real: los dos enlaces devuelven 200.
 
 **Contribuir y Seguridad siguen fuera**: `CONTRIBUTING.md` y `SECURITY.md` aún no
 existen. Vuelven cuando existan.
+
+---
+
+## El dueño se quedaba fuera de su propia instancia (22 de agosto de 2026)
+
+Reportado con dos capturas: la app pedía usuario y contraseña donde no debería,
+y después «no puedo abrir un servidor». **Eran el mismo fallo.**
+
+### La cadena
+
+1. `POST /auth/bootstrap` crea la cuenta de quien hospeda **pero no crea ninguna
+   comunidad**. Ese hueco entre «ya tengo cuenta» y «ya tengo comunidad» existe
+   siempre.
+2. `setup_required` es `countOwners() === 0`, y `countOwners()` cuenta usuarios
+   con `kind = 'local'` sin mirar comunidades. O sea: en cuanto pones tu nombre,
+   la pantalla de puesta en marcha **no vuelve nunca**.
+3. `recoverableAccounts()` exigía `community IS NOT NULL`. Con cuenta y sin
+   comunidad, no salías en esa lista.
+
+Resultado: cuenta sin contraseña + sesión perdida (cerrar la app en ese rato) =
+**pantalla de acceso sin contraseña que escribir y sin nadie a quien recuperar**.
+La única salida visible era «Crear cuenta», que sí exige contraseña de 10
+caracteres — y esa cuenta nueva ya no es la dueña de la instancia
+(`isInstanceOwner` es la cuenta local más antigua), así que tampoco podía tocar
+nada del anfitrión. De ahí «no puedo abrir un servidor».
+
+### El arreglo
+
+Una condición: `WHERE u.password_hash IS NULL AND (u.kind = 'local' OR community IS NOT NULL)`.
+
+Las cuentas locales salen siempre, tengan comunidad o no. Los invitados siguen
+pidiendo comunidad propia, o la pantalla de entrada acabaría listando a todo el
+que pasó por ahí una vez. `community` pasa a ser `string | null` en el protocolo
+y en el cliente, que ya no pinta el separador colgando.
+
+### Cómo se verificó
+
+No leyendo el código: se levantó una instancia aislada, se reprodujo el
+bloqueo exacto (`recoverable: []` tras poner el nombre), se aplicó el arreglo,
+se repitió el mismo camino y salió `[{"username":"kirbo","community":null}]` con
+`/auth/recover` devolviendo sesión de verdad. Luego, captura de la pantalla de
+acceso: aparece el bloque «¿Eres quien hospeda este servidor?» con el botón.
+
+`recover.test.ts` deja tres casos: sin comunidad se recupera igual, la comunidad
+aparece en la etiqueta en cuanto existe, y un invitado de paso no se cuela.
+
+### Ojo con esto
+
+- **El texto de ayuda decía «y tienen comunidad propia»**, que dejó de ser cierto
+  con el arreglo. Corregido en los tres idiomas.
+- **`/auth/register` exige contraseña** (mínimo 10) mientras `/auth/bootstrap` la
+  deja opcional. No se tocó, pero es la incoherencia que hacía sentir obligatorio
+  poner contraseña. Si algún día se abre, ojo: una cuenta local sin contraseña es
+  recuperable desde el equipo anfitrión, y eso ya no distingue quién la creó.
+- **Este arreglo viaja dentro del instalador.** Quien ya tenga la app instalada
+  sigue con el fallo hasta que se publique una versión nueva.

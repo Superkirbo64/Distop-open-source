@@ -137,16 +137,22 @@ interface RecoverableAccount {
   display_name: string;
   /** De quién es cada cuenta se distingue por su comunidad, no por el nombre:
       en una instancia doméstica todas se llaman parecido. */
-  community: string;
+  community: string | null;
 }
 
 function recoverableAccounts(): RecoverableAccount[] {
   return db
     .prepare(
+      /* Las cuentas locales salen siempre, tengan comunidad o no: quien pone en
+         marcha la instancia crea su cuenta antes que su primera comunidad, y
+         exigir comunidad aqui la dejaba fuera de su propio servidor si perdia la
+         sesion en ese rato: sin contrasena que escribir y sin nada que recuperar.
+         Los invitados siguen pidiendo comunidad, o la pantalla de entrada acabaria
+         listando a todo el que paso por aqui una vez. */
       `SELECT u.username, u.display_name,
               (SELECT name FROM communities WHERE owner_id = u.id ORDER BY created_at LIMIT 1) AS community
          FROM users u
-        WHERE u.password_hash IS NULL AND community IS NOT NULL
+        WHERE u.password_hash IS NULL AND (u.kind = 'local' OR community IS NOT NULL)
         ORDER BY u.created_at LIMIT 20`,
     )
     .all() as RecoverableAccount[];

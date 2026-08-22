@@ -18,7 +18,7 @@ interface InstanceInfo {
   registration_enabled: boolean;
   guest_mode_enabled: boolean;
   /** Solo llega con contenido desde el propio equipo anfitrión. */
-  recoverable: Array<{ username: string; display_name: string; community: string }>;
+  recoverable: Array<{ username: string; display_name: string; community: string | null }>;
 }
 
 export function Auth({ onDone }: { onDone?: () => void }) {
@@ -114,7 +114,7 @@ export function Auth({ onDone }: { onDone?: () => void }) {
                       }
                     }}
                   >
-                    {account.display_name} · {account.community}
+                    {account.community ? `${account.display_name} · ${account.community}` : account.display_name}
                   </Button>
                 ))}
               </div>

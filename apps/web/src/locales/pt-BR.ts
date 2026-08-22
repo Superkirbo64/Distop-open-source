@@ -50,7 +50,7 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Sem senha você faz o mesmo; ela só serve para voltar de outro dispositivo.",
   "auth.recoverTitle": "Você é quem hospeda este servidor?",
   "auth.recoverHint":
-    "Estas contas não têm senha e têm comunidade própria. Como você está no equipamento que hospeda, pode entrar direto.",
+    "Estas contas não têm senha. Como você está no equipamento que hospeda o servidor, pode entrar direto.",
   "auth.registrationClosed": "Este servidor está com o cadastro fechado.",
   "auth.guestClosed": "Este servidor não aceita convidados.",
 

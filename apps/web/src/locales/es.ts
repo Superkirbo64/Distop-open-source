@@ -48,7 +48,7 @@ export const es = {
     "Sin contraseña puedes hacer lo mismo; solo la necesitas para volver desde otro dispositivo.",
   "auth.recoverTitle": "¿Eres quien hospeda este servidor?",
   "auth.recoverHint":
-    "Estas cuentas no tienen contraseña y tienen comunidad propia. Como estás en el equipo que la hospeda, puedes entrar directamente.",
+    "Estas cuentas no tienen contraseña. Como estás en el equipo que hospeda el servidor, puedes entrar directamente.",
   "auth.registrationClosed": "Este servidor tiene el registro cerrado.",
   "auth.guestClosed": "Este servidor no admite invitados.",
 
