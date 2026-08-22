@@ -823,8 +823,11 @@ caso: solo obliga al distribuir el programa, no al ofrecerlo como servicio.
 
 ### Pendiente
 
-- **No hay `LICENSE`.** Mientras no exista, el proyecto es legalmente cerrado
-  aunque se llame abierto. Es un archivo de texto: el de AGPL-3.0 se copia tal cual.
+- **`LICENSE` (AGPL-3.0) apareció mientras se hacía esta tanda**, junto con
+  `"license": "AGPL-3.0-only"` en los `package.json` y la nota del README.
+  En cuanto esté dentro de git **y** el repositorio sea público, el enlace de
+  Licencia puede volver al pie y la línea legal puede volver a decir AGPL-3.0
+  sin mentir.
 - **El repositorio es privado.** El enlace a GitHub del pie da 404 a todo el mundo
   hasta que se haga público.
 - Faltan `CONTRIBUTING.md` y `SECURITY.md`. Cuando existan, vuelven al pie.
