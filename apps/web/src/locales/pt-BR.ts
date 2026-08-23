@@ -10,6 +10,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "common.loading": "Carregando…",
   "common.retry": "Tentar de novo",
   "common.optional": "opcional",
+  "common.resize": "Arraste para mudar a largura",
   "update.available": "Há uma versão nova do aplicativo.",
   "update.reload": "Recarregar",
   "common.chooseFile": "Enviar imagem",
@@ -39,7 +40,9 @@ export const ptBR: Record<keyof typeof es, string> = {
   "auth.username": "Nome de usuário",
   "auth.usernameHint": "Minúsculas, números, ponto, hífen e sublinhado.",
   "auth.password": "Senha",
-  "auth.passwordHint": "No mínimo 10 caracteres.",
+  "auth.passwordHint":
+    "Opcional. Sem ela você só entra a partir deste dispositivo, ou com o código da instância; pode adicionar depois em Ajustes.",
+  "auth.noPasswordWarning": "Sem senha, esta conta vive só neste navegador. Pode adicionar depois em Ajustes.",
   "auth.displayName": "Nome de exibição",
   "auth.noAccount": "Ainda sem conta?",
   "auth.haveAccount": "Já tem conta?",
@@ -48,9 +51,9 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Você faz exatamente o mesmo que com conta: criar comunidades, canais, convidar e falar. Coloque senha quando quiser, sem perder nada.",
   "auth.guestEqual":
     "Sem senha você faz o mesmo; ela só serve para voltar de outro dispositivo.",
-  "auth.recoverTitle": "Você é quem hospeda este servidor?",
+  "auth.recoverTitle": "Contas deste equipamento",
   "auth.recoverHint":
-    "Estas contas não têm senha. Como você está no equipamento que hospeda o servidor, pode entrar direto.",
+    "Estas contas não têm senha. Como você está neste equipamento, pode continuar sem digitar nada.",
   "auth.registrationClosed": "Este servidor está com o cadastro fechado.",
   "auth.guestClosed": "Este servidor não aceita convidados.",
 
@@ -167,6 +170,8 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Enquanto este computador estiver ligado, sua comunidade está no ar. Quando desligar, não está.",
 
   "community.yours": "Suas comunidades",
+  "rail.otherInstances": "Outros servidores",
+  "rail.otherInstance": "Ir para {name}",
   "community.create": "Criar comunidade",
   "community.createTitle": "Nova comunidade",
   "community.name": "Nome",
@@ -284,9 +289,12 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.exitFullscreen": "Sair da tela cheia",
   "voice.shareMute": "Silenciar som da tela",
   "voice.shareUnmute": "Ativar som da tela",
+  "voice.videoTitle": "Câmera e tela",
+  "voice.videoIntro":
+    "Da sua câmera e da sua tela, e só para você: ninguém mais percebe o que você mudar aqui.",
   "voice.quality": "Qualidade máxima do vídeo",
   "voice.qualityHint":
-    "Sem limite pago: isto é a subida de quem hospeda, multiplicada por cada pessoa assistindo.",
+    "Sem limite pago: é a sua própria subida, da sua câmera e da sua tela. Não afeta mais ninguém.",
   "voice.qualityLow": "Econômica — até 30 fps · câmera 1,5 / tela 3 Mbit/s",
   "voice.qualityMedium": "Equilibrada — até 60 fps · câmera 4 / tela 8 Mbit/s",
   "voice.qualityHigh": "Máxima — até 120 fps · câmera 12 / tela 24 Mbit/s",

@@ -159,10 +159,8 @@ export function setIceServers(servers: RTCIceServer[]): void {
  */
 let videoViaHost = true;
 
-export function setVideoMode(mode: "host" | "direct", quality: relay.Quality = "medium", priority: relay.Priority = "balanced"): void {
+export function setVideoMode(mode: "host" | "direct"): void {
   videoViaHost = mode !== "direct";
-  relay.setQuality(quality);
-  relay.setPriority(priority);
 }
 
 /** Silencia el sonido de la pantalla compartida sin tocar el micrófono. */

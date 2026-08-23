@@ -122,7 +122,8 @@ route("GET", "/api/v1/info", async (ctx) => ({
   /** Por dónde se buscan los caminos entre navegadores. Sin esto la voz solo
       funciona entre dos equipos de la misma red, y ni siquiera siempre. */
   ice_servers: await iceServers(),
-  /** Si la imagen pasa por la instancia o va directa, y con qué techo de calidad (§9.5). */
+  /** Si la imagen pasa por la instancia o va directa (§9.5). Fps y bitrate son
+      preferencia de cada cliente, no de la instancia (§10.2). */
   video: videoMode(),
   /** Instancia sin dueño: el cliente enseña la puesta en marcha, no el login. */
   setup_required: countOwners() === 0,
@@ -135,6 +136,7 @@ route("GET", "/api/v1/info", async (ctx) => ({
 interface RecoverableAccount {
   username: string;
   display_name: string;
+  avatar_url: string | null;
   /** De quién es cada cuenta se distingue por su comunidad, no por el nombre:
       en una instancia doméstica todas se llaman parecido. */
   community: string | null;
@@ -149,7 +151,7 @@ function recoverableAccounts(): RecoverableAccount[] {
          sesion en ese rato: sin contrasena que escribir y sin nada que recuperar.
          Los invitados siguen pidiendo comunidad, o la pantalla de entrada acabaria
          listando a todo el que paso por aqui una vez. */
-      `SELECT u.username, u.display_name,
+      `SELECT u.username, u.display_name, u.avatar_url,
               (SELECT name FROM communities WHERE owner_id = u.id ORDER BY created_at LIMIT 1) AS community
          FROM users u
         WHERE u.password_hash IS NULL AND (u.kind = 'local' OR community IS NOT NULL)
@@ -253,11 +255,15 @@ route("POST", "/api/v1/auth/register", async (ctx) => {
 
   const body = await readJson(ctx);
   const username = v.string(body, "username", { min: 3, max: 32, pattern: USERNAME }).toLowerCase();
-  const password = v.string(body, "password", { min: 10, max: 200, trim: false });
+  // Opcional, como en /auth/bootstrap (§7.2, §34): poner una contraseña es un
+  // paso posterior, no un peaje para tener cuenta. Sin ella, se entra de vuelta
+  // por /auth/recover — igual de restringido que el arranque de la instancia.
+  const password = v.optionalString(body, "password", { max: 200 });
+  if (password && password.length < 10) throw badRequest("La contraseña necesita al menos 10 caracteres.");
   const displayName = v.optionalString(body, "display_name", { max: 48 }) || username;
 
   if (findUserByUsername(username)) throw conflict("Ese nombre de usuario ya existe.");
-  const user = createUser({ username, password, displayName });
+  const user = createUser({ username, displayName, ...(password ? { password } : {}) });
   return issue(user.id);
 });
 
@@ -2115,11 +2121,7 @@ route("PUT", "/api/v1/instance/relay", async (ctx) => {
     typeof body[key] === "string" ? { [key]: (body[key] as string).trim() } : {};
   return setRelay({
     ...text("mode"),
-    /* Sin estas tres, el selector de Ajustes guardaba en el vacío: el cliente
-       las mandaba, aquí se filtraban, y setRelay persistía lo de siempre. */
     ...text("video"),
-    ...text("quality"),
-    ...text("priority"),
     ...text("url"),
     ...text("username"),
     ...text("credential"),

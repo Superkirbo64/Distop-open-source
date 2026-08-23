@@ -44,27 +44,9 @@ export type RelayMode = "direct" | "custom" | "cloudflare" | "metered";
  */
 export type VideoMode = "host" | "direct";
 
-/**
- * Techo de calidad de la imagen. No es un límite comercial (§10.3): es la subida
- * de quien hospeda, que es finita y se multiplica por cada persona que mira.
- * Quien la paga, la decide.
- */
-export type Quality = "low" | "medium" | "high";
-const QUALITIES: Quality[] = ["low", "medium", "high"];
-
-/**
- * Qué sacrificar cuando el bitrate no alcanza para todo: fotogramas (fluidez)
- * o detalle por fotograma (nitidez). "balanced" deja que cada fuente decida:
- * la cámara privilegia movimiento y la pantalla conserva el texto legible.
- */
-export type Priority = "fluid" | "balanced" | "sharp";
-const PRIORITIES: Priority[] = ["fluid", "balanced", "sharp"];
-
 interface Relay {
   mode: RelayMode;
   video: VideoMode;
-  quality: Quality;
-  priority: Priority;
   /** TURN propio (coturn y similares). */
   url: string;
   username: string;
@@ -82,8 +64,6 @@ const DEFAULT: Relay = {
   // Por defecto por la instancia: es lo único que funciona sin configurar nada,
   // y una comunidad casera son cuatro personas, no cuarenta.
   video: "host",
-  quality: "medium",
-  priority: "balanced",
   url: "",
   username: "",
   credential: "",
@@ -100,8 +80,6 @@ function stored(): Relay {
     // un estado que la interfaz no sepa dibujar: se cae al de siempre.
     if (!MODES.includes(saved.mode)) saved.mode = "direct";
     if (saved.video !== "direct") saved.video = "host";
-    if (!QUALITIES.includes(saved.quality)) saved.quality = "medium";
-    if (!PRIORITIES.includes(saved.priority)) saved.priority = "balanced";
     return saved;
   } catch {
     return DEFAULT;
@@ -198,8 +176,6 @@ export async function iceServers(): Promise<IceServer[]> {
 export function relayState(): {
   mode: RelayMode;
   video: VideoMode;
-  quality: Quality;
-  priority: Priority;
   url: string;
   username: string;
   keyId: string;
@@ -210,8 +186,6 @@ export function relayState(): {
   return {
     mode: relay.mode,
     video: relay.video,
-    quality: relay.quality,
-    priority: relay.priority,
     url: relay.url,
     username: relay.username,
     keyId: relay.keyId,
@@ -221,16 +195,13 @@ export function relayState(): {
 }
 
 /** Lo necesita cualquiera que entre, no solo quien hospeda: va en /info. */
-export function videoMode(): { mode: VideoMode; quality: Quality; priority: Priority } {
-  const relay = stored();
-  return { mode: relay.video, quality: relay.quality, priority: relay.priority };
+export function videoMode(): { mode: VideoMode } {
+  return { mode: stored().video };
 }
 
 export async function setRelay(next: Partial<Relay>): Promise<ReturnType<typeof relayState>> {
   const relay = { ...stored(), ...next };
   if (relay.video !== "direct") relay.video = "host";
-  if (!QUALITIES.includes(relay.quality)) relay.quality = "medium";
-  if (!PRIORITIES.includes(relay.priority)) relay.priority = "balanced";
 
   // Con el vídeo pasando por la instancia no hay conexión directa que arreglar,
   // así que un relevo TURN no pintaría nada: se guarda igual por si se cambia.

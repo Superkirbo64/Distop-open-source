@@ -9,6 +9,7 @@ export const es = {
   "common.loading": "Cargando…",
   "common.retry": "Reintentar",
   "common.optional": "opcional",
+  "common.resize": "Arrastra para cambiar el ancho",
   "update.available": "Hay una versión nueva de la aplicación.",
   "update.reload": "Recargar",
   "common.chooseFile": "Subir imagen",
@@ -37,7 +38,10 @@ export const es = {
   "auth.username": "Nombre de usuario",
   "auth.usernameHint": "Minúsculas, números, punto, guion y guion bajo.",
   "auth.password": "Contraseña",
-  "auth.passwordHint": "Mínimo 10 caracteres.",
+  "auth.passwordHint":
+    "Opcional. Sin ella entras solo desde este dispositivo, o con el código de la instancia; puedes añadirla luego desde Ajustes.",
+  "auth.noPasswordWarning":
+    "Sin contraseña, esta cuenta vive solo en este navegador. Puedes añadirla luego desde Ajustes.",
   "auth.displayName": "Nombre visible",
   "auth.noAccount": "¿Todavía sin cuenta?",
   "auth.haveAccount": "¿Ya tienes cuenta?",
@@ -46,9 +50,9 @@ export const es = {
     "Puedes hacer exactamente lo mismo que con cuenta: crear comunidades, canales, invitar y hablar. Añade contraseña cuando quieras, sin perder nada.",
   "auth.guestEqual":
     "Sin contraseña puedes hacer lo mismo; solo la necesitas para volver desde otro dispositivo.",
-  "auth.recoverTitle": "¿Eres quien hospeda este servidor?",
+  "auth.recoverTitle": "Cuentas de este equipo",
   "auth.recoverHint":
-    "Estas cuentas no tienen contraseña. Como estás en el equipo que hospeda el servidor, puedes entrar directamente.",
+    "Estas cuentas no tienen contraseña. Como entras desde este equipo, puedes continuar sin escribir nada.",
   "auth.registrationClosed": "Este servidor tiene el registro cerrado.",
   "auth.guestClosed": "Este servidor no admite invitados.",
 
@@ -166,6 +170,8 @@ export const es = {
     "Mientras este ordenador esté encendido, tu comunidad está en línea. Cuando lo apagues, deja de estarlo.",
 
   "community.yours": "Tus comunidades",
+  "rail.otherInstances": "Otros servidores",
+  "rail.otherInstance": "Ir a {name}",
   "community.create": "Crear comunidad",
   "community.createTitle": "Nueva comunidad",
   "community.name": "Nombre",
@@ -282,9 +288,12 @@ export const es = {
   "voice.exitFullscreen": "Salir de pantalla completa",
   "voice.shareMute": "Silenciar sonido de la pantalla",
   "voice.shareUnmute": "Activar sonido de la pantalla",
+  "voice.videoTitle": "Cámara y pantalla",
+  "voice.videoIntro":
+    "De tu cámara y tu pantalla, y solo para ti: nadie más nota lo que cambies aquí.",
   "voice.quality": "Calidad máxima del vídeo",
   "voice.qualityHint":
-    "No hay límite de pago: esto es la subida de quien hospeda, multiplicada por cada persona que mire.",
+    "No hay límite de pago: es tu propia subida, de tu cámara y tu pantalla. No afecta a nadie más.",
   "voice.qualityLow": "Ahorro — hasta 30 fps · cámara 1,5 / pantalla 3 Mbit/s",
   "voice.qualityMedium": "Equilibrada — hasta 60 fps · cámara 4 / pantalla 8 Mbit/s",
   "voice.qualityHigh": "Máxima — hasta 120 fps · cámara 12 / pantalla 24 Mbit/s",

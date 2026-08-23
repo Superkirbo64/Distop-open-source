@@ -10,6 +10,7 @@ export const en: Record<keyof typeof es, string> = {
   "common.loading": "Loading…",
   "common.retry": "Retry",
   "common.optional": "optional",
+  "common.resize": "Drag to resize",
   "update.available": "A new version of the app is available.",
   "update.reload": "Reload",
   "common.chooseFile": "Upload image",
@@ -39,7 +40,9 @@ export const en: Record<keyof typeof es, string> = {
   "auth.username": "Username",
   "auth.usernameHint": "Lowercase letters, numbers, dot, dash and underscore.",
   "auth.password": "Password",
-  "auth.passwordHint": "At least 10 characters.",
+  "auth.passwordHint":
+    "Optional. Without it you can only sign in from this device, or with the instance's code; add one later from Settings.",
+  "auth.noPasswordWarning": "Without a password, this account only lives in this browser. Add one later from Settings.",
   "auth.displayName": "Display name",
   "auth.noAccount": "No account yet?",
   "auth.haveAccount": "Already have an account?",
@@ -48,9 +51,8 @@ export const en: Record<keyof typeof es, string> = {
     "You can do exactly what an account does: create communities, channels, invite people and talk. Add a password whenever you want, losing nothing.",
   "auth.guestEqual":
     "Without a password you can do the same; you only need one to come back from another device.",
-  "auth.recoverTitle": "Are you the one hosting this server?",
-  "auth.recoverHint":
-    "These accounts have no password. Since you are on the machine hosting the server, you can walk right in.",
+  "auth.recoverTitle": "Accounts on this device",
+  "auth.recoverHint": "These accounts have no password. Since you're on this device, you can just walk right in.",
   "auth.registrationClosed": "Registration is closed on this server.",
   "auth.guestClosed": "This server does not allow guests.",
 
@@ -165,6 +167,8 @@ export const en: Record<keyof typeof es, string> = {
     "While this computer is on, your community is online. When you shut it down, it is not.",
 
   "community.yours": "Your communities",
+  "rail.otherInstances": "Other servers",
+  "rail.otherInstance": "Go to {name}",
   "community.create": "Create community",
   "community.createTitle": "New community",
   "community.name": "Name",
@@ -280,9 +284,12 @@ export const en: Record<keyof typeof es, string> = {
   "voice.exitFullscreen": "Leave fullscreen",
   "voice.shareMute": "Mute screen sound",
   "voice.shareUnmute": "Unmute screen sound",
+  "voice.videoTitle": "Camera and screen",
+  "voice.videoIntro":
+    "Your camera and your screen, and only for you: nobody else notices what you change here.",
   "voice.quality": "Maximum video quality",
   "voice.qualityHint":
-    "No paywall here: this is the host's upload, multiplied by everyone watching.",
+    "No paywall here: it's your own upload, from your camera and your screen. Nobody else is affected.",
   "voice.qualityLow": "Light — up to 30 fps · camera 1.5 / screen 3 Mbit/s",
   "voice.qualityMedium": "Balanced — up to 60 fps · camera 4 / screen 8 Mbit/s",
   "voice.qualityHigh": "Maximum — up to 120 fps · camera 12 / screen 24 Mbit/s",

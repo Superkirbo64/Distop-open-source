@@ -10,7 +10,7 @@ import { Cross } from "./icons.tsx";
 import { useStore } from "../store.ts";
 import { Button, ErrorNote, Field, IconButton, Modal, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
 import { api } from "../lib/api.ts";
-import { clientOrigin, connectToInstance, isPackaged, parseInvite } from "../lib/instance.ts";
+import { clientOrigin, connectToInstance, instanceBase, isPackaged, knownInstances, parseInvite, setActiveInstance } from "../lib/instance.ts";
 import { formatDuration } from "../i18n.ts";
 import type { Community } from "@distop/protocol";
 
@@ -114,6 +114,8 @@ export function Rail({
         ))}
       </ul>
 
+      <OtherInstances />
+
       <IconButton label={t("community.create")} onClick={onCreate} className="h-12 w-12 border border-dashed border-line">
         <Cross size={20} />
       </IconButton>
@@ -147,6 +149,42 @@ function ConnectionDot() {
       />
       <span className="sr-only">{label}</span>
     </p>
+  );
+}
+
+/**
+ * Otros servidores que este dispositivo ya conoce (§4, §19).
+ * Cada comunidad vive en la instancia de quien la hospeda: la del amigo que te
+ * invitó no es un canal más de la tuya, es OTRO servidor entero. Antes, entrar
+ * ahí obligaba a "Cambiar de comunidad" y salir de la sesión actual; con esto
+ * es un icono más, igual que saltar entre comunidades del mismo servidor. Solo
+ * existe en la app empaquetada: la web normal no tiene "otra instancia" a la
+ * que saltar, siempre es la que la sirvió.
+ */
+function OtherInstances() {
+  const t = useT();
+  const known = useMemo(() => (isPackaged() ? knownInstances().filter((instance) => instance.url !== instanceBase) : []), []);
+
+  if (known.length === 0) return null;
+
+  return (
+    <>
+      <div className="h-px w-8 shrink-0 bg-line" aria-hidden="true" />
+      <ul aria-label={t("rail.otherInstances")} className="flex flex-col items-center gap-2">
+        {known.map((instance) => (
+          <li key={instance.url}>
+            <button
+              onClick={() => setActiveInstance(instance.url)}
+              title={instance.name}
+              aria-label={t("rail.otherInstance", { name: instance.name })}
+              className="grid h-10 w-10 place-items-center rounded-[20px] border border-line text-xs font-bold text-muted transition-all hover:rounded-[14px] hover:text-ink"
+            >
+              {instance.name.slice(0, 2).toUpperCase()}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 

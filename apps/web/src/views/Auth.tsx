@@ -6,9 +6,9 @@
 import { useEffect, useState } from "react";
 import { BRAND } from "../brand.ts";
 import { api } from "../lib/api.ts";
-import { isPackaged, requestManualConnect, setActiveInstance } from "../lib/instance.ts";
+import { connectToInstance, instanceBase, isPackaged, knownInstances, requestManualConnect, setActiveInstance } from "../lib/instance.ts";
 import { useStore } from "../store.ts";
-import { Button, ErrorNote, Field, useT, useErrorText } from "../components/ui.tsx";
+import { Avatar, Button, ErrorNote, Field, useT, useErrorText } from "../components/ui.tsx";
 
 type Mode = "login" | "register" | "guest";
 
@@ -17,8 +17,9 @@ interface InstanceInfo {
   version: string;
   registration_enabled: boolean;
   guest_mode_enabled: boolean;
-  /** Solo llega con contenido desde el propio equipo anfitrión. */
-  recoverable: Array<{ username: string; display_name: string; community: string | null }>;
+  /** Solo llega con contenido desde el propio equipo anfitrión, o con el
+      código de puesta en marcha. */
+  recoverable: Array<{ username: string; display_name: string; avatar_url: string | null; community: string | null }>;
 }
 
 export function Auth({ onDone }: { onDone?: () => void }) {
@@ -47,7 +48,11 @@ export function Auth({ onDone }: { onDone?: () => void }) {
     try {
       if (mode === "guest") await authenticate("/api/v1/auth/guest", { display_name: displayName });
       else if (mode === "register")
-        await authenticate("/api/v1/auth/register", { username, password, display_name: displayName || username });
+        await authenticate("/api/v1/auth/register", {
+          username,
+          ...(password ? { password } : {}),
+          display_name: displayName || username,
+        });
       else await authenticate("/api/v1/auth/login", { username, password });
       onDone?.();
     } catch (err) {
@@ -100,10 +105,11 @@ export function Auth({ onDone }: { onDone?: () => void }) {
             <section className="flex flex-col gap-2 rounded-[10px] border border-line bg-raise p-3">
               <p className="text-sm font-semibold">{t("auth.recoverTitle")}</p>
               <p className="text-xs text-muted">{t("auth.recoverHint")}</p>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-3">
                 {info.recoverable.map((account) => (
-                  <Button
+                  <button
                     key={account.username}
+                    className="flex w-20 flex-col items-center gap-1.5 rounded-[10px] p-2 text-center hover:bg-surface"
                     onClick={async () => {
                       setError(null);
                       try {
@@ -114,8 +120,10 @@ export function Auth({ onDone }: { onDone?: () => void }) {
                       }
                     }}
                   >
-                    {account.community ? `${account.display_name} · ${account.community}` : account.display_name}
-                  </Button>
+                    <Avatar name={account.display_name} url={account.avatar_url} size={56} />
+                    <span className="line-clamp-2 text-xs font-medium">{account.display_name}</span>
+                    {account.community ? <span className="line-clamp-1 text-[0.65rem] text-muted">{account.community}</span> : null}
+                  </button>
                 ))}
               </div>
             </section>
@@ -164,13 +172,14 @@ export function Auth({ onDone }: { onDone?: () => void }) {
                       className="field"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      required
+                      required={mode !== "register"}
                       minLength={mode === "register" ? 10 : 1}
                       maxLength={200}
                       autoComplete={mode === "register" ? "new-password" : "current-password"}
                     />
                   )}
                 </Field>
+                {mode === "register" && !password ? <p className="text-xs text-warn">{t("auth.noPasswordWarning")}</p> : null}
               </>
             )}
 
@@ -205,6 +214,26 @@ export function Auth({ onDone }: { onDone?: () => void }) {
 
             {info && !info.registration_enabled && mode === "login" ? (
               <p className="text-xs text-muted">{t("auth.registrationClosed")}</p>
+            ) : null}
+
+            {/* Si la instancia activa no responde —la de un amigo que apagó su
+                equipo, por ejemplo— la salida está aquí mismo, sin pasar por
+                "Cambiar de comunidad" y su pantalla en blanco. */}
+            {isPackaged() && knownInstances().some((instance) => instance.url !== instanceBase) ? (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-xs font-semibold text-muted">{t("connect.known")}</p>
+                {knownInstances()
+                  .filter((instance) => instance.url !== instanceBase)
+                  .map((instance) => (
+                    <button
+                      key={instance.url}
+                      className="text-left text-accent hover:underline"
+                      onClick={() => void connectToInstance(instance.url)}
+                    >
+                      {instance.name}
+                    </button>
+                  ))}
+              </div>
             ) : null}
 
             {/* Empaquetada, esta pantalla pertenece a UNA instancia. Si no es

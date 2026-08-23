@@ -559,12 +559,11 @@ export function receive(id: Snowflake, kind: number, payload: Uint8Array): void 
    completo y repetirlo cada pocos segundos para quien llegue tarde. */
 
 /**
- * Techo de calidad, que sale de la subida de quien hospeda multiplicada por cada
- * persona que mira. La pantalla pide más que la cámara: texto y bordes duros se
- * ensucian mucho antes que una cara.
+ * Fotogramas, resolución y bitrate de TU cámara y TU pantalla. Es tuyo, como el
+ * volumen del micrófono: no toca a la instancia ni a quien hospeda, así que
+ * cada quien elige lo que le dé su propia conexión (§10.2).
  *
- * No hay límite artificial aquí — quien hospeda sube esto desde Ajustes hasta
- * donde le dé su conexión (§10.3).
+ * No hay límite artificial aquí.
  */
 const QUALITY = {
   low: {
@@ -582,10 +581,21 @@ const QUALITY = {
 } as const;
 
 export type Quality = keyof typeof QUALITY;
-let quality: Quality = "medium";
+
+function recallQuality(): Quality {
+  const raw = recall("videoQuality");
+  return raw !== null && raw in QUALITY ? (raw as Quality) : "medium";
+}
+
+let quality: Quality = recallQuality();
+
+export function videoQuality(): Quality {
+  return quality;
+}
 
 export function setQuality(value: Quality): void {
   quality = QUALITY[value] ? value : "medium";
+  remember("videoQuality", quality);
 }
 
 /**
@@ -600,10 +610,17 @@ export function setQuality(value: Quality): void {
  *              uno. Para enseñar texto, diagramas o detalle fino.
  */
 export type Priority = "fluid" | "balanced" | "sharp";
-let priority: Priority = "balanced";
+
+function recallPriority(): Priority {
+  const raw = recall("videoPriority");
+  return raw === "fluid" || raw === "sharp" ? raw : "balanced";
+}
+
+let priority: Priority = recallPriority();
 
 export function setPriority(value: Priority): void {
   priority = value === "fluid" || value === "sharp" ? value : "balanced";
+  remember("videoPriority", priority);
 }
 
 export function videoPriority(): Priority {

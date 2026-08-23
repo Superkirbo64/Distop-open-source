@@ -305,7 +305,7 @@ export const useStore = create<State>()((set, get) => ({
         setup_required: boolean;
         setup_requires_code: boolean;
         ice_servers: RTCIceServer[];
-        video: { mode: "host" | "direct"; quality: "low" | "medium" | "high"; priority?: "fluid" | "balanced" | "sharp" };
+        video: { mode: "host" | "direct" };
         public_url: string;
         gif_enabled: boolean;
         sticker_gallery_enabled: boolean;
@@ -317,7 +317,7 @@ export const useStore = create<State>()((set, get) => ({
         stickerGalleryEnabled: Boolean(info.sticker_gallery_enabled),
       });
       iceServers = info.ice_servers ?? [];
-      setVideoMode(info.video?.mode ?? "host", info.video?.quality ?? "medium", info.video?.priority ?? "balanced");
+      setVideoMode(info.video?.mode ?? "host");
     } catch {
       // Instancia inalcanzable: el propio cliente lo dirá al intentar entrar.
     }

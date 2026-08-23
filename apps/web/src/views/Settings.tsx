@@ -668,6 +668,66 @@ function AppearanceTab({ onAdjust }: { onAdjust: () => void }) {
 }
 
 /**
+ * Fotogramas, resolución y nitidez de cámara y pantalla (§9.5, §10.2).
+ *
+ * Va junto al bloque de audio y no con el de quien hospeda: es tu propia
+ * cámara y tu propia pantalla, solo tu subida se ve afectada, así que vale
+ * para cualquiera y no solo para quien hospeda la instancia.
+ */
+function VideoSetup() {
+  const t = useT();
+  const [quality, setQualityState] = useState(audio.videoQuality());
+  const [priority, setPriorityState] = useState(audio.videoPriority());
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h3 className="display text-base font-bold">{t("voice.videoTitle")}</h3>
+        <p className="mt-1 text-sm text-muted">{t("voice.videoIntro")}</p>
+      </div>
+
+      <Field label={t("voice.quality")} hint={t("voice.qualityHint")}>
+        {(id) => (
+          <select
+            id={id}
+            className="field"
+            value={quality}
+            onChange={(e) => {
+              const value = e.target.value as audio.Quality;
+              setQualityState(value);
+              audio.setQuality(value);
+            }}
+          >
+            <option value="low">{t("voice.qualityLow")}</option>
+            <option value="medium">{t("voice.qualityMedium")}</option>
+            <option value="high">{t("voice.qualityHigh")}</option>
+          </select>
+        )}
+      </Field>
+
+      <Field label={t("voice.priority")} hint={t("voice.priorityHint")}>
+        {(id) => (
+          <select
+            id={id}
+            className="field"
+            value={priority}
+            onChange={(e) => {
+              const value = e.target.value as audio.Priority;
+              setPriorityState(value);
+              audio.setPriority(value);
+            }}
+          >
+            <option value="fluid">{t("voice.priorityFluid")}</option>
+            <option value="balanced">{t("voice.priorityBalanced")}</option>
+            <option value="sharp">{t("voice.prioritySharp")}</option>
+          </select>
+        )}
+      </Field>
+    </div>
+  );
+}
+
+/**
  * Cómo se conectan dos personas en una llamada (§9.4).
  *
  * Esto existe porque una llamada directa no siempre es posible: hay routers
@@ -681,9 +741,6 @@ function AppearanceTab({ onAdjust }: { onAdjust: () => void }) {
 interface RelayState {
   mode: "direct" | "custom" | "cloudflare" | "metered";
   video: "host" | "direct";
-  quality: "low" | "medium" | "high";
-  /** Qué sacrificar cuando el bitrate no da para todo: fotogramas o detalle. */
-  priority: "fluid" | "balanced" | "sharp";
   url: string;
   username: string;
   keyId: string;
@@ -1018,7 +1075,7 @@ function VoiceTab() {
       setRelayState(value);
       setElegido(value.mode);
       // Que valga ya para la próxima llamada, sin recargar la página.
-      setVideoMode(value.video, value.quality, value.priority);
+      setVideoMode(value.video);
       await currentServers();
       setSaved(true);
       /* Guardar no es lo mismo que funcionar. Un proveedor puede aceptar tus
@@ -1045,6 +1102,7 @@ function VoiceTab() {
     return (
       <div className="flex flex-col gap-6">
         <AudioSetup />
+        <VideoSetup />
         <p className="text-sm text-muted">{denied ? t("voice.relayHostOnly") : t("common.loading")}</p>
       </div>
     );
@@ -1073,6 +1131,7 @@ function VoiceTab() {
   return (
     <div className="flex flex-col gap-6">
       <AudioSetup />
+      <VideoSetup />
 
       <div>
         <h3 className="display text-base font-bold">{t("voice.relayTitle")}</h3>
@@ -1108,42 +1167,6 @@ function VoiceTab() {
           </label>
         ))}
       </fieldset>
-
-      {/* No es un límite comercial: es la subida de quien hospeda, que es finita
-          y se multiplica por cada persona que mire. Quien la paga, la decide. */}
-      <Field label={t("voice.quality")} hint={t("voice.qualityHint")}>
-        {(id) => (
-          <select
-            id={id}
-            className="field"
-            value={relay.quality}
-            disabled={relay.locked}
-            onChange={(e) => void save({ quality: e.target.value as RelayState["quality"] })}
-          >
-            <option value="low">{t("voice.qualityLow")}</option>
-            <option value="medium">{t("voice.qualityMedium")}</option>
-            <option value="high">{t("voice.qualityHigh")}</option>
-          </select>
-        )}
-      </Field>
-
-      {/* El techo de arriba dice CUÁNTO; esto dice QUÉ SACRIFICAR cuando no
-          alcanza, que con vídeo es siempre: fotogramas o detalle por fotograma. */}
-      <Field label={t("voice.priority")} hint={t("voice.priorityHint")}>
-        {(id) => (
-          <select
-            id={id}
-            className="field"
-            value={relay.priority}
-            disabled={relay.locked}
-            onChange={(e) => void save({ priority: e.target.value as RelayState["priority"] })}
-          >
-            <option value="fluid">{t("voice.priorityFluid")}</option>
-            <option value="balanced">{t("voice.priorityBalanced")}</option>
-            <option value="sharp">{t("voice.prioritySharp")}</option>
-          </select>
-        )}
-      </Field>
 
       {/* Con el vídeo pasando por la instancia no hay conexión directa que
           arreglar, así que todo lo de abajo sobra. Enseñarlo igual sería invitar
