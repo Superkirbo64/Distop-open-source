@@ -603,6 +603,32 @@ dialog[open] {
   transform-origin: top right;
 }
 
+/* Deslizador compacto de los menús de micrófono y auriculares. */
+.quick-audio-range {
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--audio-progress), var(--raise) var(--audio-progress));
+  cursor: pointer;
+}
+.quick-audio-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in oklab, var(--ink) 16%, transparent);
+  border-radius: 999px;
+  background: var(--ink);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+.quick-audio-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in oklab, var(--ink) 16%, transparent);
+  border-radius: 999px;
+  background: var(--ink);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
 /* Latido en el punto de conexión mientras se reconecta: dice "sigo intentándolo". */
 .pulse-live {
   animation: speaking-pulse 1.4s ease-in-out infinite;

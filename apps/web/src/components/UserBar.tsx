@@ -11,7 +11,7 @@
  * personalización ya viene incluida, así que el hueco es para el estado (§10, §29.6).
  */
 import { useEffect, useRef, useState } from "react";
-import { Check, Copy, LogOut, Pencil } from "lucide-react";
+import { Check, ChevronUp, Copy, LogOut, Pencil } from "lucide-react";
 import { USER_STATUSES, type UserStatus } from "@distop/protocol";
 import { gameOf, useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
@@ -20,6 +20,7 @@ import { Avatar, DisplayName, IconButton, Menu, StatusDot, useT, type PresenceRi
 import { CardEffectLayer, cardBackground, profileSurfaceBackground } from "./ProfileStyle.tsx";
 import { setDeafened, setMuted } from "../lib/voice.ts";
 import { useVoiceLocal } from "./Voice.tsx";
+import { AudioQuickMenu } from "./AudioQuickMenu.tsx";
 
 /**
  * Cómo se ve un estado desde fuera.
@@ -32,7 +33,7 @@ export function ringOf(status: UserStatus, connected: boolean): PresenceRing {
   return status;
 }
 
-export function UserBar({ onOpenSettings }: { onOpenSettings: () => void }) {
+export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" | "voice") => void }) {
   const t = useT();
   const user = useStore((s) => s.user);
   const status = useStore((s) => s.status);
@@ -112,44 +113,78 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: () => void }) {
           es lo primero que se busca, y buscarlo dentro de otro panel es tarde. */}
       {/* Se pinta el estado REAL: si calla la instancia —moderación o falta de
           permiso para hablar— el botón no puede seguir enseñando el micro abierto. */}
-      <IconButton
-        label={
-          local.forcedMuted
-            ? t("voice.cannotSpeak")
-            : local.muted
-              ? t("voice.unmute")
-              : t("voice.mute")
-        }
-        pressed={local.muted || local.forcedMuted}
-        disabled={local.forcedMuted}
-        onClick={() => setMuted(!local.muted)}
-        className={local.muted || local.forcedMuted ? "text-danger" : ""}
-      >
-        <Microphone size={16} muted={local.muted || local.forcedMuted} />
-      </IconButton>
-      <IconButton
-        label={
-          local.forcedDeafened
-            ? t("voice.forcedDeafened")
-            : local.deafened
-              ? t("voice.undeafen")
-              : t("voice.deafen")
-        }
-        pressed={local.deafened || local.forcedDeafened}
-        disabled={local.forcedDeafened}
-        onClick={() => setDeafened(!local.deafened)}
-        className={local.deafened || local.forcedDeafened ? "text-danger" : ""}
-      >
-        <Headset size={16} muted={local.deafened || local.forcedDeafened} />
-      </IconButton>
-      <IconButton label={t("settings.title")} onClick={onOpenSettings}>
+      <div className="flex items-center">
+        <IconButton
+          label={
+            local.forcedMuted
+              ? t("voice.cannotSpeak")
+              : local.muted
+                ? t("voice.unmute")
+                : t("voice.mute")
+          }
+          pressed={local.muted || local.forcedMuted}
+          disabled={local.forcedMuted}
+          onClick={() => setMuted(!local.muted)}
+          className={`rounded-r-[6px] ${local.muted || local.forcedMuted ? "text-danger" : ""}`}
+        >
+          <Microphone size={16} muted={local.muted || local.forcedMuted} />
+        </IconButton>
+        <Menu
+          flush
+          trigger={({ onClick }) => (
+            <button
+              onClick={onClick}
+              aria-label={t("voice.openInputMenu")}
+              title={t("voice.openInputMenu")}
+              className="-ml-1 flex h-9 w-5 items-center justify-center rounded-r-[10px] text-muted hover:bg-raise hover:text-ink"
+            >
+              <ChevronUp size={13} />
+            </button>
+          )}
+        >
+          {(close) => <AudioQuickMenu kind="input" close={close} onOpenSettings={() => onOpenSettings("voice")} />}
+        </Menu>
+      </div>
+      <div className="flex items-center">
+        <IconButton
+          label={
+            local.forcedDeafened
+              ? t("voice.forcedDeafened")
+              : local.deafened
+                ? t("voice.undeafen")
+                : t("voice.deafen")
+          }
+          pressed={local.deafened || local.forcedDeafened}
+          disabled={local.forcedDeafened}
+          onClick={() => setDeafened(!local.deafened)}
+          className={`rounded-r-[6px] ${local.deafened || local.forcedDeafened ? "text-danger" : ""}`}
+        >
+          <Headset size={16} muted={local.deafened || local.forcedDeafened} />
+        </IconButton>
+        <Menu
+          flush
+          trigger={({ onClick }) => (
+            <button
+              onClick={onClick}
+              aria-label={t("voice.openOutputMenu")}
+              title={t("voice.openOutputMenu")}
+              className="-ml-1 flex h-9 w-5 items-center justify-center rounded-r-[10px] text-muted hover:bg-raise hover:text-ink"
+            >
+              <ChevronUp size={13} />
+            </button>
+          )}
+        >
+          {(close) => <AudioQuickMenu kind="output" close={close} onOpenSettings={() => onOpenSettings("voice")} />}
+        </Menu>
+      </div>
+      <IconButton label={t("settings.title")} onClick={() => onOpenSettings("profile")}>
         <Gear size={16} />
       </IconButton>
     </div>
   );
 }
 
-function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: () => void; close: () => void }) {
+function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: (tab?: "profile" | "voice") => void; close: () => void }) {
   const t = useT();
   const user = useStore((s) => s.user);
   const connection = useStore((s) => s.status);

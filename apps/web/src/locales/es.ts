@@ -337,7 +337,17 @@ export const es = {
   "voice.audioTitle": "Micrófono y sonido",
   "voice.audioIntro":
     "De este equipo y solo para ti: nadie más nota lo que cambies aquí.",
+  "voice.inputDevice": "Dispositivo de entrada",
   "voice.outputDevice": "Salida de sonido",
+  "voice.inputProfile": "Perfil de entrada",
+  "voice.inputProfile.custom": "Personalizado",
+  "voice.inputProfile.clear": "Voz clara",
+  "voice.inputProfile.natural": "Sonido natural",
+  "voice.inputVolume": "Volumen de entrada",
+  "voice.outputVolume": "Volumen de salida",
+  "voice.openInputMenu": "Abrir ajustes del micrófono",
+  "voice.openOutputMenu": "Abrir ajustes de salida",
+  "voice.openSettings": "Ajustes de voz",
   "voice.deviceUnnamed": "Micrófono {n}",
   "voice.deviceUnnamedOut": "Salida {n}",
   "voice.deviceNames":

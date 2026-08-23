@@ -29,13 +29,17 @@ import { askNotifyPermission, notifyPermission, type NotifyLevel } from "../lib/
 /** Paleta de partida. Cualquier otro color sale del selector, sin cortapisas. */
 const ACCENTS = ["#4059e0", "#7b5cff", "#c2389c", "#d94f43", "#e08c2f", "#2f9e6f", "#2f8fd6", "#5b6472"];
 
-type Tab = "profile" | "appearance" | "alerts" | "voice" | "account";
+export type SettingsTab = "profile" | "appearance" | "alerts" | "voice" | "account";
 
-export function Settings({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function Settings({ open, onClose, initialTab = "profile" }: { open: boolean; onClose: () => void; initialTab?: SettingsTab }) {
   const t = useT();
-  const [tab, setTab] = useState<Tab>("profile");
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
 
-  const tabs: Array<[Tab, string]> = [
+  useEffect(() => {
+    if (open) setTab(initialTab);
+  }, [initialTab, open]);
+
+  const tabs: Array<[SettingsTab, string]> = [
     ["profile", t("settings.profile")],
     ["appearance", t("settings.appearance")],
     ["alerts", t("settings.notifications")],

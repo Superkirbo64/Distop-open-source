@@ -175,6 +175,56 @@ export function Speaker({ muted = false, size = 18, className }: IconProps & { m
   );
 }
 
+/** Canales de texto: las dos barras se cruzan como una pequeña señal. */
+const hashBars: Variants = {
+  initial: { x: 0 },
+  animate: { x: [0, -1.25, 1.25, 0], transition: { duration: 0.55, ease: "easeInOut" } },
+};
+const hashStems: Variants = {
+  initial: { y: 0 },
+  animate: { y: [0, 1, -1, 0], transition: { duration: 0.55, ease: "easeInOut" } },
+};
+
+export function ChannelHash({ size = 18, className }: IconProps) {
+  const { ref, controls } = useInteractiveAnimation();
+  return (
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.g variants={hashStems} initial="initial" animate={controls}>
+        <path d="M10 3 8 21" />
+        <path d="m16 3-2 18" />
+      </motion.g>
+      <motion.g variants={hashBars} initial="initial" animate={controls}>
+        <path d="M4 9h16" />
+        <path d="M3 15h16" />
+      </motion.g>
+    </motion.svg>
+  );
+}
+
+/** Canales de anuncios: el megáfono da un golpe corto y emite dos ondas. */
+const announcementBody: Variants = {
+  initial: { rotate: 0, x: 0 },
+  animate: { rotate: [0, -4, 3, 0], x: [0, -0.5, 0.5, 0], transition: { duration: 0.6, ease: "easeInOut" } },
+};
+const announcementWave = (delay: number): Variants => ({
+  initial: { opacity: 1, pathLength: 1 },
+  animate: { opacity: [0, 1, 0.35, 1], pathLength: [0, 1, 1, 1], transition: { duration: 0.6, delay, ease: "easeInOut" } },
+});
+
+export function Announcement({ size = 18, className }: IconProps) {
+  const { ref, controls } = useInteractiveAnimation();
+  return (
+    <motion.svg ref={ref} width={size} height={size} className={className} {...svgProps}>
+      <motion.g variants={announcementBody} initial="initial" animate={controls} style={{ transformOrigin: "8px 12px" }}>
+        <path d="m3 11 18-5v12L3 14v-3Z" />
+        <path d="m7.2 15.2.8 5.3a1 1 0 0 0 1 .8h2a1 1 0 0 0 1-1.2l-.8-3.3" />
+      </motion.g>
+      <motion.path d="M21 9.5c1 .7 1 4.3 0 5" variants={announcementWave(0)} initial="initial" animate={controls} />
+      <motion.path d="M23 8c1.3 1.2 1.3 6.8 0 8" variants={announcementWave(0.1)} initial="initial" animate={controls} />
+    </motion.svg>
+  );
+}
+
 /** Animate UI: send. */
 const sendVariants: Variants = {
   initial: { scale: 1, x: 0, y: 0 },

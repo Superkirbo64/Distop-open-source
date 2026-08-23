@@ -4,8 +4,8 @@
  * simplemente no llega desde la instancia.
  */
 import { useState } from "react";
-import { ChevronDown, Hash, Megaphone, Settings, UserPlus } from "lucide-react";
-import { Cross, Speaker } from "./icons.tsx";
+import { ChevronDown, Settings, UserPlus } from "lucide-react";
+import { Announcement, ChannelHash, Cross, Speaker } from "./icons.tsx";
 import { PERMISSIONS, has, toBits, type Channel } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
@@ -13,7 +13,7 @@ import { Button, ErrorNote, Field, Menu, MenuItem, Modal, useConfirm, useT, useE
 import { VoiceParticipants } from "./Voice.tsx";
 import { joinVoice } from "../lib/voice.ts";
 
-const ICONS = { text: Hash, voice: Speaker, announcement: Megaphone } as const;
+const ICONS = { text: ChannelHash, voice: Speaker, announcement: Announcement } as const;
 
 export function Sidebar({
   onOpenManage,

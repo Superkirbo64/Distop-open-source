@@ -15,7 +15,7 @@ import { Auth } from "./views/Auth.tsx";
 import { Connect } from "./views/Connect.tsx";
 import { Setup } from "./views/Setup.tsx";
 import { Invite } from "./views/Invite.tsx";
-import { Settings } from "./views/Settings.tsx";
+import { Settings, type SettingsTab } from "./views/Settings.tsx";
 import { WallpaperTuner } from "./components/Wallpaper.tsx";
 import { Manage } from "./views/Manage.tsx";
 import { Button, ErrorNote, Field, Modal, Spinner, Toggle, useErrorText, useT } from "./components/ui.tsx";
@@ -110,7 +110,7 @@ export function App() {
   const activeData = useStore((s) => (activeCommunityId ? s.data[activeCommunityId] : undefined));
   const openCommunity = useStore((s) => s.openCommunity);
 
-  const [settings, setSettings] = useState(false);
+  const [settings, setSettings] = useState<SettingsTab | null>(null);
   /* En el store y no aquí: el selector de stickers, enterrado dentro de Chat,
      también ofrece traerte a esta pantalla, y pasarle un callback por tres
      componentes para eso era peor que una bandera compartida. */
@@ -147,6 +147,33 @@ export function App() {
       await boot();
     })();
   }, [boot]);
+
+  /* El servidor puede abrir el túnel en paralelo al arranque del cliente. La
+     primera /info aún puede verlo como "starting"; sin esta sincronización la
+     URL pública existía, pero la interfaz conservaba 127.0.0.1 toda la sesión. */
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const syncTunnel = async () => {
+      try {
+        const tunnel = await api<{ status: string; public_url: string }>("GET", "/api/v1/instance/tunnel");
+        if (cancelled) return;
+        useStore.setState({ publicUrl: tunnel.public_url });
+        if (tunnel.status === "starting") timer = setTimeout(syncTunnel, 750);
+        else if (tunnel.status === "on") timer = setTimeout(syncTunnel, 10_000);
+      } catch {
+        // Un miembro remoto no administra la máquina anfitriona: 403 esperado.
+      }
+    };
+
+    void syncTunnel();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [user]);
 
   // Una invitación pegada antes de conectar se abre en cuanto la app está en pie.
   useEffect(() => {
@@ -234,10 +261,10 @@ export function App() {
           termina la lista, que es lo que la dejaba a media pared. */}
       <div data-pane="user" className="flex flex-col gap-2 p-2">
         <VoiceBar />
-        <UserBar onOpenSettings={() => setSettings(true)} />
+        <UserBar onOpenSettings={(tab = "profile") => setSettings(tab)} />
       </div>
 
-      <Settings open={settings} onClose={() => setSettings(false)} />
+      <Settings open={settings !== null} initialTab={settings ?? "profile"} onClose={() => setSettings(null)} />
       <Manage open={manage} onClose={() => setManage(false)} />
       <CreateInvite open={invite} onClose={() => setInvite(false)} />
       {/* Crear la comunidad desemboca en invitar: una comunidad de uno no es
@@ -333,8 +360,11 @@ function CreateInvite({ open, onClose }: { open: boolean; onClose: () => void })
     }
     // Solo quien hospeda puede abrir el túnel; al resto no se le ofrece un botón
     // que devolvería 403.
-    void api("GET", "/api/v1/instance/tunnel")
-      .then(() => setIsHost(true))
+    void api<{ status: string; public_url: string }>("GET", "/api/v1/instance/tunnel")
+      .then((state) => {
+        setIsHost(true);
+        useStore.setState({ publicUrl: state.public_url });
+      })
       .catch(() => setIsHost(false));
   }, [open]);
 
@@ -367,12 +397,15 @@ function CreateInvite({ open, onClose }: { open: boolean; onClose: () => void })
     setReach("opening");
     setError(null);
     try {
-      const state = await api<{ status: string; url: string; error: string }>("POST", "/api/v1/instance/tunnel");
-      if (state.status === "on" && state.url) {
-        useStore.setState({ publicUrl: state.url });
+      const state = await api<{ status: string; url: string; public_url: string; error: string }>(
+        "POST",
+        "/api/v1/instance/tunnel",
+      );
+      if (state.status === "on" && state.public_url) {
+        useStore.setState({ publicUrl: state.public_url });
         setReach("ok");
         // Un enlace creado con la dirección vieja ya no sirve: se rehace solo.
-        if (link) await create(state.url);
+        if (link) await create(state.public_url);
       } else {
         setReach("fail");
         setError(t(state.error === "no-cloudflared" ? "share.needsCloudflared" : "share.failed"));

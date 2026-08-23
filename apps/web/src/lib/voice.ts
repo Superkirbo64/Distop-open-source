@@ -564,15 +564,33 @@ export async function handleSignal(from: Snowflake, payload: unknown): Promise<v
 
 let micDevice = localStorage.getItem("distop.micDevice") ?? "";
 
+export type InputProfile = "custom" | "clear" | "natural";
+
+function savedInputProfile(): InputProfile {
+  const saved = localStorage.getItem("distop.inputProfile");
+  return saved === "clear" || saved === "natural" ? saved : "custom";
+}
+
+let micProfile = savedInputProfile();
+
 export function inputDevice(): string {
   return micDevice;
 }
 
+export function inputProfile(): InputProfile {
+  return micProfile;
+}
+
 function micConstraints(): MediaTrackConstraints {
+  const processing: MediaTrackConstraints =
+    micProfile === "clear"
+      ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      : micProfile === "natural"
+        ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+        : {};
+
   return {
-    echoCancellation: true,
-    noiseSuppression: true,
-    autoGainControl: true,
+    ...processing,
     /* `ideal` y no `exact`: si el aparato elegido ya no está —unos cascos USB
        desenchufados— se entra con el que haya en vez de quedarse sin llamada. */
     ...(micDevice ? { deviceId: { ideal: micDevice } } : {}),
@@ -587,6 +605,17 @@ function micConstraints(): MediaTrackConstraints {
 export async function setInputDevice(id: string): Promise<void> {
   micDevice = id;
   localStorage.setItem("distop.micDevice", id);
+  await refreshInput();
+}
+
+/** El perfil también cambia en caliente y, como el aparato, solo vive en este PC. */
+export async function setInputProfile(profile: InputProfile): Promise<void> {
+  micProfile = profile;
+  localStorage.setItem("distop.inputProfile", profile);
+  await refreshInput();
+}
+
+async function refreshInput(): Promise<void> {
   if (!state.channelId) return;
 
   let next: MediaStream;

@@ -347,6 +347,22 @@ export const useStore = create<State>()((set, get) => ({
       applyPrefs(prefs);
     }
     connect();
+
+    /* Una instalación nueva arrancó sin dueño y, por seguridad, no abrió el
+       túnel. En cuanto quien hospeda la reclama ya se puede publicar. Se hace
+       en segundo plano: crear el usuario no espera a que la primera descarga
+       de cloudflared termine, pero el panel y la invitación compartirán este
+       mismo arranque si se abren mientras tanto. */
+    if (path === "/api/v1/auth/bootstrap" && !get().publicUrl) {
+      void api<{ status: string; url: string; public_url: string }>("POST", "/api/v1/instance/tunnel")
+        .then((tunnel) => {
+          if (tunnel.status === "on" && tunnel.public_url) set({ publicUrl: tunnel.public_url });
+        })
+        .catch(() => {
+          // La cuenta ya está creada. El panel del servidor muestra el fallo y
+          // permite reintentar sin convertirlo en un fallo de autenticación.
+        });
+    }
   },
 
   async logout() {
