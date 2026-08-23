@@ -420,6 +420,8 @@ interface TunnelState {
   status: "off" | "starting" | "on" | "error";
   url: string;
   error: string;
+  /** Túnel vivo o, si existe, PUBLIC_URL configurada por el anfitrión. */
+  public_url: string;
   /** Si se abre solo al arrancar. Solo viene en la respuesta de quien hospeda. */
   autostart?: boolean;
 }
@@ -449,6 +451,7 @@ function ShareInstance() {
       .then((state) => {
         setIsHost(true);
         setTunnel(state);
+        useStore.setState({ publicUrl: state.public_url });
         if (typeof state.autostart === "boolean") setAutostart(state.autostart);
       })
       .catch(() => setIsHost(false));
@@ -474,7 +477,7 @@ function ShareInstance() {
       const state = await api<TunnelState>(tunnel?.status === "on" ? "DELETE" : "POST", "/api/v1/instance/tunnel");
       setTunnel(state);
       // La dirección nueva manda ya para las invitaciones, sin reiniciar nada.
-      useStore.setState({ publicUrl: state.url });
+      useStore.setState({ publicUrl: state.public_url });
       if (state.status === "error") setError(t(state.error === "no-cloudflared" ? "share.needsCloudflared" : "share.failed"));
     } catch (err) {
       setError(errorText(err));
@@ -558,7 +561,10 @@ function PurgeData() {
   // Mismo trato que el túnel: si la instancia contesta 403, la sección entera
   // desaparece en vez de enseñar un botón que no funcionaría.
   useEffect(() => {
-    void api("GET", "/api/v1/instance/tunnel")
+    // Vaciar el disco es más sensible que abrir el túnel: solo la cuenta
+    // propietaria pasa por la configuración del relevo, que usa el mismo nivel
+    // de autorización que la purga.
+    void api("GET", "/api/v1/instance/relay")
       .then(() => setIsHost(true))
       .catch(() => setIsHost(false));
   }, []);
