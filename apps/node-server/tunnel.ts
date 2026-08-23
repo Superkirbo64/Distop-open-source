@@ -23,6 +23,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { gunzipSync } from "node:zlib";
 import { config } from "./config.ts";
+import { findTunnelAddress } from "./tunnel-address.ts";
 
 export type TunnelStatus = "off" | "starting" | "on" | "error";
 
@@ -35,9 +36,7 @@ interface TunnelState {
 
 const state: TunnelState = { status: "off", url: "", error: "" };
 let child: ChildProcess | null = null;
-
-/** La dirección aparece en el banner que cloudflared escribe por su salida. */
-const ADDRESS = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
+let starting: Promise<TunnelState> | null = null;
 
 export function tunnelState(): TunnelState {
   return { ...state };
@@ -122,60 +121,96 @@ async function ensureCloudflared(): Promise<string | null> {
 }
 
 export async function startTunnel(): Promise<TunnelState> {
-  if (state.status === "on" || state.status === "starting") return tunnelState();
+  if (state.status === "on") return tunnelState();
+  // El arranque automático y un clic manual pueden coincidir. Los dos deben
+  // esperar el MISMO resultado; devolver "starting" hacía que la interfaz lo
+  // interpretase como un fallo aunque cloudflared siguiera arrancando bien.
+  if (starting) return starting;
 
   state.status = "starting";
   state.error = "";
   state.url = "";
 
-  // Puede tardar: la primera vez descarga el binario (~60 MB, una única vez).
-  const bin = await ensureCloudflared();
-  if (!bin) {
-    finish("no-cloudflared");
-    return tunnelState();
-  }
-
-  return new Promise((done) => {
-    try {
-      // Sin `shell`: con un cmd.exe por medio, matar el proceso dejaría el
-      // túnel abierto por su cuenta.
-      child = spawn(bin, ["tunnel", "--url", `http://127.0.0.1:${config.port}`], {
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-    } catch {
+  starting = (async () => {
+    // Puede tardar: la primera vez descarga el binario (~60 MB, una única vez).
+    const bin = await ensureCloudflared();
+    if (!bin) {
       finish("no-cloudflared");
-      done(tunnelState());
-      return;
+      return tunnelState();
     }
 
-    const timer = setTimeout(() => finish("timeout"), 45_000);
+    return new Promise<TunnelState>((done) => {
+      let settled = false;
+      let output = "";
+      let timer: NodeJS.Timeout | null = null;
 
-    const read = (chunk: unknown) => {
-      const found = ADDRESS.exec(String(chunk));
-      if (!found) return;
-      clearTimeout(timer);
-      state.status = "on";
-      state.url = found[0];
-      done(tunnelState());
-    };
+      const complete = (error?: string) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        if (error !== undefined) finish(error);
+        done(tunnelState());
+      };
 
-    child.stdout?.on("data", read);
-    child.stderr?.on("data", read);
+      let proc: ChildProcess;
+      try {
+        // Sin `shell`: con un cmd.exe por medio, matar el proceso dejaría el
+        // túnel abierto por su cuenta.
+        proc = spawn(bin, ["tunnel", "--url", `http://127.0.0.1:${config.port}`], {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+        child = proc;
+      } catch {
+        complete("no-cloudflared");
+        return;
+      }
 
-    child.on("error", () => {
-      clearTimeout(timer);
-      finish("no-cloudflared");
-      done(tunnelState());
+      // Un timeout tiene que resolver la petición y cerrar el proceso. Antes solo
+      // cambiaba el estado: el botón se quedaba cargando para siempre.
+      timer = setTimeout(() => {
+        child = null;
+        proc.kill();
+        complete("timeout");
+      }, 45_000);
+
+      const read = (chunk: unknown) => {
+        // stdout/stderr no respetan límites de línea: una URL puede llegar partida
+        // entre dos chunks. Guardar una cola corta evita perderla.
+        output = `${output}${String(chunk)}`.slice(-8192);
+        const found = findTunnelAddress(output);
+        if (!found) return;
+        state.status = "on";
+        state.url = found;
+        state.error = "";
+        complete();
+      };
+
+      proc.stdout?.on("data", read);
+      proc.stderr?.on("data", read);
+
+      proc.on("error", () => {
+        if (child === proc) child = null;
+        complete("no-cloudflared");
+      });
+
+      proc.on("exit", () => {
+        if (child === proc) child = null;
+        // Si ya habíamos devuelto una URL y después muere cloudflared, deja de
+        // anunciarse de inmediato. Un cierre tras timeout conserva ese error.
+        if (settled) {
+          if (state.status === "on") finish("");
+          return;
+        }
+        complete(state.status === "starting" ? "crashed" : "");
+      });
     });
+  })();
 
-    child.on("exit", () => {
-      clearTimeout(timer);
-      // Si ya estaba en marcha, esto es un cierre; si no, es que no arrancó.
-      if (state.status === "starting") finish("crashed");
-      else finish("");
-      done(tunnelState());
-    });
-  });
+  try {
+    return await starting;
+  } finally {
+    starting = null;
+  }
 }
 
 export function stopTunnel(): TunnelState {

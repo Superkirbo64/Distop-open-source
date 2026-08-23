@@ -2054,27 +2054,48 @@ function requireHost(ctx: Ctx): ReturnType<typeof requireAuth> {
   return auth;
 }
 
+/**
+ * El túnel es la excepción estrecha: abrir una salida pública no toca datos ni
+ * credenciales de la instancia. Una sesión autenticada desde el propio PC puede
+ * manejarlo aunque no sea la primera cuenta creada. Borrar datos y configurar
+ * el relevo de voz siguen reservados a la cuenta propietaria mediante
+ * `requireHost`.
+ */
+function requireTunnelHost(ctx: Ctx): ReturnType<typeof requireAuth> {
+  const auth = requireAuth(ctx);
+  if (!isLocalRequest(ctx) && !isInstanceOwner(auth.user.id))
+    throw forbidden("El túnel solo puede manejarse desde el equipo anfitrión o con su cuenta propietaria.");
+  return auth;
+}
+
+/** Estado operativo y dirección efectiva en una sola foto coherente. */
+function tunnelView() {
+  return { ...tunnelState(), autostart: tunnelAutostart(), public_url: publicUrl() };
+}
+
 route("GET", "/api/v1/instance/tunnel", (ctx) => {
-  requireHost(ctx);
-  return { ...tunnelState(), autostart: tunnelAutostart() };
+  requireTunnelHost(ctx);
+  return tunnelView();
 });
 
 route("POST", "/api/v1/instance/tunnel", async (ctx) => {
-  requireHost(ctx);
+  requireTunnelHost(ctx);
   rateLimit(`tunnel:${ctx.ip}`, 5, 60_000);
-  return startTunnel();
+  await startTunnel();
+  return tunnelView();
 });
 
 route("DELETE", "/api/v1/instance/tunnel", (ctx) => {
-  requireHost(ctx);
-  return stopTunnel();
+  requireTunnelHost(ctx);
+  stopTunnel();
+  return tunnelView();
 });
 
 /* Que el enlace publico se abra solo al arrancar es decision de quien hospeda:
    comodo por defecto, pero su ordenador queda accesible desde internet mientras
    la aplicacion este abierta, y eso tiene que poder apagarse. */
 route("PUT", "/api/v1/instance/tunnel/autostart", async (ctx) => {
-  requireHost(ctx);
+  requireTunnelHost(ctx);
   const body = await readJson(ctx);
   setTunnelAutostart(v.bool(body, "enabled", true));
   return { enabled: tunnelAutostart() };

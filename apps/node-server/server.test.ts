@@ -38,13 +38,14 @@ after(async () => {
 async function call(
   method: string,
   path: string,
-  opts: { token?: string; body?: unknown } = {},
+  opts: { token?: string; body?: unknown; headers?: Record<string, string> } = {},
 ): Promise<{ status: number; json: any }> {
   const res = await fetch(`${base}${path}`, {
     method,
     headers: {
       "content-type": "application/json",
       ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
+      ...opts.headers,
     },
     ...(opts.body === undefined ? {} : { body: JSON.stringify(opts.body) }),
   });
@@ -219,7 +220,7 @@ test("el secreto de sesiones se crea solo y sobrevive al reinicio", async () => 
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("abrir la instancia al mundo es cosa de quien la hospeda, no de cualquier admin", async () => {
+test("el túnel se maneja desde el equipo anfitrión, no por cualquier admin remoto", async () => {
   // La primera cuenta local de la base es quien puso en marcha la instancia; el
   // resto, por muchos permisos que tengan en su comunidad, no maneja su máquina.
   const forastero = await call("POST", "/api/v1/auth/register", {
@@ -231,11 +232,20 @@ test("abrir la instancia al mundo es cosa de quien la hospeda, no de cualquier a
   });
   assert.equal(suya.status, 200, "es administrador de su propia comunidad");
 
-  const mirar = await call("GET", "/api/v1/instance/tunnel", { token: forastero.json.access_token });
-  assert.equal(mirar.status, 403, "y aun así no puede ni mirar el estado del túnel");
+  const local = await call("GET", "/api/v1/instance/tunnel", { token: forastero.json.access_token });
+  assert.equal(local.status, 200, "desde el PC anfitrión sí puede manejar el servicio de ese PC");
 
-  const abrir = await call("POST", "/api/v1/instance/tunnel", { token: forastero.json.access_token });
-  assert.equal(abrir.status, 403, "ni abrirlo");
+  const mirar = await call("GET", "/api/v1/instance/tunnel", {
+    token: forastero.json.access_token,
+    headers: { "cf-ray": "peticion-remota" },
+  });
+  assert.equal(mirar.status, 403, "desde internet no puede ni mirar el estado del túnel");
+
+  const abrir = await call("POST", "/api/v1/instance/tunnel", {
+    token: forastero.json.access_token,
+    headers: { "cf-ray": "peticion-remota" },
+  });
+  assert.equal(abrir.status, 403, "ni abrirlo remotamente");
 
   const sinSesion = await call("POST", "/api/v1/instance/tunnel");
   assert.equal(sinSesion.status, 401, "y sin sesión, ni eso");
