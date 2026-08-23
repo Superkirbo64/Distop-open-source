@@ -987,3 +987,63 @@ vez y cada una guarda la suya.
   un túnel real se hizo a mano; automatizarla exigiría abrir un túnel en CI.
 - **Todo esto viaja dentro del instalador.** Hace falta publicar una versión
   nueva para que llegue a quien ya tiene la app instalada.
+
+---
+
+## Rebuild completo y nuevo enlace (22 de agosto de 2026)
+
+Se pidió matar los localhost abiertos por la sesión y reconstruir todo. Al
+revisar el árbol de trabajo aparecieron cambios sin commitear que no eran
+míos: refinamientos reales sobre el trabajo del túnel de la tanda anterior.
+
+### Lo que había abierto
+
+- Puerto 5000: **la instancia real ya reclamada** (`Mi instancia Distop`), no
+  una de prueba. Se detuvo el proceso; los datos siguen en `data/app.db`.
+- Varios `Distop.exe` de `apps/desktop/release/win-unpacked/` — pruebas
+  manuales de la app instalada, las de la captura enseñada antes.
+
+Ambos bloqueaban además la reconstrucción del instalador (`EBUSY` al borrar
+`win-unpacked`), así que matarlos era condición para lo segundo.
+
+### El trabajo que ya estaba sin commitear (ajeno a esta sesión)
+
+Cinco piezas, revisadas y verificadas antes de aceptarlas:
+
+| Commit | Qué cierra |
+|---|---|
+| `refactor(desktop)` | `parseTasklist`/`detectGame` separados de Electron, con test propio |
+| `fix(server)` | Condición de carrera en `startTunnel()` (arranque automático + clic manual a la vez); `findTunnelAddress()` deja de confundir `api.trycloudflare.com` con la instancia; el túnel pasa a manejarse desde cualquier sesión local, no solo la cuenta propietaria exacta |
+| `feat(web)` | Menú rápido de audio (dispositivo, perfil, volumen) desde la barra de usuario; iconos propios animados para canales de texto y anuncios; la interfaz reclama el túnel al hacer bootstrap si el servidor no lo abrió solo, y sincroniza `public_url` en vez de quedarse en `127.0.0.1` |
+| `fix(web)` | **Encontrado en la propia revisión**: al ampliar el túnel a cualquier sesión local, el panel de purgar datos seguía decidiendo si enseñarse contra ese mismo endpoint — cualquier sesión local no propietaria vería el botón de borrar el disco. Corregido para comprobar contra `/instance/relay`, que sigue exigiendo ser la cuenta propietaria |
+
+Todo pasó `typecheck` y los 64+6 tests **antes** de commitear nada.
+
+### El enlace de descarga, verificado sin fiarse del tamaño
+
+El archivo nuevo en MediaFire pesaba 4 bytes distinto del build local — normal
+en una firma Authenticode, cuya marca de tiempo varía entre firmas aunque el
+contenido no cambie. Comparar bytes crudos daba **99,6 % de diferencia**, que
+tampoco prueba nada: un solo byte de metadato temprano cambia toda la salida
+comprimida de un NSIS a partir de ahí.
+
+La comprobación real: descomprimir los dos instaladores con 7-Zip
+(`7za.exe` del propio caché de electron-builder) y comparar el contenido.
+**1075 archivos, 424 367 548 bytes sin comprimir, idénticos byte a byte en los
+dos** — `diff -rq` no encontró ni una discrepancia, y `app.asar` junto con cada
+archivo de `node-server` comparten el mismo SHA-256. El archivo de MediaFire
+es exactamente este build.
+
+### Pendiente
+
+- Todo esto sigue viviendo en el instalador. Quien ya tenga la app puesta
+  necesita la versión nueva para que le lleguen los arreglos.
+
+### La URL corta de Vercel cambió a mitad de sesión
+
+`distop-open-source-marketing.vercel.app` empezó a dar `DEPLOYMENT_NOT_FOUND`
+en toda la web, no solo en la página tocada. **La URL nueva es
+`distop.vercel.app`** — más corta, probablemente por un cambio de nombre del
+proyecto en el panel de Vercel. Nada del lado del repo se rompió: el pipeline
+es el mismo, redirects y los tres idiomas verificados ahí. Si esto vuelve a
+pasar, comprobar primero la raíz del dominio antes de sospechar del build.
