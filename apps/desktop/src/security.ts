@@ -5,38 +5,28 @@
  * del origen de la app, los enlaces se abren en el navegador del sistema y los
  * permisos delicados se conceden por lista blanca.
  */
-import { BrowserWindow, Menu, desktopCapturer, session, shell } from "electron";
+import { BrowserWindow, session, shell } from "electron";
 import { APP_ORIGIN } from "./protocol";
+import { pickSource } from "./picker";
 
 /** Permisos que el cliente usa de verdad; el resto se deniega sin preguntar. */
 const GRANTED = new Set(["media", "notifications", "fullscreen", "clipboard-sanitized-write", "display-capture"]);
 
-export function hardenSession(): void {
+export function hardenSession(getWindow: () => BrowserWindow | null): void {
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(GRANTED.has(permission));
   });
 
   /* En Electron getDisplayMedia no trae selector propio: sin esto, compartir
-     pantalla se queda colgado. Un menú nativo con pantallas y ventanas es la
-     selección que pide §15, sin inventar una UI aparte. */
+     pantalla se queda colgado. La ventana de picker.ts da la misma elección
+     con miniaturas que el selector del navegador (§15). */
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-    void desktopCapturer.getSources({ types: ["screen", "window"] }).then((sources) => {
-      let answered = false;
-      const pick = (source: Electron.DesktopCapturerSource) => {
-        answered = true;
-        callback({ video: source, audio: "loopback" });
-      };
-      const menu = Menu.buildFromTemplate(
-        sources.map((source) => ({ label: source.name.slice(0, 60) || "—", click: () => pick(source) })),
-      );
-      menu.popup({
-        callback: () => {
-          // Cerrar el menú sin elegir es "no quiero compartir", no un error.
-          setTimeout(() => {
-            if (!answered) callback({});
-          }, 0);
-        },
-      });
+    void pickSource(getWindow()).then((picked) => {
+      if (!picked) {
+        callback({});
+        return;
+      }
+      callback(picked.audio ? { video: picked.source, audio: "loopback" } : { video: picked.source });
     });
   });
 }

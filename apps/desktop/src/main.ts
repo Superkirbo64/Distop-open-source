@@ -59,7 +59,7 @@ if (!app.requestSingleInstanceLock()) {
 
   void app.whenReady().then(() => {
     registerAppProtocol(webDistPath());
-    hardenSession();
+    hardenSession(() => win);
 
     ipcMain.handle("host:start", () => startHost());
     ipcMain.handle("host:stop", () => stopHost());
