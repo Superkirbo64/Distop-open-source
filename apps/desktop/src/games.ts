@@ -14,6 +14,7 @@ import { app } from "electron";
 import { execFile } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { detectGame, parseTasklist } from "./game-detection";
 
 /** Corto y curado: los lanzadores (Steam, Epic…) no son juegos y no están. */
 const DEFAULT_CATALOG: Record<string, string> = {
@@ -99,38 +100,13 @@ function loadCatalog(): Map<string, string> {
   return map;
 }
 
-/** Primer campo de cada línea del CSV de tasklist: el nombre del ejecutable. */
-export function parseTasklist(csv: string): Set<string> {
-  const processes = new Set<string>();
-  for (const line of csv.split("\n")) {
-    const match = /^"([^"]+)"/.exec(line.trim());
-    if (match?.[1]) processes.add(match[1].toLowerCase());
-  }
-  return processes;
-}
-
 function scan(): void {
   execFile("tasklist", ["/fo", "csv", "/nh"], { windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
     if (err) return; // sin tasklist no hay detección; se reintenta en la próxima
     const running = parseTasklist(stdout);
     const catalog = loadCatalog();
 
-    let found: string | null = null;
-    // Si el juego actual sigue abierto, se mantiene: abrir un segundo juego no
-    // debe hacer parpadear el estado del primero.
-    if (current) {
-      for (const [exe, name] of catalog) {
-        if (name === current && running.has(exe)) found = current;
-      }
-    }
-    if (!found) {
-      for (const [exe, name] of catalog) {
-        if (running.has(exe)) {
-          found = name;
-          break;
-        }
-      }
-    }
+    const found = detectGame(running, catalog, current);
 
     if (found !== current) {
       current = found;

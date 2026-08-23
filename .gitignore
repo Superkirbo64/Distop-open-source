@@ -9,6 +9,7 @@ data/
 
 # app de escritorio: artefactos de electron-builder y protocolo transpilado
 apps/desktop/release/
+apps/desktop/release-*/
 apps/desktop/staging/
 # y el zip que se sube a mano: GitHub rechaza archivos de mas de 100 MB
 apps/desktop/release.zip
