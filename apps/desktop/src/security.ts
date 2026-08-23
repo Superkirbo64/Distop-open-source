@@ -5,7 +5,7 @@
  * del origen de la app, los enlaces se abren en el navegador del sistema y los
  * permisos delicados se conceden por lista blanca.
  */
-import { BrowserWindow, session, shell } from "electron";
+import { BrowserWindow, type WebContents, session, shell } from "electron";
 import { APP_ORIGIN } from "./protocol";
 import { pickSource } from "./picker";
 
@@ -31,15 +31,15 @@ export function hardenSession(getWindow: () => BrowserWindow | null): void {
   });
 }
 
-export function hardenWindow(win: BrowserWindow): void {
-  win.webContents.setWindowOpenHandler(({ url }) => {
+export function hardenWindow(wc: WebContents): void {
+  wc.setWindowOpenHandler(({ url }) => {
     // Un enlace de un mensaje abre en el navegador del sistema, jamás en una
     // ventana con acceso al preload. Esquemas raros (file:, app:) ni eso.
     if (url.startsWith("https://") || url.startsWith("http://")) void shell.openExternal(url);
     return { action: "deny" };
   });
 
-  win.webContents.on("will-navigate", (event, url) => {
+  wc.on("will-navigate", (event, url) => {
     const dev = process.env.DISTOP_DEV_URL;
     if (url.startsWith(APP_ORIGIN) || (dev && url.startsWith(dev))) return;
     event.preventDefault();

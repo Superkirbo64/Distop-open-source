@@ -22,6 +22,11 @@ export const en: Record<keyof typeof es, string> = {
   "common.search": "Search",
   "common.none": "None",
   "common.back": "Back",
+  "common.pickColor": "Pick a colour",
+  "common.eyedropper": "Eyedropper",
+  "common.hue": "Hue",
+  "common.saturation": "Saturation",
+  "common.lightness": "Lightness",
 
   "auth.tagline":
     "Your community, on your server, with nothing locked behind a paywall.",
@@ -291,12 +296,12 @@ export const en: Record<keyof typeof es, string> = {
   "voice.videoTitle": "Camera and screen",
   "voice.videoIntro":
     "Your camera and your screen, and only for you: nobody else notices what you change here.",
-  "voice.quality": "Maximum video quality",
+  "voice.quality": "Maximum video resolution",
   "voice.qualityHint":
-    "No paywall here: it's your own upload, from your camera and your screen. Nobody else is affected.",
-  "voice.qualityLow": "Light — up to 30 fps · camera 1.5 / screen 3 Mbit/s",
-  "voice.qualityMedium": "Balanced — up to 60 fps · camera 4 / screen 8 Mbit/s",
-  "voice.qualityHigh": "Maximum — up to 120 fps · camera 12 / screen 24 Mbit/s",
+    "A ceiling, for your camera and your screen alike: a smaller source is never upscaled. No paywall here — it's your own upload and nobody else is affected.",
+  "voice.qualityLow": "720p · up to 30 fps · camera 1.5 / screen 3 Mbit/s",
+  "voice.qualityMedium": "1080p · up to 60 fps · camera 4 / screen 8 Mbit/s",
+  "voice.qualityHigh": "1440p (2K) · up to 120 fps · camera 12 / screen 24 Mbit/s",
   "voice.priority": "What to prioritize",
   "voice.priorityHint":
     "When bandwidth can't cover everything, something gives. Here you pick what: frames or detail.",
@@ -493,6 +498,15 @@ export const en: Record<keyof typeof es, string> = {
   "settings.gameShareHint": "Off, nobody sees your current game and detection stops reporting.",
   "settings.gameHistory": "Show my recent games on my profile",
   "settings.gameHistoryHint": "Off, your play history stays yours alone.",
+  "settings.gameCheck": "Check detection",
+  "settings.gameOnlyDesktop":
+    "Detection only works in the desktop app, and for now only on Windows: a browser cannot see which programs you have open.",
+  "settings.gameFound": "Detected right now: {name}.",
+  "settings.gameNotScanned": "No pass has run yet. Wait a few seconds and try again.",
+  "settings.gameNoTasklist":
+    "Windows would not list the open programs, so only Steam games can be recognised.",
+  "settings.gameNothing":
+    "None of the {processes} open programs is a known game, and Steam has no session running. Steam and Epic games are recognised on their own; for anything else, add its executable to games.json ({catalog} recognised right now).",
   "settings.avatar": "Your avatar",
   "settings.avatarHint":
     "Upload a PNG, JPG, GIF or WebP, or paste a link. Animated GIFs work too: nothing is charged for that here.",
@@ -709,7 +723,6 @@ export const en: Record<keyof typeof es, string> = {
   "profileStyle.ownDeco": "Your own decoration",
   "profileStyle.ownDecoHint":
     "A PNG with a transparent centre. It is drawn around the avatar. Upload any you like: there is no fixed list.",
-  "profileStyle.plate": "Nameplate",
   "profileStyle.font": "Name font",
   "profileStyle.effect": "Name effect",
   "profileStyle.profileEffect": "Card effect",
@@ -736,6 +749,8 @@ export const en: Record<keyof typeof es, string> = {
   "style.serif": "Serif",
   "style.round": "Rounded",
   "style.wide": "Spaced",
+  "style.pixel": "Retro pixel",
+  "style.arcade": "Arcade",
   "style.plain": "Plain",
   "style.gradient": "Gradient",
   "style.pop": "Pop",

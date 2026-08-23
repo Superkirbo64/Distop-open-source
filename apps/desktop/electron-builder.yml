@@ -10,6 +10,8 @@ directories:
 files:
   - dist/**
   - src/splash.html
+  - src/shell.html
+  - src/voice-overlay.html
   - src/assets/**
   - package.json
 

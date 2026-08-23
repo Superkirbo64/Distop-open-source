@@ -8,7 +8,7 @@ import { DEFAULT_PROFILE_STYLE, type SelfUser } from "@distop/protocol";
 import { ChevronDown, ExternalLink } from "lucide-react";
 import { useStore, type BackdropChoice, type Density, type FontChoice, type ThemeChoice } from "../store.ts";
 import { api, setTokens, type Tokens } from "../lib/api.ts";
-import { inputDevice, probeNetwork, setIceServers, setInputDevice, setVideoMode } from "../lib/voice.ts";
+import { inputDevice, probeNetwork, retuneVideo, setIceServers, setInputDevice, setVideoMode } from "../lib/voice.ts";
 import * as audio from "../lib/relay.ts";
 import { LOCALES, LOCALE_LABELS } from "../i18n.ts";
 import {
@@ -34,7 +34,6 @@ import {
   CardEffectPicker,
   GradientControls,
   NameStylePicker,
-  PlatePicker,
   ProfileCardPreview,
   profileGradient,
 } from "../components/ProfileStyle.tsx";
@@ -227,26 +226,23 @@ function ProfileTab() {
           </div>
         </EditorSection>
 
-        {/* Banner y placa juntos: los dos son "el fondo sobre el que va tu
-            nombre" — el banner en la tarjeta, la placa en la lista de miembros.
-            La cabecera enseña las dos miniaturas. */}
+        {/* Banner y placa son la misma imagen: la de la tarjeta y la de tu fila en
+            la lista de miembros. Se elige una vez —galería, fondo o un archivo
+            del ordenador— y vale para las dos; no hay un color de placa aparte. */}
         <EditorSection
           id="banner"
           current={section}
           onOpen={setSection}
           title={t("profile.bannerPlate")}
           preview={
-            <>
-              <span
-                className="block h-7 w-12 rounded-md border border-line"
-                style={{
-                  background: form.banner_url
-                    ? `center/cover no-repeat url(${JSON.stringify(form.banner_url)})`
-                    : profileGradient(style, form.accent_color),
-                }}
-              />
-              <span className={`block h-7 w-12 rounded-md border border-line plate plate-${style.nameplate}`} />
-            </>
+            <span
+              className="block h-7 w-12 rounded-md border border-line"
+              style={{
+                background: form.banner_url
+                  ? `center/cover no-repeat url(${JSON.stringify(form.banner_url)})`
+                  : profileGradient(style, form.accent_color),
+              }}
+            />
           }
         >
           <div className="flex flex-col gap-3">
@@ -263,8 +259,6 @@ function ProfileTab() {
               <Gallery current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
             </Expander>
             <WallpaperPicker current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
-
-            <PlatePicker value={style} onChange={patchStyle} />
           </div>
         </EditorSection>
 
@@ -371,7 +365,45 @@ function GameActivityCard() {
       </div>
       <Toggle checked={share} onChange={(v) => void toggle("share_game_activity", v)} label={t("settings.gameShare")} hint={t("settings.gameShareHint")} />
       <Toggle checked={history} onChange={(v) => void toggle("show_game_history", v)} label={t("settings.gameHistory")} hint={t("settings.gameHistoryHint")} />
+      <GameDetectionCheck />
     </section>
+  );
+}
+
+/**
+ * "¿Por qué no detecta mi juego?", respondido dentro de la aplicación.
+ *
+ * Existe porque desde fuera todas las causas se ven iguales —una pantalla que no
+ * dice nada—: puede ser que la detección solo corre en la app de escritorio, que
+ * el juego no venga de Steam ni de Epic, o que `tasklist` no respondiera. El
+ * botón da el veredicto en una frase en vez de mandar a nadie a un terminal.
+ *
+ * No enseña la lista de procesos, solo cuántos había: el recuento no delata a
+ * qué juega nadie, y esa lista no sale del equipo ni para esto (§22).
+ */
+function GameDetectionCheck() {
+  const t = useT();
+  const bridge = window.distop?.games;
+  const [veredicto, setVeredicto] = useState<string | null>(null);
+
+  // En el navegador no hay nada que comprobar: no hay detección que arreglar.
+  if (!bridge?.scan) return <p className="text-xs text-muted">{t("settings.gameOnlyDesktop")}</p>;
+
+  async function comprobar() {
+    const [juego, scan] = await Promise.all([bridge!.current(), bridge!.scan!()]);
+    if (juego) return setVeredicto(t("settings.gameFound", { name: juego }));
+    if (!scan) return setVeredicto(t("settings.gameNotScanned"));
+    if (!scan.tasklist) return setVeredicto(t("settings.gameNoTasklist"));
+    setVeredicto(t("settings.gameNothing", { processes: scan.processes, catalog: scan.catalog }));
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Button variant="ghost" onClick={() => void comprobar()}>
+        {t("settings.gameCheck")}
+      </Button>
+      {veredicto ? <p className="text-xs text-muted">{veredicto}</p> : null}
+    </div>
   );
 }
 
@@ -700,6 +732,8 @@ function VideoSetup() {
               const value = next as audio.Quality;
               setQualityState(value);
               audio.setQuality(value);
+              // Si hay cámara o pantalla encendida, el cambio entra ya.
+              void retuneVideo();
             }}
           />
         )}
@@ -719,6 +753,7 @@ function VideoSetup() {
               const value = next as audio.Priority;
               setPriorityState(value);
               audio.setPriority(value);
+              void retuneVideo();
             }}
           />
         )}

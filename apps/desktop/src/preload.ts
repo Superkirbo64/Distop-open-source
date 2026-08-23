@@ -5,6 +5,7 @@
  * (apps/web/src/lib/instance.ts) y solo usa lo que aquí se ofrece.
  */
 import { contextBridge, ipcRenderer } from "electron";
+import type { GameScan } from "./games";
 
 export interface HostStatus {
   state: "off" | "starting" | "on" | "error";
@@ -31,11 +32,18 @@ const api = {
   /** Juego detectado en este equipo. Solo el nombre ya casado con el catálogo. */
   games: {
     current: (): Promise<string | null> => ipcRenderer.invoke("games:current") as Promise<string | null>,
+    /** Qué vio la última pasada, para el botón "Comprobar la detección" de Ajustes. */
+    scan: (): Promise<GameScan | null> => ipcRenderer.invoke("games:scan") as Promise<GameScan | null>,
     onChange: (callback: (game: string | null) => void): (() => void) => {
       const listener = (_event: unknown, game: string | null) => callback(game);
       ipcRenderer.on("games:change", listener);
       return () => ipcRenderer.removeListener("games:change", listener);
     },
+  },
+
+  /** Foto mínima de la llamada para el widget transparente de Windows. */
+  overlay: {
+    update: (state: unknown): void => ipcRenderer.send("voice-overlay:update", state),
   },
 };
 

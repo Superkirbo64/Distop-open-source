@@ -21,6 +21,11 @@ export const es = {
   "common.search": "Buscar",
   "common.none": "Ninguna",
   "common.back": "Volver",
+  "common.pickColor": "Elegir color",
+  "common.eyedropper": "Cuentagotas",
+  "common.hue": "Tono",
+  "common.saturation": "Saturación",
+  "common.lightness": "Claridad",
 
   "auth.tagline": "Tu comunidad, en tu servidor, sin funciones bajo llave.",
   "auth.point1": "Chat, voz, tu perfil a tu manera y tu «jugando a…»: todo gratis, siempre.",
@@ -295,12 +300,12 @@ export const es = {
   "voice.videoTitle": "Cámara y pantalla",
   "voice.videoIntro":
     "De tu cámara y tu pantalla, y solo para ti: nadie más nota lo que cambies aquí.",
-  "voice.quality": "Calidad máxima del vídeo",
+  "voice.quality": "Resolución máxima del vídeo",
   "voice.qualityHint":
-    "No hay límite de pago: es tu propia subida, de tu cámara y tu pantalla. No afecta a nadie más.",
-  "voice.qualityLow": "Ahorro — hasta 30 fps · cámara 1,5 / pantalla 3 Mbit/s",
-  "voice.qualityMedium": "Equilibrada — hasta 60 fps · cámara 4 / pantalla 8 Mbit/s",
-  "voice.qualityHigh": "Máxima — hasta 120 fps · cámara 12 / pantalla 24 Mbit/s",
+    "Es un techo, para tu cámara y para tu pantalla: si la fuente ya es más pequeña, no se amplía. No hay límite de pago, es tu propia subida y no afecta a nadie más.",
+  "voice.qualityLow": "720p · hasta 30 fps · cámara 1,5 / pantalla 3 Mbit/s",
+  "voice.qualityMedium": "1080p · hasta 60 fps · cámara 4 / pantalla 8 Mbit/s",
+  "voice.qualityHigh": "1440p (2K) · hasta 120 fps · cámara 12 / pantalla 24 Mbit/s",
   "voice.priority": "Qué priorizar",
   "voice.priorityHint":
     "Cuando el ancho de banda no da para todo, algo se sacrifica. Aquí eliges qué: fotogramas o detalle.",
@@ -506,6 +511,15 @@ export const es = {
   "settings.gameShareHint": "Apagado, nadie ve tu partida en curso y la detección deja de enviarse.",
   "settings.gameHistory": "Mostrar mis juegos recientes en el perfil",
   "settings.gameHistoryHint": "Apagado, tu historial de partidas queda solo para ti.",
+  "settings.gameCheck": "Comprobar la detección",
+  "settings.gameOnlyDesktop":
+    "La detección solo funciona en la aplicación de escritorio, y de momento solo en Windows: un navegador no puede ver qué programas tienes abiertos.",
+  "settings.gameFound": "Detectado ahora mismo: {name}.",
+  "settings.gameNotScanned": "Todavía no ha habido ninguna pasada. Espera unos segundos y vuelve a probar.",
+  "settings.gameNoTasklist":
+    "Windows no dejó consultar los programas abiertos, así que solo se reconocen los juegos de Steam.",
+  "settings.gameNothing":
+    "Ninguno de los {processes} programas abiertos es un juego conocido, y Steam no tiene ninguna partida en marcha. Se reconocen solos los juegos de Steam y de Epic; para cualquier otro, añade su ejecutable a games.json ({catalog} reconocidos ahora).",
   "settings.avatar": "Tu avatar",
   "settings.avatarHint":
     "Sube un PNG, JPG, GIF o WebP, o pega un enlace. Los GIF animados valen igual: aquí no se cobra por eso.",
@@ -725,7 +739,6 @@ export const es = {
   "profileStyle.ownDeco": "Tu propia decoración",
   "profileStyle.ownDecoHint":
     "Un PNG con el centro transparente. Se dibuja alrededor del avatar. Sube el que quieras: no hay lista cerrada.",
-  "profileStyle.plate": "Placa del nombre",
   "profileStyle.font": "Fuente del nombre",
   "profileStyle.effect": "Efecto del nombre",
   "profileStyle.profileEffect": "Efecto de la tarjeta",
@@ -752,6 +765,8 @@ export const es = {
   "style.serif": "Serif",
   "style.round": "Redondeada",
   "style.wide": "Espaciada",
+  "style.pixel": "Píxel retro",
+  "style.arcade": "Arcade",
   "style.plain": "Liso",
   "style.gradient": "Degradado",
   "style.pop": "Pop",

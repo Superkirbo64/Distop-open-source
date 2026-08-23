@@ -9,10 +9,9 @@
  * diálogo, y anidar otro encima obliga a cerrar dos cosas para volver. Además
  * así se ve el efecto de cada opción sobre la vista previa sin abrir nada.
  */
-import { Suspense, lazy, useState, useSyncExternalStore, type ReactNode } from "react";
-import { ImagePlus, RotateCcw } from "lucide-react";
+import { Suspense, lazy, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { ImagePlus } from "lucide-react";
 import {
-  NAMEPLATES,
   NAME_EFFECTS,
   NAME_FONTS,
   PROFILE_EFFECTS,
@@ -167,7 +166,8 @@ export function ProfileCardPreview({
 
         {/* Cómo se ve en la lista de miembros, que es donde vive la placa. */}
         <div
-          className={`mt-2 flex items-center gap-2 rounded-[10px] border border-line bg-surface/75 px-2 py-1.5 backdrop-blur-sm plate plate-${style.nameplate}`}
+          className={`mt-2 flex items-center gap-2 rounded-[10px] border border-line bg-surface/75 px-2 py-1.5 backdrop-blur-sm${bannerUrl ? " plate" : ""}`}
+          style={plateStyle(bannerUrl)}
         >
           <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={24} />
           <span className="truncate text-sm font-medium">
@@ -294,18 +294,16 @@ export function AvatarDecoPicker({
   );
 }
 
-/** Placa del nombre en la lista de miembros. */
-export function PlatePicker({ value, onChange }: { value: ProfileStyle; onChange: (patch: Partial<ProfileStyle>) => void }) {
-  const t = useT();
-  return (
-    <Row
-      label={t("profileStyle.plate")}
-      options={NAMEPLATES}
-      current={value.nameplate}
-      onPick={(nameplate) => onChange({ nameplate })}
-      render={(id) => <span className={`block h-7 w-14 rounded-md border border-line plate plate-${id}`} />}
-    />
-  );
+/**
+ * La placa del nombre en la lista de miembros: es el banner del perfil, no una
+ * cosa aparte. Quien elige su banner ya eligió su placa, así que no hay ni
+ * catálogo de colorines ni un segundo sitio donde subir la misma imagen; sin
+ * banner, no hay placa. `--plate-image` la recoge `.plate` (ver styles.css).
+ */
+export function plateStyle(bannerUrl: string | null | undefined): CSSProperties | undefined {
+  // JSON.stringify escapa comillas y barras: una url no puede cerrar el url() ni
+  // colar otra declaración, aunque venga de otra instancia (§22).
+  return bannerUrl ? ({ "--plate-image": `url(${JSON.stringify(bannerUrl)})` } as CSSProperties) : undefined;
 }
 
 /** Fuente, efecto y color del nombre visible. */
@@ -483,12 +481,7 @@ function Row<T extends string>({
   );
 }
 
-/**
- * Un color opcional: o eliges uno, o hereda el de acento.
- * El botón de deshacer es lo que hace "opcional" alcanzable: el campo HEX
- * siempre representa un color concreto, mientras que aquí también se puede
- * volver a heredar el acento del perfil.
- */
+/** Un color del perfil; si aún no se eligió, empieza en el color de acento. */
 function ColorSlot({
   label,
   value,
@@ -500,28 +493,10 @@ function ColorSlot({
   fallback: string;
   onChange: (value: string | null) => void;
 }) {
-  const t = useT();
-
   return (
     <label className="flex flex-col gap-1">
       <span className="text-[0.7rem] font-semibold tracking-wider text-muted uppercase">{label}</span>
-      <span className="flex items-center gap-1">
-        <ColorInput
-          className="h-10 min-h-10 flex-1"
-          value={value ?? fallback}
-          onChange={onChange}
-        />
-        {value ? (
-          <button
-            onClick={() => onChange(null)}
-            aria-label={t("profileStyle.useAccent")}
-            title={t("profileStyle.useAccent")}
-            className="grid h-10 w-9 shrink-0 place-items-center rounded-[10px] border border-line text-muted hover:border-accent hover:text-ink"
-          >
-            <RotateCcw size={14} />
-          </button>
-        ) : null}
-      </span>
+      <ColorInput className="h-10 min-h-10" value={value ?? fallback} onChange={onChange} />
     </label>
   );
 }

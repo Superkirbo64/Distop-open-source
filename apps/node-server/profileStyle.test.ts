@@ -50,9 +50,10 @@ test("la dirección y el balance del degradado tienen límites claros", () => {
 });
 
 test("un valor valido del catalogo se conserva", () => {
-  const style = toProfileStyle({ nameplate: "mist", name_effect: "neon" });
+  const style = toProfileStyle({ nameplate: "mist", name_font: "pixel", name_effect: "neon" });
 
   assert.equal(style.nameplate, "mist");
+  assert.equal(style.name_font, "pixel");
   assert.equal(style.name_effect, "neon");
 });
 

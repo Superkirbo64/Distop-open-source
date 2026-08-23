@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>Distop</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0b0a14; overflow: hidden; }
+  header {
+    display: flex; align-items: center; gap: 2px;
+    height: 36px; box-sizing: border-box; padding-left: 10px; padding-right: 140px;
+    background: #0b0a14; border-bottom: 1px solid #1a1830;
+    font: 12px/1 -apple-system, "Segoe UI", system-ui, sans-serif;
+    -webkit-app-region: drag; user-select: none;
+  }
+  .brand { width: 16px; height: 16px; display: block; margin-right: 10px; }
+  button {
+    -webkit-app-region: no-drag;
+    height: 26px; padding: 0 14px; border: 0; border-radius: 7px;
+    background: transparent; color: #98a0b3; font: inherit; cursor: pointer;
+  }
+  button:hover { background: #17162a; color: #e8eaf2; }
+  button[aria-pressed="true"] { background: #1e2340; color: #e8eaf2; }
+  button:focus-visible { outline: 2px solid #7b90ff; outline-offset: 1px; }
+  @media (prefers-reduced-motion: no-preference) { button { transition: background 120ms, color 120ms; } }
+</style>
+</head>
+<body>
+  <header id="strip">
+    <img class="brand" src="assets/icon.png" alt="">
+    <button type="button" data-app="distop" aria-pressed="true">Distop</button>
+    <button type="button" data-app="whatsapp" aria-pressed="false">WhatsApp</button>
+    <button type="button" data-app="telegram" aria-pressed="false">Telegram</button>
+  </header>
+<script>
+(function () {
+  var strip = document.getElementById("strip");
+  var tabs = Array.prototype.slice.call(document.querySelectorAll("button[data-app]"));
+
+  /* Windows pinta sus tres botones encima de la franja: hay que dejarles su
+     hueco a la derecha, que cambia con el escalado y al maximizar. */
+  function fit() {
+    var overlay = navigator.windowControlsOverlay;
+    var free = 140;
+    if (overlay && overlay.visible) {
+      var area = overlay.getTitlebarAreaRect();
+      free = Math.max(0, window.innerWidth - (area.x + area.width));
+    }
+    strip.style.paddingRight = free + "px";
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      tabs.forEach(function (other) {
+        other.setAttribute("aria-pressed", String(other === tab));
+      });
+      window.distopShell.switch(tab.getAttribute("data-app"));
+    });
+  });
+
+  fit();
+  window.addEventListener("resize", fit);
+  if (navigator.windowControlsOverlay) {
+    navigator.windowControlsOverlay.addEventListener("geometrychange", fit);
+  }
+})();
+</script>
+</body>
+</html>

@@ -841,12 +841,28 @@ export function canShareScreen(): boolean {
   return typeof navigator.mediaDevices?.getDisplayMedia === "function";
 }
 
+/**
+ * El techo de resolución elegido, en el idioma de getUserMedia.
+ *
+ * `max` es lo que hace el recorte de verdad —un monitor 4K compartido con 720p
+ * elegido baja a 720p— e `ideal` es lo que permite volver a subir cuando el
+ * ajuste sube con la cámara ya encendida: medido en Chrome, un `max` a secas
+ * baja pero luego no recupera, ni soltándolo. Una fuente más pequeña que el
+ * techo se queda como está: `ideal` es una preferencia, no una exigencia.
+ */
+function sizeLimits(profile: relay.VideoProfile): MediaTrackConstraints {
+  return {
+    width: { ideal: profile.width, max: profile.width },
+    height: { ideal: profile.height, max: profile.height },
+    frameRate: { ideal: profile.fps, max: profile.fps },
+  };
+}
+
 function capture(source: VideoSource): Promise<MediaStream> {
   const profile = relay.videoProfile(source);
   return source === "screen"
     ? navigator.mediaDevices.getDisplayMedia({
-        // Resolución nativa: reducirla antes de codificar vuelve ilegible el texto.
-        video: { frameRate: { ideal: profile.fps, max: profile.fps } },
+        video: sizeLimits(profile),
         /* El sonido de lo que se comparte. `ideal` y no `exact`: si el sistema no
            sabe entregarlo —Linux con algunos escritorios, o compartir una ventana
            en vez de una pestaña— se comparte igual, en mudo, en vez de fallar
@@ -854,11 +870,7 @@ function capture(source: VideoSource): Promise<MediaStream> {
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       })
     : navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: profile.width },
-          height: { ideal: profile.height },
-          frameRate: { ideal: profile.fps, max: profile.fps },
-        },
+        video: sizeLimits(profile),
         audio: false,
       });
 }
@@ -1000,6 +1012,36 @@ export async function setVideoSource(source: VideoSource | null): Promise<void> 
   else if (source === "screen") playUi("screen_on");
   else if (previousSource === "camera") playUi("camera_off");
   else if (previousSource === "screen") playUi("screen_off");
+}
+
+/**
+ * Aplicar en caliente la resolución o la prioridad que se acaban de cambiar en
+ * Ajustes. Sin esto el ajuste es cierto pero solo a partir de la próxima vez que
+ * se enciende la cámara, que desde fuera se ve igual que un ajuste que no hace
+ * nada. Reaprovecha el `MediaStream` que ya estaba: volver a pedirlo abriría otra
+ * vez el diálogo de compartir pantalla.
+ */
+export async function retuneVideo(): Promise<void> {
+  const source = state.video;
+  const track = videoStream?.getVideoTracks()[0];
+  if (!source || !track || !videoStream) return;
+
+  await track.applyConstraints(sizeLimits(relay.videoProfile(source))).catch(() => {
+    // Fuente que no admite reconfigurarse en caliente: se queda como estaba y
+    // el ajuste entra al volver a encenderla.
+  });
+
+  const hint = relay.videoPriority();
+  track.contentHint = hint === "fluid" ? "motion" : hint === "sharp" ? "detail" : source === "screen" ? "detail" : "motion";
+
+  if (videoViaHost) {
+    // El codificador se configuró con un tamaño fijo; con otro tamaño de
+    // fotograma hay que rehacerlo, sobre la misma pista ya capturada.
+    relay.stopVideo();
+    await relay.startVideo(videoStream, sendMedia, source).catch(() => false);
+  } else {
+    for (const peer of peers.values()) if (peer.videoSender) await tuneSender(peer.videoSender, source);
+  }
 }
 
 /**

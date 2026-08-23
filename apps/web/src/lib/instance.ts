@@ -57,6 +57,27 @@ declare global {
       games: {
         current: () => Promise<string | null>;
         onChange: (callback: (game: string | null) => void) => () => void;
+        /** Qué vio la última pasada de detección. Recuentos, nunca la lista de procesos. */
+        scan: () => Promise<{
+          at: number;
+          steam: string | null;
+          processes: number;
+          catalog: number;
+          tasklist: boolean;
+        } | null>;
+      };
+      overlay: {
+        update: (state: {
+          channelId: string | null;
+          channelName: string;
+          participants: Array<{
+            id: string;
+            name: string;
+            avatarUrl: string | null;
+            speaking: boolean;
+            muted: boolean;
+          }>;
+        }) => void;
       };
     };
     /** Marca de Capacitor. Solo existe dentro de la app Android/iOS. */

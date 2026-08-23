@@ -9,7 +9,7 @@ import { PERMISSIONS, has, toBits, type GameSession, type Member } from "@distop
 import { gameOf, useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
 import { Avatar, avatarOverflow, DisplayName, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, useConfirm, useLocale, useT } from "./ui.tsx";
-import { CardEffectLayer, cardBackground, profileSurfaceBackground } from "./ProfileStyle.tsx";
+import { CardEffectLayer, cardBackground, plateStyle, profileSurfaceBackground } from "./ProfileStyle.tsx";
 import { formatDate, formatDuration } from "../i18n.ts";
 
 /**
@@ -89,11 +89,13 @@ export function Members({ onClose }: { onClose: () => void }) {
             const isOwner = data!.community.owner_id === member.user.id;
             const canModerate = member.user.id !== me?.id && !isOwner;
             return (
-              /* La placa va en background-image y el hover en background-color:
-                 por eso conviven en la misma fila sin pisarse (ver styles.css). */
+              /* La placa es el banner del perfil, sin catálogo aparte: quien elige
+                 su banner ya eligió su placa. Va en background-image y el hover en
+                 background-color, por eso conviven sin pisarse (ver styles.css). */
               <li
                 key={member.user.id}
-                className={`group flex items-center gap-2 rounded-[10px] px-2 py-1.5 hover:bg-raise plate plate-${member.user.profile_style.nameplate}`}
+                className={`group flex items-center gap-2 rounded-[10px] px-2 py-1.5 hover:bg-raise${member.user.banner_url ? " plate" : ""}`}
+                style={plateStyle(member.user.banner_url)}
               >
                 <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setProfile(member)}>
                   <Avatar

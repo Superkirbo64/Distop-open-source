@@ -623,10 +623,15 @@ dialog[open] {
   appearance: none;
   height: 6px;
   border-radius: 999px;
-  background: linear-gradient(
-    to right,
-    var(--accent) var(--audio-progress, var(--range-progress, 0%)),
-    var(--raise) var(--audio-progress, var(--range-progress, 0%))
+  /* --range-track deja que un deslizador pinte su propia barra: la del tono es
+     un arcoíris, no un progreso. Sin esa variable, el relleno de siempre. */
+  background: var(
+    --range-track,
+    linear-gradient(
+      to right,
+      var(--accent) var(--audio-progress, var(--range-progress, 0%)),
+      var(--raise) var(--audio-progress, var(--range-progress, 0%))
+    )
   );
   cursor: pointer;
   border: 1px solid color-mix(in oklab, var(--line) 70%, transparent);
@@ -638,7 +643,7 @@ dialog[open] {
   height: 18px;
   border: 3px solid var(--surface);
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--range-thumb, var(--accent));
   box-shadow: 0 1px 5px rgb(0 0 0 / 0.4), 0 0 0 1px var(--line);
   transition: transform var(--dur-1) var(--ease-spring), box-shadow var(--dur-1) var(--ease-soft);
 }
@@ -648,7 +653,7 @@ dialog[open] {
   height: 12px;
   border: 3px solid var(--surface);
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--range-thumb, var(--accent));
   box-shadow: 0 1px 5px rgb(0 0 0 / 0.4), 0 0 0 1px var(--line);
 }
 .quick-audio-range:hover::-webkit-slider-thumb,
@@ -701,44 +706,34 @@ figure {
    catálogo entero — que es justo lo contrario de una tienda donde cada marco
    es un artículo (§10, §29.6).
 
-   Los nombres de clase se componen con el id que trae el perfil (`plate-mist`),
+   Los nombres de clase se componen con el id que trae el perfil (`nfont-mono`),
    y ese id SIEMPRE ha pasado por toProfileStyle en el servidor: aquí no puede
    llegar un valor que no esté en el catálogo del protocolo (§22).
    ──────────────────────────────────────────────────────────────────────── */
 
 /* ── placas de nombre ──────────────────────────────────────────────────
-   Van en `background-image` a propósito, no en `background`: la fila de la
-   lista de miembros ya usa `background-color` para el hover, y así las dos
-   cosas conviven en vez de pisarse. El degradado se apaga hacia la izquierda
-   para que el nombre siga leyéndose encima. */
+   La placa es el banner del perfil, la misma imagen y no una copia aparte: se
+   pasa en `--plate-image` desde plateStyle(). Sin banner no se pone la clase y
+   no hay placa, que es la razón de que no exista un catálogo de colorines.
+
+   Va en `background-image` a propósito, no en `background`: la fila de la lista
+   de miembros ya usa `background-color` para el hover, y así las dos cosas
+   conviven en vez de pisarse. El velo del color del panel es la primera capa
+   —o sea, la de encima— y se apaga hacia la derecha: la foto se ve donde no
+   estorba y el nombre se lee siempre. */
 .plate {
   background-repeat: no-repeat;
+  background-position: center;
   background-size: cover;
-}
-.plate-mist {
-  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #818cf8 55%, transparent));
-}
-.plate-aurora {
-  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #34d399 45%, transparent), color-mix(in oklab, #22d3ee 55%, transparent));
-}
-.plate-sunset {
-  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #fb923c 45%, transparent), color-mix(in oklab, #f43f5e 55%, transparent));
-}
-.plate-forest {
-  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #4ade80 50%, transparent));
-}
-.plate-ocean {
-  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #38bdf8 55%, transparent));
-}
-.plate-ember {
-  background-image: linear-gradient(90deg, transparent, color-mix(in oklab, #ef4444 50%, transparent));
+  background-image:
+    linear-gradient(90deg, var(--surface) 10%, color-mix(in oklab, var(--surface) 45%, transparent) 100%),
+    var(--plate-image);
 }
 
 /* ── fuentes del nombre ────────────────────────────────────────────────
-   Pilas del sistema, más las dos que la aplicación ya carga. Ninguna descarga
-   una fuente nueva: seis opciones distinguibles a coste cero de red. Es menos
-   catálogo que el de una plataforma con fuentes propias, y eso se dice en vez
-   de disimularlo (§29.3). */
+   Pilas del sistema, las dos fuentes base y dos familias gamer autoalojadas.
+   Press Start 2P y Silkscreen salen del propio bundle: no consultan Google ni
+   otra CDN al pintar un perfil. */
 .nfont-default {
   font-family: var(--font-body);
 }
@@ -758,13 +753,32 @@ figure {
   font-family: var(--font-display);
   letter-spacing: 0.14em;
 }
+.nfont-pixel {
+  font-family: "Press Start 2P", fantasy;
+  font-size: 0.78em;
+  line-height: 1.45;
+}
+.nfont-arcade {
+  font-family: Silkscreen, fantasy;
+  letter-spacing: 0.045em;
+}
 
 /* ── efectos del nombre ────────────────────────────────────────────────
    `--name-color` y `--name-color-2` las pone el componente en línea, sacadas
    del perfil. Sin ellas todo cae en `currentColor`, que es exactamente como se
    pintaba el nombre antes de que esto existiera. */
+.fx-plain,
+.fx-gradient,
+.fx-neon,
+.fx-pop,
+.fx-animated {
+  display: inline-block;
+  transform-origin: center;
+}
+
 .fx-plain {
   color: var(--name-color, currentColor);
+  animation: name-breathe 2.8s ease-in-out infinite;
 }
 
 .fx-gradient,
@@ -781,7 +795,8 @@ figure {
 }
 
 .fx-gradient {
-  background-size: 100% 100%;
+  background-size: 220% 100%;
+  animation: name-slide 5.2s ease-in-out infinite alternate;
 }
 
 .fx-animated {
@@ -794,18 +809,37 @@ figure {
   text-shadow:
     0 0 4px color-mix(in oklab, var(--name-color, currentColor) 80%, transparent),
     0 0 12px color-mix(in oklab, var(--name-color, currentColor) 55%, transparent);
+  animation: name-neon 2.35s ease-in-out infinite;
 }
 
 /* Sombra dura y desplazada, sin desenfoque: el aspecto de pegatina. */
 .fx-pop {
   color: var(--name-color, currentColor);
   text-shadow: 2px 2px 0 var(--name-color-2, var(--accent));
+  animation: name-pop 1.9s cubic-bezier(.2,.8,.35,1) infinite;
 }
 
 @keyframes name-slide {
   to {
     background-position: -220% 0;
   }
+}
+
+@keyframes name-breathe {
+  0%, 100% { filter: brightness(1); transform: translateY(0); }
+  50% { filter: brightness(1.28); transform: translateY(-1px); }
+}
+
+@keyframes name-neon {
+  0%, 18%, 22%, 100% { filter: brightness(1); opacity: 1; }
+  20% { filter: brightness(.72); opacity: .82; }
+  55% { filter: brightness(1.38); opacity: 1; }
+}
+
+@keyframes name-pop {
+  0%, 72%, 100% { transform: translateY(0) rotate(0); }
+  80% { transform: translateY(-2px) rotate(-1deg); }
+  88% { transform: translateY(0) rotate(1deg); }
 }
 
 /* ── efectos de la tarjeta de perfil ───────────────────────────────────

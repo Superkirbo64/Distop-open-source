@@ -15,7 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Image as ImageIcon, Search } from "lucide-react";
+import { Check, ChevronDown, Image as ImageIcon, Pipette, Search } from "lucide-react";
 import { RINGS, type ProfileStyle } from "@distop/protocol";
 import { translate, type MessageKey } from "../i18n.ts";
 import { useStore } from "../store.ts";
@@ -487,7 +487,146 @@ export function Select({
   );
 }
 
-/** Color sin abrir el diálogo genérico del sistema: muestra muestra + HEX. */
+/**
+ * Tabla arcoíris de la aplicación: familias por fila y claridades por columna,
+ * como una paleta de dibujo. El HEX sigue aceptando cualquier color exacto.
+ */
+const PALETTE = [
+  ["#ffffff", "#c9ced9", "#8b93a5", "#4a5162", "#272c38", "#000000"],
+  ["#ffb3b3", "#f87171", "#ef4444", "#c62c2c", "#8f1d1d", "#5c0f0f"],
+  ["#ffd8a8", "#fbbf24", "#f59e0b", "#c47a06", "#8a5504", "#573403"],
+  ["#bbf7d0", "#4ade80", "#22c55e", "#16a34a", "#116b33", "#0a441f"],
+  ["#a5f3fc", "#38bdf8", "#0ea5e9", "#0b7fb4", "#075a80", "#04384f"],
+  ["#c7d2fe", "#818cf8", "#6366f1", "#4a4dc4", "#33358a", "#1f2054"],
+  ["#f5d0fe", "#e879f9", "#c026d3", "#941da3", "#6b1576", "#440d4b"],
+];
+
+/** La gota del sistema. Es de Chromium, así que en el escritorio siempre está. */
+interface EyeDropperCtor {
+  new (): { open(): Promise<{ sRGBHex: string }> };
+}
+
+interface HsvColor {
+  h: number;
+  s: number;
+  v: number;
+}
+
+function hexToHsv(hex: string): HsvColor {
+  const match = /^#([0-9a-f]{6})$/i.exec(hex);
+  const raw = Number.parseInt(match?.[1] ?? "000000", 16);
+  const r = ((raw >> 16) & 255) / 255;
+  const g = ((raw >> 8) & 255) / 255;
+  const b = (raw & 255) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let h = 0;
+  if (delta) {
+    if (max === r) h = 60 * (((g - b) / delta) % 6);
+    else if (max === g) h = 60 * ((b - r) / delta + 2);
+    else h = 60 * ((r - g) / delta + 4);
+  }
+  return { h: (h + 360) % 360, s: max ? delta / max : 0, v: max };
+}
+
+function hsvToHex(h: number, s: number, v: number): string {
+  const c = v * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = v - c;
+  const [r, g, b] =
+    h < 60 ? [c, x, 0]
+      : h < 120 ? [x, c, 0]
+        : h < 180 ? [0, c, x]
+          : h < 240 ? [0, x, c]
+            : h < 300 ? [x, 0, c]
+              : [c, 0, x];
+  const channel = (value: number) => Math.round((value + m) * 255).toString(16).padStart(2, "0");
+  return `#${channel(r)}${channel(g)}${channel(b)}`;
+}
+
+/** Selector continuo del anexo: plano de saturación/claridad y tono arcoíris. */
+function ColorSpectrum({ value, onChange }: { value: string; onChange: (color: string) => void }) {
+  const t = useT();
+  const hsv = hexToHsv(value);
+  const [hue, setHue] = useState(hsv.h);
+
+  useEffect(() => {
+    // En negro/gris no existe un tono matemático: conservar el último permite
+    // mover el carril y después sacar color desde el cuadro, como en el anexo.
+    if (hsv.s > 0) setHue(hsv.h);
+  }, [hsv.h, hsv.s]);
+
+  const setPlane = (element: HTMLDivElement, clientX: number, clientY: number): void => {
+    const rect = element.getBoundingClientRect();
+    const saturation = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const brightness = Math.min(1, Math.max(0, 1 - (clientY - rect.top) / rect.height));
+    onChange(hsvToHex(hue, saturation, brightness));
+  };
+
+  const nudge = (ds: number, dv: number): void => {
+    onChange(hsvToHex(hue, Math.min(1, Math.max(0, hsv.s + ds)), Math.min(1, Math.max(0, hsv.v + dv))));
+  };
+
+  return (
+    <div className="mt-1 flex flex-col gap-2 border-t border-line pt-2">
+      <div
+        role="slider"
+        tabIndex={0}
+        aria-label={`${t("common.saturation")} / ${t("common.lightness")}`}
+        aria-valuetext={`${Math.round(hsv.s * 100)}% / ${Math.round(hsv.v * 100)}%`}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setPlane(event.currentTarget, event.clientX, event.clientY);
+        }}
+        onPointerMove={(event) => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId))
+            setPlane(event.currentTarget, event.clientX, event.clientY);
+        }}
+        onKeyDown={(event) => {
+          const step = event.shiftKey ? 0.1 : 0.02;
+          if (event.key === "ArrowLeft") nudge(-step, 0);
+          else if (event.key === "ArrowRight") nudge(step, 0);
+          else if (event.key === "ArrowUp") nudge(0, step);
+          else if (event.key === "ArrowDown") nudge(0, -step);
+          else return;
+          event.preventDefault();
+        }}
+        className="relative h-32 w-full cursor-crosshair overflow-hidden rounded-[7px] border border-line outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        style={{
+          background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(${hue} 100% 50%))`,
+        }}
+      >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_0_0_1px_#111]"
+          style={{
+            left: `${Math.min(97, Math.max(3, hsv.s * 100))}%`,
+            top: `${Math.min(96, Math.max(4, (1 - hsv.v) * 100))}%`,
+          }}
+        />
+      </div>
+      <Range
+        aria-label={t("common.hue")}
+        min={0}
+        max={359}
+        value={Math.round(hue)}
+        onChange={(event) => {
+          const next = Number(event.target.value);
+          setHue(next);
+          onChange(hsvToHex(next, hsv.s, hsv.v));
+        }}
+        style={
+          {
+            "--range-track": "linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)",
+            "--range-thumb": `hsl(${hue} 100% 50%)`,
+          } as CSSProperties
+        }
+      />
+    </div>
+  );
+}
+
 export function ColorInput({
   id,
   value,
@@ -501,12 +640,85 @@ export function ColorInput({
   className?: string;
   label?: string;
 }) {
+  const t = useT();
+  const dropper = (window as unknown as { EyeDropper?: EyeDropperCtor }).EyeDropper;
   const [draft, setDraft] = useState(value.toUpperCase());
   useEffect(() => setDraft(value.toUpperCase()), [value]);
 
   return (
     <div className={`color-input field flex items-center gap-2 ${className}`}>
-      <span className="h-7 w-7 shrink-0 rounded-[8px] border border-line shadow-sm" style={{ background: value }} aria-hidden />
+      {/* El cuadrito abre la paleta. Era un `span` decorativo y encima parecía
+          pulsable, así que la única forma de elegir color era teclear el
+          hexadecimal a mano. Y no vale `input type="color"`: Electron 40 no abre
+          ningún diálogo al pulsarlo —comprobado con un clic real, no del DOM—,
+          así que en la aplicación de escritorio sería un botón muerto. */}
+      {/* `floating`: las secciones del editor de perfil recortan lo que se sale
+          (overflow-hidden), y sin salir de ahí la paleta aparecía cortada a una
+          sola columna. */}
+      <Menu
+        flush
+        floating
+        trigger={(props) => (
+          <button
+            {...props}
+            type="button"
+            aria-label={t("common.pickColor")}
+            title={t("common.pickColor")}
+            className="h-7 w-7 shrink-0 cursor-pointer rounded-[8px] border border-line shadow-sm transition-transform hover:scale-110"
+            style={{ background: value }}
+          />
+        )}
+      >
+        {(close) => (
+          <div className="flex flex-col gap-1.5 p-2">
+            {PALETTE.map((row) => (
+              <div key={row.join()} className="flex gap-1">
+                {row.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    aria-label={color}
+                    aria-pressed={value.toLowerCase() === color}
+                    title={color}
+                    onClick={() => {
+                      onChange(color);
+                      close();
+                    }}
+                    className={`h-7 w-7 rounded-[6px] border transition-transform hover:scale-110 ${
+                      value.toLowerCase() === color ? "border-ink" : "border-line"
+                    }`}
+                    style={{ background: color }}
+                  />
+                ))}
+              </div>
+            ))}
+            <ColorSpectrum value={value} onChange={onChange} />
+            <div className="mt-1 flex items-center gap-2 border-t border-line pt-2">
+              <span className="h-7 w-7 shrink-0 rounded-[6px] border border-line" style={{ background: value }} aria-hidden />
+              <span className="flex-1 font-mono text-xs font-semibold text-muted">{value.toUpperCase()}</span>
+              {dropper ? (
+                <button
+                  type="button"
+                  aria-label={t("common.eyedropper")}
+                  title={t("common.eyedropper")}
+                  onClick={() => {
+                    void new dropper()
+                      .open()
+                      .then((picked) => {
+                        onChange(picked.sRGBHex.toLowerCase());
+                        close();
+                      })
+                      .catch(() => {});
+                  }}
+                  className="grid h-7 w-7 place-items-center rounded-[6px] border border-line text-muted hover:border-accent hover:text-ink"
+                >
+                  <Pipette size={14} aria-hidden />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </Menu>
       <input
         id={id}
         aria-label={label}
@@ -869,7 +1081,15 @@ export function Menu({
   return (
     <div ref={box} className="relative">
       {trigger({ onClick: () => setOpen((v) => !v) })}
-      {open ? (floating ? createPortal(content, document.body) : content) : null}
+      {/* Dentro de un diálogo hay que portalizar AL diálogo, no al body: un
+          <dialog> abierto con showModal vive en la top layer, y desde el body
+          ningún z-index lo alcanza — el menú quedaba en el DOM, "visible" y en
+          pantalla, pero pintado por debajo del modal. Mismo criterio que Select. */}
+      {open
+        ? floating
+          ? createPortal(content, box.current?.closest("dialog") ?? document.body)
+          : content
+        : null}
     </div>
   );
 }

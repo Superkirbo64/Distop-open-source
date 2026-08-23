@@ -559,24 +559,29 @@ export function receive(id: Snowflake, kind: number, payload: Uint8Array): void 
    completo y repetirlo cada pocos segundos para quien llegue tarde. */
 
 /**
- * Fotogramas, resolución y bitrate de TU cámara y TU pantalla. Es tuyo, como el
+ * Resolución, fotogramas y bitrate de TU cámara y TU pantalla. Es tuyo, como el
  * volumen del micrófono: no toca a la instancia ni a quien hospeda, así que
  * cada quien elige lo que le dé su propia conexión (§10.2).
+ *
+ * Son tres resoluciones concretas —720p, 1080p y 1440p— y el techo vale igual
+ * para la pantalla que para la cámara: compartir un monitor 4K con 720p elegido
+ * recorta de verdad los píxeles que salen, no solo el bitrate. Es un máximo y no
+ * un objetivo: una fuente más pequeña que el techo no se amplía.
  *
  * No hay límite artificial aquí.
  */
 const QUALITY = {
   low: {
     camera: { bitrate: 1_500_000, fps: 30, width: 1280, height: 720 },
-    screen: { bitrate: 3_000_000, fps: 30, width: 0, height: 0 },
+    screen: { bitrate: 3_000_000, fps: 30, width: 1280, height: 720 },
   },
   medium: {
     camera: { bitrate: 4_000_000, fps: 60, width: 1920, height: 1080 },
-    screen: { bitrate: 8_000_000, fps: 60, width: 0, height: 0 },
+    screen: { bitrate: 8_000_000, fps: 60, width: 1920, height: 1080 },
   },
   high: {
     camera: { bitrate: 12_000_000, fps: 120, width: 2560, height: 1440 },
-    screen: { bitrate: 24_000_000, fps: 120, width: 0, height: 0 },
+    screen: { bitrate: 24_000_000, fps: 120, width: 2560, height: 1440 },
   },
 } as const;
 
@@ -630,7 +635,7 @@ export function videoPriority(): Priority {
 export interface VideoProfile {
   bitrate: number;
   fps: number;
-  /** Cámara: resolución ideal. Pantalla: 0 conserva la resolución nativa elegida. */
+  /** Techo de resolución: la cámara lo pide como ideal y la pantalla, como máximo. */
   width: number;
   height: number;
 }

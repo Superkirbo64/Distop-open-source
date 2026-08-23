@@ -173,7 +173,7 @@ export interface SelfUser extends PublicUser {
 export const NAMEPLATES = ["none", "mist", "aurora", "sunset", "forest", "ocean", "ember"] as const;
 export type Nameplate = (typeof NAMEPLATES)[number];
 
-export const NAME_FONTS = ["default", "display", "mono", "serif", "round", "wide"] as const;
+export const NAME_FONTS = ["default", "display", "mono", "serif", "round", "wide", "pixel", "arcade"] as const;
 export type NameFont = (typeof NAME_FONTS)[number];
 
 export const NAME_EFFECTS = ["plain", "gradient", "neon", "pop", "animated"] as const;

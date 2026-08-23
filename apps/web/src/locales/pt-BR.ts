@@ -22,6 +22,11 @@ export const ptBR: Record<keyof typeof es, string> = {
   "common.search": "Buscar",
   "common.none": "Nenhuma",
   "common.back": "Voltar",
+  "common.pickColor": "Escolher cor",
+  "common.eyedropper": "Conta-gotas",
+  "common.hue": "Matiz",
+  "common.saturation": "Saturação",
+  "common.lightness": "Luminosidade",
 
   "auth.tagline":
     "Sua comunidade, no seu servidor, sem recursos trancados atrás de assinatura.",
@@ -296,12 +301,12 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.videoTitle": "Câmera e tela",
   "voice.videoIntro":
     "Da sua câmera e da sua tela, e só para você: ninguém mais percebe o que você mudar aqui.",
-  "voice.quality": "Qualidade máxima do vídeo",
+  "voice.quality": "Resolução máxima do vídeo",
   "voice.qualityHint":
-    "Sem limite pago: é a sua própria subida, da sua câmera e da sua tela. Não afeta mais ninguém.",
-  "voice.qualityLow": "Econômica — até 30 fps · câmera 1,5 / tela 3 Mbit/s",
-  "voice.qualityMedium": "Equilibrada — até 60 fps · câmera 4 / tela 8 Mbit/s",
-  "voice.qualityHigh": "Máxima — até 120 fps · câmera 12 / tela 24 Mbit/s",
+    "É um teto, tanto para a sua câmera quanto para a sua tela: se a fonte já for menor, não é ampliada. Sem limite pago — é a sua própria subida e não afeta mais ninguém.",
+  "voice.qualityLow": "720p · até 30 fps · câmera 1,5 / tela 3 Mbit/s",
+  "voice.qualityMedium": "1080p · até 60 fps · câmera 4 / tela 8 Mbit/s",
+  "voice.qualityHigh": "1440p (2K) · até 120 fps · câmera 12 / tela 24 Mbit/s",
   "voice.priority": "O que priorizar",
   "voice.priorityHint":
     "Quando a banda não dá para tudo, algo é sacrificado. Aqui você escolhe o quê: quadros ou detalhe.",
@@ -499,6 +504,15 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.gameShareHint": "Desligado, ninguém vê sua partida em andamento e a detecção para de enviar.",
   "settings.gameHistory": "Mostrar meus jogos recentes no perfil",
   "settings.gameHistoryHint": "Desligado, seu histórico de partidas fica só com você.",
+  "settings.gameCheck": "Verificar a detecção",
+  "settings.gameOnlyDesktop":
+    "A detecção só funciona no aplicativo de desktop, e por enquanto só no Windows: um navegador não consegue ver quais programas você tem abertos.",
+  "settings.gameFound": "Detectado agora: {name}.",
+  "settings.gameNotScanned": "Ainda não houve nenhuma passagem. Espere alguns segundos e tente de novo.",
+  "settings.gameNoTasklist":
+    "O Windows não deixou consultar os programas abertos, então só dá para reconhecer os jogos da Steam.",
+  "settings.gameNothing":
+    "Nenhum dos {processes} programas abertos é um jogo conhecido, e a Steam não tem partida em andamento. Jogos da Steam e da Epic são reconhecidos sozinhos; para qualquer outro, adicione o executável ao games.json ({catalog} reconhecidos agora).",
   "settings.avatar": "Seu avatar",
   "settings.avatarHint":
     "Envie um PNG, JPG, GIF ou WebP, ou cole um link. GIFs animados valem igual: aqui não se cobra por isso.",
@@ -717,7 +731,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "profileStyle.ownDeco": "Sua própria decoração",
   "profileStyle.ownDecoHint":
     "Um PNG com o centro transparente. É desenhado ao redor do avatar. Envie o que quiser: não há lista fechada.",
-  "profileStyle.plate": "Placa do nome",
   "profileStyle.font": "Fonte do nome",
   "profileStyle.effect": "Efeito do nome",
   "profileStyle.profileEffect": "Efeito do cartão",
@@ -744,6 +757,8 @@ export const ptBR: Record<keyof typeof es, string> = {
   "style.serif": "Serif",
   "style.round": "Arredondada",
   "style.wide": "Espaçada",
+  "style.pixel": "Pixel retrô",
+  "style.arcade": "Arcade",
   "style.plain": "Liso",
   "style.gradient": "Degradê",
   "style.pop": "Pop",
