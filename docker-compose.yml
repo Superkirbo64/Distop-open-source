@@ -14,7 +14,7 @@ services:
       DEFAULT_STORAGE_PATH: "/data/uploads"
       REGISTRATION_ENABLED: "${REGISTRATION_ENABLED:-true}"
       GUEST_MODE_ENABLED: "${GUEST_MODE_ENABLED:-true}"
-      MAX_UPLOAD_SIZE_MB: "${MAX_UPLOAD_SIZE_MB:-25}"
+      MAX_UPLOAD_SIZE_MB: "${MAX_UPLOAD_SIZE_MB:-500}"
       # Ponlo en true si delante hay un túnel o un proxy inverso; si no, todas
       # las peticiones parecerán venir de la misma IP y los límites por IP
       # tratarán a toda tu comunidad como a una sola persona.

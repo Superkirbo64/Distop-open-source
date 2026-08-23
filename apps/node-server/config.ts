@@ -116,7 +116,15 @@ export const config = {
   maxGuestsPerHour: int("MAX_GUESTS_PER_HOUR", 60),
   maxLoginAttemptsPerQuarterHour: int("MAX_LOGIN_ATTEMPTS_PER_15MIN", 20),
 
-  maxUploadMb: int("MAX_UPLOAD_SIZE_MB", 25),
+  /* 500 de fábrica: lo pide el disco y el ancho de banda de quien hospeda, no
+     un plan (§28.3). ponytail: el cuerpo entero se guarda en memoria antes de
+     escribirlo (http.ts:readBody, storage.ts:saveUpload) — bien para esto,
+     pero varias subidas grandes a la vez sí pesan en una Raspberry Pi; pasar
+     esa ruta a streaming a disco si algún día hace falta correr ahí con este
+     límite. Y si la instancia se publica por Cloudflare Tunnel, Cloudflare
+     recorta las subidas a ~100 MB en su borde antes de que este límite entre
+     en juego (§29.3): subir el número aquí no cambia eso. */
+  maxUploadMb: int("MAX_UPLOAD_SIZE_MB", 500),
   allowedUploadTypes: list("ALLOWED_UPLOAD_TYPES", [
     "image/png",
     "image/jpeg",
@@ -130,7 +138,25 @@ export const config = {
     "audio/wav",
     "application/pdf",
     "text/plain",
+    /* Comprimidos y programas. El navegador NO manda un tipo estable aquí: el
+       mismo .zip sale como application/zip en Linux y x-zip-compressed en
+       Windows, y un .exe casi siempre llega sin tipo, que api.ts convierte en
+       octet-stream. Sin estas variantes "mandar un zip" fallaba según el
+       sistema de quien lo enviaba, que es un límite falso.
+       octet-stream es, de hecho, "cualquier archivo": el anfitrión que quiera
+       una lista cerrada la pone en ALLOWED_UPLOAD_TYPES. Lo que se guarda son
+       bytes, y storage.ts los sirve SIEMPRE como descarga (content-disposition
+       attachment + nosniff + CSP sandbox), así que nada de esto se ejecuta ni
+       se interpreta en el navegador de nadie: ejecutarlo es una decisión
+       deliberada de quien lo descarga, igual que en cualquier chat (§22). */
     "application/zip",
+    "application/x-zip-compressed",
+    "application/gzip",
+    "application/x-7z-compressed",
+    "application/vnd.rar",
+    "application/x-msdownload",
+    "application/vnd.microsoft.portable-executable",
+    "application/octet-stream",
   ]),
 
   /** Orígenes del cliente web. "*" solo se acepta fuera de producción. */
