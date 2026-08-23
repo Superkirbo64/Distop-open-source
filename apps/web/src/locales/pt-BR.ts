@@ -209,6 +209,10 @@ export const ptBR: Record<keyof typeof es, string> = {
   "community.joinHint":
     "Cole o link inteiro ou só o código: os dois funcionam.",
   "community.joinAction": "Entrar",
+  "community.unavailableTitle": "Não foi possível abrir a comunidade",
+  "community.unavailable":
+    "O servidor não está ligado ou você não pertence mais a esta comunidade. Quer tentar entrar com um link de convite?",
+  "community.rejoinHint": "Cole o link de convite completo para localizar o servidor correto.",
 
   "channel.create": "Criar canal",
   "channel.name": "Nome do canal",
@@ -633,9 +637,9 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.notifyOff": "Nenhum",
   "settings.notifyHint":
     "Vale para todas as comunidades deste servidor. Nada disso sai do dispositivo.",
-  "settings.sounds": "Som ao receber",
+  "settings.sounds": "Sons do aplicativo",
   "settings.soundsHint":
-    "Um tom curto gerado no próprio navegador; não baixa nenhum arquivo.",
+    "Notificações e interruptores usam o pacote SND01 adaptado para o Distop.",
   "settings.desktopNotifications": "Notificações do sistema",
   "settings.desktopHint": "Só aparecem com a janela em segundo plano.",
   "settings.notifyAsk": "Permitir notificações",

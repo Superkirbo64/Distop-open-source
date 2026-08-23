@@ -22,7 +22,7 @@ import {
 } from "@distop/protocol";
 import type { MessageKey } from "../i18n.ts";
 import { useStore } from "../store.ts";
-import { Avatar, avatarOverflow, DisplayName, ImageField, useLocale, useT } from "./ui.tsx";
+import { Avatar, avatarOverflow, ColorInput, DisplayName, ImageField, Range, useLocale, useT } from "./ui.tsx";
 
 /**
  * El fondo de una tarjeta de perfil, en un solo sitio.
@@ -409,8 +409,7 @@ export function GradientControls({
           {t("profileStyle.gradientAngle")}
           <output>{value.theme_angle}°</output>
         </span>
-        <input
-          type="range"
+        <Range
           min={0}
           max={360}
           step={1}
@@ -424,8 +423,7 @@ export function GradientControls({
           {t("profileStyle.gradientBalance")}
           <output>{value.theme_balance}%</output>
         </span>
-        <input
-          type="range"
+        <Range
           min={10}
           max={90}
           step={1}
@@ -487,8 +485,9 @@ function Row<T extends string>({
 
 /**
  * Un color opcional: o eliges uno, o hereda el de acento.
- * El botón de deshacer es lo que hace "opcional" alcanzable — un `<input
- * type="color">` no tiene forma de volver a "sin elegir" por sí solo.
+ * El botón de deshacer es lo que hace "opcional" alcanzable: el campo HEX
+ * siempre representa un color concreto, mientras que aquí también se puede
+ * volver a heredar el acento del perfil.
  */
 function ColorSlot({
   label,
@@ -507,11 +506,10 @@ function ColorSlot({
     <label className="flex flex-col gap-1">
       <span className="text-[0.7rem] font-semibold tracking-wider text-muted uppercase">{label}</span>
       <span className="flex items-center gap-1">
-        <input
-          type="color"
-          className="field h-10 flex-1 p-1"
+        <ColorInput
+          className="h-10 min-h-10 flex-1"
           value={value ?? fallback}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={onChange}
         />
         {value ? (
           <button

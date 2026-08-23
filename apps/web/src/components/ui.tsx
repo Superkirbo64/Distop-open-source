@@ -11,14 +11,16 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type InputHTMLAttributes,
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Image as ImageIcon } from "lucide-react";
+import { Check, ChevronDown, Image as ImageIcon, Search } from "lucide-react";
 import { RINGS, type ProfileStyle } from "@distop/protocol";
 import { translate, type MessageKey } from "../i18n.ts";
 import { useStore } from "../store.ts";
 import { RequestError, upload } from "../lib/api.ts";
+import { playUi } from "../lib/notify.ts";
 
 export function useT() {
   const locale = useStore((s) => s.prefs.locale);
@@ -183,7 +185,7 @@ export function ImageField({
         ref={input}
         type="file"
         accept="image/*"
-        className="sr-only"
+        className="hidden"
         onChange={(event) => void pick(event.target.files?.[0])}
       />
 
@@ -229,6 +231,322 @@ export function Field({
   );
 }
 
+export interface SelectOption {
+  value: string;
+  label: string;
+  description?: string;
+  disabled?: boolean;
+  keywords?: string;
+}
+
+/**
+ * Selector dibujado por Distop, no por Windows/macOS.
+ * Usa semántica de listbox, teclado completo y portal para no quedar recortado
+ * dentro de un modal, un panel con scroll o un menú pegado al borde.
+ */
+export function Select({
+  id,
+  value,
+  options,
+  onChange,
+  disabled = false,
+  placeholder,
+  searchable = false,
+  compact = false,
+  className = "",
+  label,
+}: {
+  id?: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+  searchable?: boolean;
+  compact?: boolean;
+  className?: string;
+  /** Nombre accesible cuando el selector no está dentro de Field. */
+  label?: string;
+}) {
+  const t = useT();
+  const generatedId = useId();
+  const controlId = id ?? generatedId;
+  const listId = `${controlId}-listbox`;
+  const trigger = useRef<HTMLButtonElement>(null);
+  const popup = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [active, setActive] = useState(0);
+  const [position, setPosition] = useState<{
+    left: number;
+    width: number;
+    top?: number;
+    bottom?: number;
+    maxHeight: number;
+  } | null>(null);
+
+  const selected = options.find((option) => option.value === value);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filtered = normalizedQuery
+    ? options.filter((option) => `${option.label} ${option.keywords ?? ""}`.toLocaleLowerCase().includes(normalizedQuery))
+    : options;
+  const enabled = filtered.map((option, index) => ({ option, index })).filter(({ option }) => !option.disabled);
+
+  const place = useCallback(() => {
+    const anchor = trigger.current?.getBoundingClientRect();
+    if (!anchor) return;
+    const dialog = trigger.current?.closest("dialog");
+    const boundary = dialog?.getBoundingClientRect() ?? {
+      top: 0,
+      right: window.innerWidth,
+      bottom: window.innerHeight,
+      left: 0,
+    };
+    const margin = 8;
+    const gap = 6;
+    const width = Math.min(Math.max(anchor.width, 220), boundary.right - boundary.left - margin * 2);
+    const left = Math.min(Math.max(boundary.left + margin, anchor.left), boundary.right - width - margin);
+    const below = boundary.bottom - anchor.bottom - gap - margin;
+    const above = anchor.top - boundary.top - gap - margin;
+    const opensAbove = below < 190 && above > below;
+    setPosition({
+      left,
+      width,
+      ...(opensAbove ? { bottom: window.innerHeight - anchor.top + gap } : { top: anchor.bottom + gap }),
+      maxHeight: Math.max(120, Math.min(320, opensAbove ? above : below)),
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    place();
+    const selectedIndex = Math.max(0, filtered.findIndex((option) => option.value === value && !option.disabled));
+    setActive(selectedIndex);
+    const frame = requestAnimationFrame(() => {
+      if (!searchable && options.length < 8) popup.current?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open, options.length, place, searchable, value]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeAway = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!trigger.current?.contains(target) && !popup.current?.contains(target)) setOpen(false);
+    };
+    const reposition = () => place();
+    document.addEventListener("mousedown", closeAway);
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      document.removeEventListener("mousedown", closeAway);
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [open, place]);
+
+  function move(direction: 1 | -1): void {
+    if (enabled.length === 0) return;
+    const current = enabled.findIndex(({ index }) => index === active);
+    const next = enabled[(current + direction + enabled.length) % enabled.length] ?? enabled[0]!;
+    setActive(next.index);
+    document.getElementById(`${listId}-${next.index}`)?.scrollIntoView({ block: "nearest" });
+  }
+
+  function choose(option: SelectOption): void {
+    if (option.disabled) return;
+    onChange(option.value);
+    setOpen(false);
+    setQuery("");
+    requestAnimationFrame(() => trigger.current?.focus());
+  }
+
+  const portalRoot = trigger.current?.closest("dialog") ?? document.body;
+  const listbox = open && position ? createPortal(
+    <div
+      ref={popup}
+      id={listId}
+      role="listbox"
+      tabIndex={-1}
+      aria-label={label}
+      aria-activedescendant={filtered[active] ? `${listId}-${active}` : undefined}
+      className="select-popover card fixed z-[1100] flex flex-col overflow-hidden p-1 text-sm"
+      style={{
+        left: position.left,
+        width: position.width,
+        top: position.top,
+        bottom: position.bottom,
+        maxHeight: position.maxHeight,
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setOpen(false);
+          trigger.current?.focus();
+        } else if (event.key === "ArrowDown") {
+          event.preventDefault();
+          move(1);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          move(-1);
+        } else if (event.key === "Home" && enabled[0]) {
+          event.preventDefault();
+          setActive(enabled[0].index);
+        } else if (event.key === "End" && enabled.at(-1)) {
+          event.preventDefault();
+          setActive(enabled.at(-1)!.index);
+        } else if ((event.key === "Enter" || event.key === " ") && filtered[active]) {
+          event.preventDefault();
+          choose(filtered[active]!);
+        }
+      }}
+    >
+      {searchable || options.length >= 8 ? (
+        <div className="relative m-1 mb-2 shrink-0">
+          <Search size={15} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
+          <input
+            className="field h-9 min-h-9 py-1 pr-2 pl-8 text-xs"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setActive(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                move(event.key === "ArrowDown" ? 1 : -1);
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                setOpen(false);
+                trigger.current?.focus();
+              }
+            }}
+            placeholder={t("common.search")}
+            aria-label={t("common.search")}
+            autoFocus
+          />
+        </div>
+      ) : null}
+      <div className="min-h-0 overflow-y-auto">
+        {filtered.map((option, index) => (
+          <button
+            key={option.value}
+            id={`${listId}-${index}`}
+            role="option"
+            aria-selected={option.value === value}
+            disabled={option.disabled}
+            className={`select-option flex w-full items-center gap-3 rounded-[9px] px-3 py-2 text-left transition-colors ${
+              index === active ? "bg-raise" : "hover:bg-raise"
+            } ${option.disabled ? "opacity-45" : ""}`}
+            onMouseEnter={() => setActive(index)}
+            onClick={() => choose(option)}
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{option.label}</span>
+              {option.description ? <span className="block truncate text-xs text-muted">{option.description}</span> : null}
+            </span>
+            {option.value === value ? <Check size={16} className="shrink-0 text-accent" aria-hidden /> : null}
+          </button>
+        ))}
+        {filtered.length === 0 ? <p className="px-3 py-5 text-center text-xs text-muted">{t("common.none")}</p> : null}
+      </div>
+    </div>,
+    portalRoot,
+  ) : null;
+
+  return (
+    <>
+      <button
+        ref={trigger}
+        id={controlId}
+        type="button"
+        disabled={disabled}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        className={`select-trigger field flex items-center gap-3 text-left ${compact ? "h-9 min-h-9 py-1 text-sm" : ""} ${className}`}
+        onClick={() => {
+          setQuery("");
+          setOpen((current) => !current);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <span className={`min-w-0 flex-1 truncate ${selected ? "text-ink" : "text-muted"}`}>
+          {selected?.label ?? placeholder ?? t("common.none")}
+        </span>
+        <ChevronDown size={16} className={`shrink-0 text-muted transition-transform ${open ? "rotate-180" : ""}`} aria-hidden />
+      </button>
+      {listbox}
+    </>
+  );
+}
+
+/** Color sin abrir el diálogo genérico del sistema: muestra muestra + HEX. */
+export function ColorInput({
+  id,
+  value,
+  onChange,
+  className = "",
+  label,
+}: {
+  id?: string;
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  label?: string;
+}) {
+  const [draft, setDraft] = useState(value.toUpperCase());
+  useEffect(() => setDraft(value.toUpperCase()), [value]);
+
+  return (
+    <div className={`color-input field flex items-center gap-2 ${className}`}>
+      <span className="h-7 w-7 shrink-0 rounded-[8px] border border-line shadow-sm" style={{ background: value }} aria-hidden />
+      <input
+        id={id}
+        aria-label={label}
+        value={draft}
+        inputMode="text"
+        maxLength={7}
+        spellCheck={false}
+        className="min-w-0 flex-1 bg-transparent font-mono text-sm font-semibold tracking-wide uppercase outline-none"
+        onChange={(event) => {
+          const next = event.target.value.startsWith("#") ? event.target.value : `#${event.target.value}`;
+          setDraft(next.toUpperCase());
+          if (/^#[0-9a-f]{6}$/i.test(next)) onChange(next.toLowerCase());
+        }}
+        onBlur={() => {
+          if (!/^#[0-9a-f]{6}$/i.test(draft)) setDraft(value.toUpperCase());
+        }}
+      />
+    </div>
+  );
+}
+
+/** Un único aspecto para todos los deslizadores de la aplicación. */
+export function Range({ className = "", style, min = 0, max = 100, value, ...props }: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const numeric = typeof value === "number" ? value : Number(value ?? min);
+  const minimum = Number(min);
+  const maximum = Number(max);
+  const progress = maximum === minimum ? 0 : ((numeric - minimum) / (maximum - minimum)) * 100;
+  return (
+    <input
+      {...props}
+      type="range"
+      min={min}
+      max={max}
+      value={value}
+      className={`range-control w-full ${className}`}
+      style={{ ...style, "--range-progress": `${Math.min(100, Math.max(0, progress))}%` } as CSSProperties}
+    />
+  );
+}
+
 export function Toggle({
   checked,
   onChange,
@@ -246,7 +564,18 @@ export function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
-        onClick={() => onChange(!checked)}
+        onClick={() => {
+          const next = !checked;
+          // Al apagar, el sonido debe arrancar antes de que la preferencia lo
+          // silencie. Al encender, la preferencia debe aplicarse primero.
+          if (next) {
+            onChange(next);
+            playUi("on");
+          } else {
+            playUi("off");
+            onChange(next);
+          }
+        }}
         className={`mt-0.5 h-6 w-11 shrink-0 rounded-full border transition-colors ${
           checked ? "border-accent bg-accent" : "border-line bg-raise"
         }`}
@@ -328,7 +657,7 @@ export function Modal({
             </header>
           ) : null}
           <div
-            className={`min-h-0 flex-1 overflow-y-auto ${chrome ? "px-5 py-4" : ""}`}
+            className={`min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto ${chrome ? "px-4 py-4 sm:px-5" : ""}`}
           >
             {children}
           </div>

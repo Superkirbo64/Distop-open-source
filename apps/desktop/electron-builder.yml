@@ -9,6 +9,8 @@ directories:
 
 files:
   - dist/**
+  - src/splash.html
+  - src/assets/**
   - package.json
 
 extraResources:

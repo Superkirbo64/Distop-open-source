@@ -158,6 +158,15 @@
     background-clip: content-box;
   }
 
+  /* Carriles horizontales de pestañas: se deslizan con rueda/tacto, pero no
+     enseñan una barra del sistema que rompe la superficie del modal. */
+  .tabs-scroll {
+    scrollbar-width: none;
+  }
+  .tabs-scroll::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Un <fieldset> no encoge por defecto (min-inline-size: min-content), así
      que cualquier `overflow-x: auto` dentro de uno nunca se activaba: el
      catálogo de efectos empujaba el diálogo de Ajustes y quedaba cortado sin
@@ -481,30 +490,29 @@
     color: var(--muted);
   }
 
-  /* Un <select> sin tocar se dibuja con el estilo del sistema operativo: flecha
-     gris de Windows y lista azul, dentro de una interfaz que no es ni gris ni
-     azul. Se le quita la apariencia nativa y se pinta la flecha a mano. */
-  select.field {
-    appearance: none;
-    padding-right: 2.2rem;
-    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
-      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
-    background-position:
-      calc(100% - 1.05rem) calc(50% + 2px),
-      calc(100% - 0.75rem) calc(50% + 2px);
-    background-size:
-      5px 5px,
-      5px 5px;
-    background-repeat: no-repeat;
+  .select-trigger {
     cursor: pointer;
   }
+  .select-trigger:disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
+  }
+  .select-popover {
+    background: color-mix(in oklab, var(--surface) 96%, transparent);
+    backdrop-filter: blur(18px) saturate(1.15);
+    box-shadow: 0 18px 48px -18px rgb(0 0 0 / 0.58), var(--shadow);
+  }
+  .select-option[aria-selected="true"] {
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
 
-  /* La lista desplegada la dibuja el sistema, no el CSS de la página. Lo que sí
-     obedece es el color de cada opción y el esquema: sin esto, en tema oscuro
-     salía una lista blanca. */
-  select.field option {
-    background: var(--surface);
-    color: var(--ink);
+  .color-input {
+    padding-block: 0.35rem;
+  }
+  .color-input:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
   }
 
   .card {
@@ -603,35 +611,57 @@ dialog[open] {
   animation: panel-in var(--dur-3) var(--ease-spring);
 }
 
-[role="menu"] {
+[role="menu"],
+[role="listbox"] {
   animation: pop-in var(--dur-2) var(--ease-spring);
   transform-origin: top right;
 }
 
 /* Deslizador compacto de los menús de micrófono y auriculares. */
-.quick-audio-range {
+.quick-audio-range,
+.range-control {
   appearance: none;
-  height: 4px;
+  height: 6px;
   border-radius: 999px;
-  background: linear-gradient(to right, var(--accent) var(--audio-progress), var(--raise) var(--audio-progress));
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--audio-progress, var(--range-progress, 0%)),
+    var(--raise) var(--audio-progress, var(--range-progress, 0%))
+  );
   cursor: pointer;
+  border: 1px solid color-mix(in oklab, var(--line) 70%, transparent);
 }
-.quick-audio-range::-webkit-slider-thumb {
+.quick-audio-range::-webkit-slider-thumb,
+.range-control::-webkit-slider-thumb {
   appearance: none;
-  width: 16px;
-  height: 16px;
-  border: 2px solid color-mix(in oklab, var(--ink) 16%, transparent);
+  width: 18px;
+  height: 18px;
+  border: 3px solid var(--surface);
   border-radius: 999px;
-  background: var(--ink);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  background: var(--accent);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 0.4), 0 0 0 1px var(--line);
+  transition: transform var(--dur-1) var(--ease-spring), box-shadow var(--dur-1) var(--ease-soft);
 }
-.quick-audio-range::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border: 2px solid color-mix(in oklab, var(--ink) 16%, transparent);
+.quick-audio-range::-moz-range-thumb,
+.range-control::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 3px solid var(--surface);
   border-radius: 999px;
-  background: var(--ink);
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.35);
+  background: var(--accent);
+  box-shadow: 0 1px 5px rgb(0 0 0 / 0.4), 0 0 0 1px var(--line);
+}
+.quick-audio-range:hover::-webkit-slider-thumb,
+.quick-audio-range:focus-visible::-webkit-slider-thumb,
+.range-control:hover::-webkit-slider-thumb,
+.range-control:focus-visible::-webkit-slider-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.42), 0 0 0 4px color-mix(in oklab, var(--accent) 18%, transparent);
+}
+.range-control:disabled,
+.quick-audio-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 /* Latido en el punto de conexión mientras se reconecta: dice "sigo intentándolo". */

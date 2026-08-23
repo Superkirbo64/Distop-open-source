@@ -10,7 +10,19 @@ import { Cross } from "./icons.tsx";
 import { useStore } from "../store.ts";
 import { Button, ErrorNote, Field, IconButton, Modal, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
 import { api } from "../lib/api.ts";
-import { clientOrigin, connectToInstance, instanceBase, isPackaged, knownInstances, parseInvite, setActiveInstance } from "../lib/instance.ts";
+import {
+  clientOrigin,
+  connectToInstance,
+  instanceBase,
+  isPackaged,
+  knownInstances,
+  parseInvite,
+  rememberCommunities,
+  setActiveInstance,
+  storePendingCommunity,
+  type CachedCommunity,
+} from "../lib/instance.ts";
+import { ensurePortableIdentity } from "../lib/portable.ts";
 import { formatDuration } from "../i18n.ts";
 import type { Community } from "@distop/protocol";
 
@@ -48,9 +60,41 @@ export function Rail({
   const communities = useStore((s) => s.communities);
   const activeId = useStore((s) => s.activeCommunityId);
   const openCommunity = useStore((s) => s.openCommunity);
+  const user = useStore((s) => s.user);
   const unread = useCommunityUnread();
 
   const [status, setStatus] = useState(false);
+  const [unavailable, setUnavailable] = useState<{ community: CachedCommunity; url: string } | null>(null);
+
+  useEffect(() => {
+    if (isPackaged() && instanceBase) rememberCommunities(instanceBase, communities);
+  }, [communities]);
+
+  const visibleCommunities = useMemo(() => {
+    const here = communities.map((community) => ({ community, url: instanceBase }));
+    if (!isPackaged()) return here;
+    const elsewhere = knownInstances()
+      .filter((known) => known.url !== instanceBase)
+      .flatMap((known) => (known.communities ?? []).map((community) => ({ community, url: known.url })));
+    return [...here, ...elsewhere];
+  }, [communities]);
+
+  async function selectCommunity(community: CachedCommunity, url: string): Promise<void> {
+    if (!url || url === instanceBase) {
+      await openCommunity(community.id);
+      onNavigate?.();
+      return;
+    }
+
+    try {
+      const response = await fetch(`${url}/api/v1/info`, { signal: AbortSignal.timeout(6000) });
+      if (!response.ok) throw new Error("offline");
+      storePendingCommunity({ id: community.id, name: community.name, url, previous_url: instanceBase });
+      setActiveInstance(url);
+    } catch {
+      setUnavailable({ community, url });
+    }
+  }
 
   return (
     <nav
@@ -59,8 +103,8 @@ export function Rail({
       className="flex w-[4.5rem] flex-col items-center gap-2 border-r border-line bg-sunken pt-1 pb-3"
     >
       <ul className="flex flex-1 flex-col items-center gap-2 overflow-y-auto">
-        {communities.map((community) => (
-          <li key={community.id} className="group relative">
+        {visibleCommunities.map(({ community, url }) => (
+          <li key={`${url}:${community.id}`} className="group relative">
             {/* Una sola pastilla para los tres estados en vez de un punto y un
                 marcador aparte: crece de 0 a 8 a 36 píxeles según sea "nada",
                 "algo sin leer" o "estoy aquí". Así se lee una altura, que es una
@@ -68,7 +112,7 @@ export function Rail({
             <span
               aria-hidden="true"
               className={`marker-active absolute top-1/2 -left-3 w-1 -translate-y-1/2 transition-all duration-200 ${
-                activeId === community.id
+                url === instanceBase && activeId === community.id
                   ? "h-9"
                   : unread[community.id]
                     ? "h-2 group-hover:h-5"
@@ -77,13 +121,12 @@ export function Rail({
             />
             <button
               onClick={() => {
-                void openCommunity(community.id);
-                onNavigate?.();
+                void selectCommunity(community, url);
               }}
-              aria-current={activeId === community.id ? "true" : undefined}
+              aria-current={url === instanceBase && activeId === community.id ? "true" : undefined}
               title={community.name}
               className={`grid h-12 w-12 place-items-center overflow-hidden border transition-all duration-200 ${
-                activeId === community.id
+                url === instanceBase && activeId === community.id
                   ? "rounded-[14px] border-transparent"
                   : "rounded-[24px] border-line hover:rounded-[14px]"
               }`}
@@ -98,7 +141,7 @@ export function Rail({
 
             {/* Fuera del botón y no dentro: el icono recorta su contenido, y una
                 insignia dentro se quedaría a medias contra el borde redondeado. */}
-            {unread[community.id] && activeId !== community.id ? (
+            {url === instanceBase && unread[community.id] && activeId !== community.id ? (
               unread[community.id]!.mentions > 0 ? (
                 <span
                   className="absolute -right-1 -bottom-1 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-sunken bg-danger px-1 text-[0.6rem] font-bold text-white tabular-nums"
@@ -114,8 +157,6 @@ export function Rail({
         ))}
       </ul>
 
-      <OtherInstances />
-
       <IconButton label={t("community.create")} onClick={onCreate} className="h-12 w-12 border border-dashed border-line">
         <Cross size={20} />
       </IconButton>
@@ -130,6 +171,11 @@ export function Rail({
       <ConnectionDot />
 
       <InstanceStatus open={status} onClose={() => setStatus(false)} />
+      <UnavailableCommunity
+        target={unavailable}
+        user={user}
+        onClose={() => setUnavailable(null)}
+      />
     </nav>
   );
 }
@@ -152,39 +198,52 @@ function ConnectionDot() {
   );
 }
 
-/**
- * Otros servidores que este dispositivo ya conoce (§4, §19).
- * Cada comunidad vive en la instancia de quien la hospeda: la del amigo que te
- * invitó no es un canal más de la tuya, es OTRO servidor entero. Antes, entrar
- * ahí obligaba a "Cambiar de comunidad" y salir de la sesión actual; con esto
- * es un icono más, igual que saltar entre comunidades del mismo servidor. Solo
- * existe en la app empaquetada: la web normal no tiene "otra instancia" a la
- * que saltar, siempre es la que la sirvió.
- */
-function OtherInstances() {
+/** Recuperación en contexto: el campo aparece junto a la comunidad que falló. */
+function UnavailableCommunity({
+  target,
+  user,
+  onClose,
+}: {
+  target: { community: CachedCommunity; url: string } | null;
+  user: ReturnType<typeof useStore.getState>["user"];
+  onClose: () => void;
+}) {
   const t = useT();
-  const known = useMemo(() => (isPackaged() ? knownInstances().filter((instance) => instance.url !== instanceBase) : []), []);
+  const [link, setLink] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  if (known.length === 0) return null;
+  async function retry(): Promise<void> {
+    if (!user) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await ensurePortableIdentity(user);
+      const result = await connectToInstance(link);
+      if (result !== "ok") setError(t(result === "unreachable" ? "connect.unreachable" : "connect.notInstance"));
+    } catch {
+      setError(t("error.generic"));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
-    <>
-      <div className="h-px w-8 shrink-0 bg-line" aria-hidden="true" />
-      <ul aria-label={t("rail.otherInstances")} className="flex flex-col items-center gap-2">
-        {known.map((instance) => (
-          <li key={instance.url}>
-            <button
-              onClick={() => setActiveInstance(instance.url)}
-              title={instance.name}
-              aria-label={t("rail.otherInstance", { name: instance.name })}
-              className="grid h-10 w-10 place-items-center rounded-[20px] border border-line text-xs font-bold text-muted transition-all hover:rounded-[14px] hover:text-ink"
-            >
-              {instance.name.slice(0, 2).toUpperCase()}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </>
+    <Modal open={Boolean(target)} onClose={onClose} title={target?.community.name ?? t("community.unavailableTitle")}>
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted">{t("community.unavailable")}</p>
+        <Field label={t("community.joinLabel")} hint={t("community.rejoinHint")}>
+          {(id) => <input id={id} className="field" value={link} onChange={(event) => setLink(event.target.value)} />}
+        </Field>
+        {error ? <ErrorNote>{error}</ErrorNote> : null}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>{t("common.cancel")}</Button>
+          <Button variant="primary" onClick={() => void retry()} disabled={busy || !parseInvite(link)?.code}>
+            {t("community.joinAction")}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -198,6 +257,7 @@ export function JoinCommunity({ open, onClose }: { open: boolean; onClose: () =>
   const errorText = useErrorText();
   const openCommunity = useStore((s) => s.openCommunity);
   const reload = useStore((s) => s.reloadCommunities);
+  const user = useStore((s) => s.user);
 
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -218,10 +278,17 @@ export function JoinCommunity({ open, onClose }: { open: boolean; onClose: () =>
     }
     let vigente = true;
     const timer = setTimeout(() => {
-      void api<{ community: { name: string; accent_color: string }; members: number }>(
-        "GET",
-        `/api/v1/invites/${encodeURIComponent(code)}`,
-      )
+      const parsed = isPackaged() ? parseInvite(value) : null;
+      const request = parsed?.code && parsed.origin !== clientOrigin()
+        ? fetch(`${parsed.origin}/api/v1/invites/${encodeURIComponent(parsed.code)}`).then((response) => {
+            if (!response.ok) throw new Error("invite");
+            return response.json();
+          })
+        : api<{ community: { name: string; accent_color: string }; members: number }>(
+            "GET",
+            `/api/v1/invites/${encodeURIComponent(code)}`,
+          );
+      void request
         .then((data) => vigente && setPreview(data))
         .catch(() => vigente && setPreview(null));
     }, 350);
@@ -242,6 +309,8 @@ export function JoinCommunity({ open, onClose }: { open: boolean; onClose: () =>
     if (isPackaged()) {
       const parsed = parseInvite(value);
       if (parsed?.code && parsed.origin !== clientOrigin()) {
+        if (!user) throw new Error("No active user");
+        await ensurePortableIdentity(user);
         const result = await connectToInstance(value);
         if (result === "ok") return; // recarga en marcha
         setError(t(result === "unreachable" ? "connect.unreachable" : "connect.notInstance"));

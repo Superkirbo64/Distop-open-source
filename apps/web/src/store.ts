@@ -26,9 +26,11 @@ import type {
 import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
 import { connect, disconnect, onEvent, onStatus, sendCommand, type ConnectionStatus } from "./lib/gateway.ts";
 import { detectLocale, type Locale } from "./i18n.ts";
-import { notify, type NotifyLevel } from "./lib/notify.ts";
+import { notify, setSoundsEnabled, type NotifyLevel } from "./lib/notify.ts";
 import { configureVoice, currentChannel, handleSignal, resumeVoice, setSoundError, setVideoMode, syncPeers } from "./lib/voice.ts";
 import { playClip } from "./lib/relay.ts";
+import { peekPendingInvite } from "./lib/instance.ts";
+import { portableAuthPayload, syncPortableMedia } from "./lib/portable.ts";
 
 export type ThemeChoice = "light" | "dark" | "system";
 export type Density = "compact" | "cozy";
@@ -256,6 +258,7 @@ export function applyPrefs(prefs: Prefs): void {
     `brightness(${prefs.wallpaperBright}%) contrast(${prefs.wallpaperContrast}%) saturate(${prefs.wallpaperSaturate}%)`,
   );
   root.dataset.motion = prefs.motion ? "on" : "off";
+  setSoundsEnabled(prefs.sounds);
 }
 
 const MESSAGE_PAGE = 50;
@@ -322,18 +325,37 @@ export const useStore = create<State>()((set, get) => ({
       // Instancia inalcanzable: el propio cliente lo dirá al intentar entrar.
     }
 
-    if (!getTokens()) {
-      set({ ready: true });
-      return;
+    if (getTokens()) {
+      try {
+        const user = await api<SelfUser>("GET", "/api/v1/users/me");
+        set({ user, ready: true });
+        connect();
+        return;
+      } catch {
+        setTokens(null);
+      }
     }
-    try {
-      const user = await api<SelfUser>("GET", "/api/v1/users/me");
-      set({ user, ready: true });
-      connect();
-    } catch {
-      setTokens(null);
-      set({ ready: true, user: null });
+
+    /* Al saltar a la PC de otra persona no se abre un registro ni se inventa
+       un invitado: la identidad secreta de la app recupera (o, con invitación,
+       crea) la cuenta portable de esta instancia. */
+    const portable = portableAuthPayload(peekPendingInvite());
+    if (portable) {
+      try {
+        const result = await api<Tokens & { user: SelfUser }>("POST", "/api/v1/auth/portable", portable);
+        setTokens({ access_token: result.access_token, refresh_token: result.refresh_token });
+        const user = await syncPortableMedia(result.user);
+        set({ user, ready: true });
+        connect();
+        return;
+      } catch {
+        // Puede ser una instancia vieja, apagada o una identidad aún no
+        // registrada sin invitación. La pantalla de recuperación decide qué
+        // enseñar; aquí no se degrada silenciosamente a invitado.
+      }
     }
+
+    set({ ready: true, user: null });
   },
 
   async authenticate(path, body) {

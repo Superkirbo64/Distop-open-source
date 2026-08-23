@@ -204,6 +204,10 @@ export const en: Record<keyof typeof es, string> = {
   "community.joinLabel": "Invite link or code",
   "community.joinHint": "Paste the whole link or just the code: both work.",
   "community.joinAction": "Join",
+  "community.unavailableTitle": "The community could not be opened",
+  "community.unavailable":
+    "The server is not running or you no longer belong to this community. Would you like to try joining with an invite link?",
+  "community.rejoinHint": "Paste the full invite link so the correct server can be located.",
 
   "channel.create": "Create channel",
   "channel.name": "Channel name",
@@ -624,9 +628,9 @@ export const en: Record<keyof typeof es, string> = {
   "settings.notifyOff": "None",
   "settings.notifyHint":
     "Applies to every community on this server. None of it leaves the device.",
-  "settings.sounds": "Sound on arrival",
+  "settings.sounds": "App sounds",
   "settings.soundsHint":
-    "A short tone generated in the browser itself; it downloads no file.",
+    "Notifications and switches use the SND01 pack adapted for Distop.",
   "settings.desktopNotifications": "System notifications",
   "settings.desktopHint":
     "They only appear while the window is in the background.",

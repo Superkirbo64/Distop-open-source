@@ -20,7 +20,20 @@ import { WallpaperTuner } from "./components/Wallpaper.tsx";
 import { Manage } from "./views/Manage.tsx";
 import { Button, ErrorNote, Field, Modal, Spinner, Toggle, useErrorText, useT } from "./components/ui.tsx";
 import { api } from "./lib/api.ts";
-import { clientOrigin, instanceBase, isLocalInstance, isPackaged, takePendingInvite } from "./lib/instance.ts";
+import {
+  clearPendingCommunity,
+  clientOrigin,
+  connectToInstance,
+  forgetKnownCommunity,
+  instanceBase,
+  isLocalInstance,
+  isPackaged,
+  parseInvite,
+  peekPendingCommunity,
+  setActiveInstance,
+  takePendingInvite,
+  type PendingCommunity,
+} from "./lib/instance.ts";
 import { phoneCanHost, startPhoneServer } from "./lib/phoneHost.ts";
 import { onStaleBuild, watchBuild } from "./lib/version.ts";
 import type { Invite as InviteEntity } from "@distop/protocol";
@@ -103,6 +116,7 @@ export function App() {
   const ready = useStore((s) => s.ready);
   const user = useStore((s) => s.user);
   const setup = useStore((s) => s.setup);
+  const instance = useStore((s) => s.instance);
   const boot = useStore((s) => s.boot);
   const communities = useStore((s) => s.communities);
   const activeCommunityId = useStore((s) => s.activeCommunityId);
@@ -119,6 +133,7 @@ export function App() {
   const [invite, setInvite] = useState(false);
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [pendingCommunity, setPendingCommunity] = useState<PendingCommunity | null>(() => peekPendingCommunity());
   const [mobilePane, setMobilePane] = useState<"nav" | "main" | "members">("main");
   const [membersOpen, setMembersOpen] = usePanel("members", true);
   const isMobile = useIsMobile();
@@ -177,10 +192,25 @@ export function App() {
 
   // Una invitación pegada antes de conectar se abre en cuanto la app está en pie.
   useEffect(() => {
+    if (!ready || !user) return;
     const code = takePendingInvite();
     if (code) navigate(`/invite/${code}`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- solo al montar
-  }, []);
+  }, [ready, user, navigate]);
+
+  /* Al saltar a una comunidad ya conocida esperamos al READY del servidor: en
+     ese momento la lista es definitiva. Si no está, la membresía desapareció;
+     si está, se abre sin enseñar el cambio de instancia intermedio. */
+  useEffect(() => {
+    if (!pendingCommunity || !ready || !user || !instance) return;
+    const found = communities.find((community) => community.id === pendingCommunity.id);
+    if (found) {
+      clearPendingCommunity();
+      setPendingCommunity(null);
+      void openCommunity(found.id);
+      return;
+    }
+    forgetKnownCommunity(pendingCommunity.url, pendingCommunity.id);
+  }, [pendingCommunity, ready, user, instance, communities, openCommunity]);
 
   // Ctrl/⌘+U pliega el lateral derecho sin ratón: miembros en texto, chat en voz.
   useEffect(() => {
@@ -196,12 +226,26 @@ export function App() {
 
   // Al entrar sin comunidad activa, abre la primera: nadie quiere una pantalla vacía.
   useEffect(() => {
-    if (user && !activeCommunityId && communities[0]) void openCommunity(communities[0].id);
-  }, [user, activeCommunityId, communities, openCommunity]);
+    if (user && !pendingCommunity && !activeCommunityId && communities[0]) void openCommunity(communities[0].id);
+  }, [user, pendingCommunity, activeCommunityId, communities, openCommunity]);
 
   // La app instalada no la sirvió ninguna instancia: sin una elegida, lo
   // primero es elegirla. En la web esta rama no existe (§4).
   if (isPackaged() && !instanceBase) return <Connect />;
+
+  if (ready && pendingCommunity && (!user || instance)) {
+    const missing = !user || !communities.some((community) => community.id === pendingCommunity.id);
+    if (missing)
+      return (
+        <UnavailableSwitch
+          target={pendingCommunity}
+          onBack={() => {
+            clearPendingCommunity();
+            setActiveInstance(pendingCommunity.previous_url || null);
+          }}
+        />
+      );
+  }
 
   const inviteCode = path.startsWith("/invite/") ? path.slice("/invite/".length) : null;
 
@@ -280,6 +324,48 @@ export function App() {
       <WallpaperTuner />
       <StaleBuild />
     </div>
+  );
+}
+
+function UnavailableSwitch({ target, onBack }: { target: PendingCommunity; onBack: () => void }) {
+  const t = useT();
+  const [link, setLink] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function retry(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    clearPendingCommunity();
+    try {
+      const result = await connectToInstance(link);
+      if (result !== "ok") {
+        setError(t(result === "unreachable" ? "connect.unreachable" : result === "invalid" ? "connect.invalid" : "connect.notInstance"));
+      }
+    } catch {
+      setError(t("error.generic"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="grid min-h-dvh place-items-center bg-bg p-4">
+      <section className="card flex w-full max-w-md flex-col gap-4 p-6">
+        <h1 className="display text-xl font-bold">{target.name}</h1>
+        <p className="text-sm text-muted">{t("community.unavailable")}</p>
+        <Field label={t("community.joinLabel")} hint={t("community.rejoinHint")}>
+          {(id) => <input id={id} className="field" value={link} onChange={(event) => setLink(event.target.value)} autoFocus />}
+        </Field>
+        {error ? <ErrorNote>{error}</ErrorNote> : null}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onBack}>{t("common.back")}</Button>
+          <Button variant="primary" onClick={() => void retry()} disabled={busy || !parseInvite(link)?.code}>
+            {t("community.joinAction")}
+          </Button>
+        </div>
+      </section>
+    </main>
   );
 }
 
@@ -482,11 +568,11 @@ function CreateInvite({ open, onClose }: { open: boolean; onClose: () => void })
             <input
               id={id}
               className="field"
-              type="number"
-              min={1}
-              max={10000}
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
               value={maxUses}
-              onChange={(e) => setMaxUses(e.target.value)}
+              onChange={(e) => setMaxUses(e.target.value.replace(/\D/g, "").slice(0, 5))}
             />
           )}
         </Field>

@@ -18,6 +18,9 @@ import {
   createUser,
   findUserById,
   findUserByUsername,
+  hasPortableIdentity,
+  linkPortableIdentity,
+  portableUser,
   hashPassword,
   isInstanceOwner,
   revokeAllSessions,
@@ -323,6 +326,26 @@ route("POST", "/api/v1/auth/logout", (ctx) => {
 /* ── perfil (§10.1) ────────────────────────────────────────────────── */
 
 route("GET", "/api/v1/users/me", (ctx) => requireAuth(ctx).user);
+
+/**
+ * La app guarda una identidad secreta del dispositivo y la enlaza a la cuenta
+ * que ya está abierta. Así volver desde la comunidad de un amigo no exige otra
+ * contraseña ni convierte a la persona en invitada.
+ */
+route("PUT", "/api/v1/users/me/portable", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const body = await readJson(ctx);
+  const identityId = v.string(body, "identity_id", { min: 20, max: 100, pattern: /^[A-Za-z0-9_-]+$/ });
+  const secret = v.string(body, "secret", { min: 32, max: 200, pattern: /^[A-Za-z0-9_-]+$/, trim: false });
+  try {
+    linkPortableIdentity(user.id, identityId, secret);
+  } catch (error) {
+    if (error instanceof Error && error.message === "PORTABLE_IDENTITY_CONFLICT")
+      throw conflict("Esa identidad ya pertenece a otra cuenta de este servidor.");
+    throw error;
+  }
+  return { linked: true };
+});
 
 route("PATCH", "/api/v1/users/me", async (ctx) => {
   const { user } = requireAuth(ctx);
@@ -2045,6 +2068,69 @@ route("POST", "/api/v1/invites/:code/join", (ctx) => {
   }
 
   return { community: getCommunity(invite.community_id), channel_id: invite.channel_id };
+});
+
+/**
+ * Una identidad de la app entra en cualquier instancia donde ya fue registrada.
+ * La primera vez exige una invitación viva: la invitación autoriza crear la
+ * cuenta portable, pero todavía no consume un uso; eso ocurre al hacer /join.
+ */
+route("POST", "/api/v1/auth/portable", async (ctx) => {
+  rateLimit(`portable:${ctx.ip}`, 30, 60 * 60_000);
+  const body = await readJson(ctx);
+  const identityId = v.string(body, "identity_id", { min: 20, max: 100, pattern: /^[A-Za-z0-9_-]+$/ });
+  const secret = v.string(body, "secret", { min: 32, max: 200, pattern: /^[A-Za-z0-9_-]+$/, trim: false });
+
+  const existing = portableUser(identityId, secret);
+  if (existing) {
+    // Nombre y adornos acompañan a la persona. Las imágenes no se reemplazan
+    // aquí: el cliente las copia como archivos propios de cada instancia.
+    const displayName = v.optionalString(body, "display_name", { max: 48 });
+    const bio = v.optionalString(body, "bio", { max: 500 });
+    const pronouns = v.optionalString(body, "pronouns", { max: 300 });
+    const accent = v.color(body, "accent_color");
+    const fields: Array<[string, unknown]> = [];
+    if (displayName) fields.push(["display_name", displayName]);
+    if (bio !== undefined) fields.push(["bio", bio || null]);
+    if (pronouns !== undefined) fields.push(["pronouns", pronouns || null]);
+    if (accent !== undefined) fields.push(["accent_color", accent]);
+    if (body.profile_style !== undefined)
+      fields.push(["profile_style", JSON.stringify(toProfileStyle(body.profile_style))]);
+    if (fields.length)
+      db.prepare(`UPDATE users SET ${fields.map(([key]) => `${key} = ?`).join(", ")} WHERE id = ?`).run(
+        ...fields.map(([, value]) => value as string | null),
+        existing.id,
+      );
+    return issue(existing.id);
+  }
+
+  if (hasPortableIdentity(identityId)) throw unauthorized("La identidad del dispositivo no coincide.");
+  const inviteCode = v.string(body, "invite_code", { min: 3, max: 100, pattern: /^[A-Za-z0-9_-]+$/ });
+  liveInvite(inviteCode);
+
+  const displayName = v.string(body, "display_name", { min: 2, max: 48 });
+  const preferred = (v.optionalString(body, "username", { max: 32 }) || "").toLowerCase();
+  const username = USERNAME.test(preferred) && !findUserByUsername(preferred) ? preferred : slugUsername(displayName);
+  const user = createUser({ username, displayName, kind: "portable" });
+
+  const bio = v.optionalString(body, "bio", { max: 500 });
+  const pronouns = v.optionalString(body, "pronouns", { max: 300 });
+  const avatar = v.optionalString(body, "avatar_url", { max: 300 });
+  const banner = v.optionalString(body, "banner_url", { max: 300 });
+  const accent = v.color(body, "accent_color");
+  db.prepare(
+    `UPDATE users SET bio = ?, pronouns = ?, avatar_url = ?, banner_url = ?, accent_color = ?, profile_style = ? WHERE id = ?`,
+  ).run(
+    bio || null,
+    pronouns || null,
+    avatar || null,
+    banner || null,
+    accent || null,
+    JSON.stringify(toProfileStyle(body.profile_style)),
+    user.id,
+  );
+  linkPortableIdentity(user.id, identityId, secret);
+  return issue(user.id);
 });
 
 /* ── abrir la instancia al mundo (§6) ──────────────────────────────── */

@@ -13,7 +13,7 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "../lib/api.ts";
-import { Spinner, useT } from "./ui.tsx";
+import { Select, Spinner, useT } from "./ui.tsx";
 
 interface Pfp {
   id: string;
@@ -61,17 +61,17 @@ export function Gallery({ current, onPick }: { current: string; onPick: (url: st
 
   return (
     <div className="space-y-2">
-      <label className="flex items-center gap-2 text-xs text-muted">
-        {t("settings.galleryCategory")}
-        <select value={category} onChange={(e) => setCategory(e.target.value)} className="field h-9 flex-1 py-0 text-sm">
-          {categories.map((item) => (
-            <option key={item.name} value={item.name}>
-              {item.name}
-              {item.animated ? " ✦" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="flex items-center gap-2 text-xs text-muted">
+        <span>{t("settings.galleryCategory")}</span>
+        <Select
+          value={category}
+          onChange={setCategory}
+          compact
+          className="flex-1"
+          label={t("settings.galleryCategory")}
+          options={categories.map((item) => ({ value: item.name, label: `${item.name}${item.animated ? " ✦" : ""}` }))}
+        />
+      </div>
 
       {/* La marca dice cuáles se mueven, sin tener que cargarlas para saberlo. */}
       <p className="text-xs text-muted">{t("settings.galleryAnimated")}</p>

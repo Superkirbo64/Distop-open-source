@@ -249,3 +249,8 @@ Conviene decirlo antes de que alguien lo descubra desplegando:
 
 AGPL-3.0-only (§24). El texto completo está en `LICENSE`; las licencias de las
 dependencias, en `THIRD_PARTY_NOTICES.md`.
+
+El pack adaptado de sonidos de interfaz de `apps/web/public/sounds/` usa SND01
+"sine" de Yasuhiro Tsuchiya. No redistribuye los WAV originales: combina,
+reafina, reenvuelve y remasteriza varias fuentes para cada salida. Consulta su
+procedencia, cambios y términos propios en `apps/web/public/sounds/LICENSE.txt`.

@@ -14,7 +14,7 @@ import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
-import { Button, Field, IconButton, ImageField, Spinner, useT } from "./ui.tsx";
+import { Button, Field, IconButton, ImageField, Range, Spinner, useT } from "./ui.tsx";
 
 interface Wallpaper {
   id: string;
@@ -210,9 +210,8 @@ export function WallpaperTuner() {
       {TUNING.map((item) => (
         <Field key={item.key} label={`${t(item.label)} — ${prefs[item.key]}${item.unit}`}>
           {(id) => (
-            <input
+            <Range
               id={id}
-              type="range"
               min={item.min}
               max={item.max}
               step={item.step}

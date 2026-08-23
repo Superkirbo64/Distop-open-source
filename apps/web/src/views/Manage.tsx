@@ -22,7 +22,20 @@ import { useStore } from "../store.ts";
 import { api, download, upload } from "../lib/api.ts";
 import { clientOrigin } from "../lib/instance.ts";
 import { formatDate } from "../i18n.ts";
-import { Button, ErrorNote, Field, ImageField, Modal, Spinner, Toggle, useConfirm, useLocale, useT, useErrorText } from "../components/ui.tsx";
+import {
+  Button,
+  ColorInput,
+  ErrorNote,
+  Field,
+  ImageField,
+  Modal,
+  Spinner,
+  Toggle,
+  useConfirm,
+  useLocale,
+  useT,
+  useErrorText,
+} from "../components/ui.tsx";
 
 /**
  * Referencia estable para "no hay nada".
@@ -55,15 +68,15 @@ export function Manage({ open, onClose }: { open: boolean; onClose: () => void }
 
   return (
     <Modal open={open} onClose={onClose} title={t("manage.title", { name: data.community.name })} size="lg">
-      <div className="grid gap-5 md:grid-cols-[11rem_1fr]">
-        <nav aria-label={t("community.manage")}>
-          <ul className="flex gap-1 overflow-x-auto md:flex-col">
+      <div className="grid min-w-0 gap-5 md:grid-cols-[11rem_1fr]">
+        <nav className="min-w-0" aria-label={t("community.manage")}>
+          <ul className="tabs-scroll flex max-w-full gap-1 overflow-x-auto md:flex-col">
             {visible.map(([id, label]) => (
-              <li key={id}>
+              <li key={id} className="shrink-0 md:w-full">
                 <button
                   onClick={() => setTab(id)}
                   aria-current={tab === id ? "page" : undefined}
-                  className={`w-full rounded-[10px] px-3 py-2 text-left text-sm transition-colors ${
+                  className={`w-full whitespace-nowrap rounded-[10px] px-3 py-2 text-left text-sm transition-colors ${
                     tab === id ? "bg-accent-soft font-semibold text-accent" : "text-muted hover:bg-raise hover:text-ink"
                   }`}
                 >
@@ -141,12 +154,10 @@ function Overview({ community }: { community: Community }) {
         />
         <Field label={t("manage.accent")}>
           {(id) => (
-            <input
+            <ColorInput
               id={id}
-              type="color"
-              className="field h-11 p-1"
               value={form.accent_color}
-              onChange={(e) => setForm({ ...form, accent_color: e.target.value })}
+              onChange={(accent_color) => setForm({ ...form, accent_color })}
             />
           )}
         </Field>
@@ -267,12 +278,10 @@ function Roles({ communityId, roles, mine }: { communityId: string; roles: Role[
             </Field>
             <Field label={t("settings.accent")}>
               {(id) => (
-                <input
+                <ColorInput
                   id={id}
-                  type="color"
-                  className="field h-11 p-1"
                   value={draft.color}
-                  onChange={(e) => setDraft({ ...draft, color: e.target.value })}
+                  onChange={(color) => setDraft({ ...draft, color })}
                 />
               )}
             </Field>
@@ -562,7 +571,7 @@ function SoundIconPicker({
         ref={input}
         type="file"
         accept="image/png,image/jpeg,image/gif,image/webp"
-        className="sr-only"
+        className="hidden"
         onChange={(event) => void pick(event.target.files?.[0])}
       />
       {error ? <ErrorNote>{error}</ErrorNote> : null}
@@ -1011,7 +1020,7 @@ function Expressions({ communityId, emojis }: { communityId: string; emojis: Cus
           ref={input}
           type="file"
           accept={kind === "sound" ? "audio/mpeg,audio/ogg,audio/wav" : "image/png,image/jpeg,image/gif,image/webp"}
-          className="sr-only"
+          className="hidden"
           onChange={(e) => void pick(e.target.files?.[0])}
         />
 

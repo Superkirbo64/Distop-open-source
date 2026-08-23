@@ -10,6 +10,7 @@
 import type { Snowflake, VideoSource, VoiceAction, VoiceSoundRejectReason } from "@distop/protocol";
 import { onMedia, sendMedia, sendCommand } from "./gateway.ts";
 import * as relay from "./relay.ts";
+import { playUi } from "./notify.ts";
 
 export interface VoiceLocalState {
   channelId: Snowflake | null;
@@ -641,7 +642,9 @@ async function refreshInput(): Promise<void> {
 
 export async function joinVoice(channelId: Snowflake): Promise<boolean> {
   if (state.channelId === channelId) return true;
-  if (state.channelId) leaveVoice();
+  // Cambiar de canal es una sola transición: no encadenamos “colgar” y
+  // “conectar”, que sonaría como si la llamada hubiera fallado.
+  if (state.channelId) disconnectVoice(false);
 
   state.error = null;
   try {
@@ -677,10 +680,12 @@ export async function joinVoice(channelId: Snowflake): Promise<boolean> {
      pero abierto para la instancia, y el resto hablaba creyendo que oías. */
   pushVoiceState();
   emit();
+  playUi("voice_join");
   return true;
 }
 
-export function leaveVoice(): void {
+function disconnectVoice(announce: boolean): void {
+  const wasConnected = state.channelId !== null;
   if (state.channelId) sendCommand({ t: "VOICE_LEAVE", d: { channel_id: state.channelId } });
 
   for (const id of [...peers.keys()]) dropPeer(id);
@@ -714,6 +719,11 @@ export function leaveVoice(): void {
     meterTimer = undefined;
   }
   emit();
+  if (announce && wasConnected) playUi("voice_leave");
+}
+
+export function leaveVoice(): void {
+  disconnectVoice(true);
 }
 
 /**
@@ -773,7 +783,9 @@ function applyOutput(): void {
   relay.setDeafened(effectiveDeafened());
 }
 
-export function setMuted(muted: boolean): void {
+function updateMuted(muted: boolean, announce: boolean): void {
+  const changed = state.muted !== muted || (!muted && state.deafened);
+  if (!changed) return;
   state.muted = muted;
   /* Quitarse el silencio es también dejar de estar sordo: la instancia obliga a
      que quien no oye tampoco hable, así que "hablando y ensordecido" no existe.
@@ -784,18 +796,31 @@ export function setMuted(muted: boolean): void {
   if (effectiveMuted()) state.speaking.delete(selfId);
   pushVoiceState();
   emit();
+  if (announce) playUi(muted ? "mute_on" : "mute_off");
+}
+
+export function setMuted(muted: boolean): void {
+  updateMuted(muted, true);
 }
 
 export function setDeafened(deafened: boolean): void {
+  if (state.deafened === deafened) return;
   state.deafened = deafened;
   // Ensordecer implica callar: si no oyes a nadie, hablar es de mala educación.
   if (deafened) {
-    setMuted(true);
+    // Es una sola intención y por eso tiene una única confirmación sonora.
+    if (state.muted) {
+      applyOutput();
+      pushVoiceState();
+      emit();
+    } else updateMuted(true, false);
+    playUi("deafen_on");
     return;
   }
   applyOutput();
   pushVoiceState();
   emit();
+  playUi("deafen_off");
 }
 
 export function currentChannel(): Snowflake | null {
@@ -895,6 +920,7 @@ function stopLocalVideo(): void {
 
 export async function setVideoSource(source: VideoSource | null): Promise<void> {
   if (!state.channelId || state.video === source) return;
+  const previousSource = state.video;
   state.videoError = null;
 
   let track: MediaStreamTrack | null = null;
@@ -970,6 +996,10 @@ export async function setVideoSource(source: VideoSource | null): Promise<void> 
   // mientras solo se hable no hay ninguna, y al encenderla aparecen.
   if (lastRoom) void syncPeers(lastRoom.channelId, lastRoom.participants);
   emit();
+  if (source === "camera") playUi("camera_on");
+  else if (source === "screen") playUi("screen_on");
+  else if (previousSource === "camera") playUi("camera_off");
+  else if (previousSource === "screen") playUi("screen_off");
 }
 
 /**

@@ -208,6 +208,10 @@ export const es = {
   "community.joinHint":
     "Pega el enlace entero o solo el código: sirven los dos.",
   "community.joinAction": "Entrar",
+  "community.unavailableTitle": "No se pudo abrir la comunidad",
+  "community.unavailable":
+    "El servidor no está encendido o ya no perteneces a esta comunidad. ¿Quieres intentar entrar con un enlace de invitación?",
+  "community.rejoinHint": "Pega el enlace de invitación completo para localizar el servidor correcto.",
 
   "channel.create": "Crear canal",
   "channel.name": "Nombre del canal",
@@ -641,9 +645,9 @@ export const es = {
   "settings.notifyOff": "Ninguno",
   "settings.notifyHint":
     "Vale para todas las comunidades de este servidor. Nada de esto sale del dispositivo.",
-  "settings.sounds": "Sonido al recibir",
+  "settings.sounds": "Sonidos de la aplicación",
   "settings.soundsHint":
-    "Un tono corto generado en el propio navegador; no descarga ningún archivo.",
+    "Notificaciones e interruptores usan el pack SND01 adaptado para Distop.",
   "settings.desktopNotifications": "Notificaciones del sistema",
   "settings.desktopHint": "Solo aparecen con la ventana en segundo plano.",
   "settings.notifyAsk": "Permitir notificaciones",

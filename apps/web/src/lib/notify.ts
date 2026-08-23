@@ -2,8 +2,7 @@
  * Avisos de mensaje nuevo (§9.2).
  *
  * Dos canales distintos, y los dos se pueden apagar por separado:
- *   · un sonido corto, sintetizado aquí mismo — ningún archivo que descargar,
- *     ninguna petición extra, y funciona igual en una instancia sin internet;
+ *   · el pack SND01 adaptado e incluido en la propia aplicación;
  *   · una notificación del sistema, que exige permiso explícito del navegador
  *     y solo se pide cuando la persona lo activa a mano en Ajustes.
  *
@@ -19,35 +18,69 @@ export type NotifyLevel = "all" | "mentions" | "off";
  * eso se intenta reanudar en cada aviso en vez de darlo por muerto.
  */
 let audio: AudioContext | null = null;
+let soundsEnabled = true;
+const cache = new Map<string, Promise<AudioBuffer>>();
+const UI_VOLUME = 0.46;
 
-function beep(mention: boolean): void {
+export type UiSound =
+  | "message"
+  | "mention"
+  | "on"
+  | "off"
+  | "voice_join"
+  | "voice_leave"
+  | "mute_on"
+  | "mute_off"
+  | "deafen_on"
+  | "deafen_off"
+  | "camera_on"
+  | "camera_off"
+  | "screen_on"
+  | "screen_off";
+
+/** Evita importar el store aquí: el store ya importa este módulo. */
+export function setSoundsEnabled(enabled: boolean): void {
+  soundsEnabled = enabled;
+}
+
+function context(): AudioContext {
+  audio ??= new AudioContext();
+  if (audio.state === "suspended") void audio.resume();
+  return audio;
+}
+
+function loadUiSound(name: UiSound): Promise<AudioBuffer> {
+  const existing = cache.get(name);
+  if (existing) return existing;
+  const ctx = context();
+  const pending = fetch(`/sounds/${name}.wav`)
+    .then((response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.arrayBuffer();
+    })
+    .then((bytes) => ctx.decodeAudioData(bytes));
+  cache.set(name, pending);
+  pending.catch(() => cache.delete(name));
+  return pending;
+}
+
+/** Reproduce un sample local; la segunda vez ya está decodificado en memoria. */
+export function playUi(name: UiSound): void {
+  if (!soundsEnabled || typeof AudioContext !== "function") return;
   try {
-    audio ??= new AudioContext();
-    if (audio.state === "suspended") void audio.resume();
-
-    const now = audio.currentTime;
-    // Una mención suena a dos notas ascendentes; un mensaje normal, a una sola.
-    // Se distinguen sin mirar la pantalla, que es justo para lo que sirve.
-    const notes = mention ? [660, 880] : [520];
-
-    notes.forEach((frequency, index) => {
-      const oscillator = audio!.createOscillator();
-      const gain = audio!.createGain();
-      const start = now + index * 0.09;
-
-      oscillator.type = "sine";
-      oscillator.frequency.value = frequency;
-      // Rampa en vez de corte seco: un corte suena a "clic" en cualquier altavoz.
-      gain.gain.setValueAtTime(0, start);
-      gain.gain.linearRampToValueAtTime(mention ? 0.08 : 0.05, start + 0.012);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
-
-      oscillator.connect(gain).connect(audio!.destination);
-      oscillator.start(start);
-      oscillator.stop(start + 0.18);
-    });
-  } catch {
-    // Sin salida de audio no pasa nada: el aviso visual sigue estando.
+    const ctx = context();
+    void loadUiSound(name)
+      .then((buffer) => {
+        const source = ctx.createBufferSource();
+        const gain = ctx.createGain();
+        gain.gain.value = UI_VOLUME;
+        source.buffer = buffer;
+        source.connect(gain).connect(ctx.destination);
+        source.start();
+      })
+      .catch((error: unknown) => console.warn(`[Distop] No se pudo reproducir /sounds/${name}.wav`, error));
+  } catch (error) {
+    console.warn(`[Distop] No hay salida de audio para /sounds/${name}.wav`, error);
   }
 }
 
@@ -85,7 +118,7 @@ export function notify(input: NotifyInput): void {
   if (input.level === "off") return;
   if (input.level === "mentions" && !input.mention) return;
 
-  if (input.sound) beep(input.mention);
+  if (input.sound) playUi(input.mention ? "mention" : "message");
 
   // La notificación del sistema solo cuando la ventana no está a la vista: si
   // está delante, el sonido y el contador de la barra lateral ya lo dicen.

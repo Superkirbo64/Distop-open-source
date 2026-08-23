@@ -5,13 +5,27 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_PROFILE_STYLE, type SelfUser } from "@distop/protocol";
-import { ChevronDown, ExternalLink, Pipette } from "lucide-react";
+import { ChevronDown, ExternalLink } from "lucide-react";
 import { useStore, type BackdropChoice, type Density, type FontChoice, type ThemeChoice } from "../store.ts";
 import { api, setTokens, type Tokens } from "../lib/api.ts";
 import { inputDevice, probeNetwork, setIceServers, setInputDevice, setVideoMode } from "../lib/voice.ts";
 import * as audio from "../lib/relay.ts";
 import { LOCALES, LOCALE_LABELS } from "../i18n.ts";
-import { Avatar, Button, DisplayName, ErrorNote, Field, ImageField, Modal, Toggle, useT, useErrorText } from "../components/ui.tsx";
+import {
+  Avatar,
+  Button,
+  ColorInput,
+  DisplayName,
+  ErrorNote,
+  Field,
+  ImageField,
+  Modal,
+  Range,
+  Select,
+  Toggle,
+  useT,
+  useErrorText,
+} from "../components/ui.tsx";
 import { WallpaperField, WallpaperPicker } from "../components/Wallpaper.tsx";
 import { Gallery } from "../components/Gallery.tsx";
 import {
@@ -49,15 +63,15 @@ export function Settings({ open, onClose, initialTab = "profile" }: { open: bool
 
   return (
     <Modal open={open} onClose={onClose} title={t("settings.title")} size="lg">
-      <div className="grid gap-5 md:grid-cols-[10rem_1fr]">
-        <nav aria-label={t("settings.title")}>
-          <ul className="flex gap-1 overflow-x-auto md:flex-col">
+      <div className="grid min-w-0 gap-5 md:grid-cols-[10rem_1fr]">
+        <nav className="min-w-0" aria-label={t("settings.title")}>
+          <ul className="tabs-scroll flex max-w-full gap-1 overflow-x-auto md:flex-col">
             {tabs.map(([id, label]) => (
-              <li key={id}>
+              <li key={id} className="shrink-0 md:w-full">
                 <button
                   onClick={() => setTab(id)}
                   aria-current={tab === id ? "page" : undefined}
-                  className={`w-full rounded-[10px] px-3 py-2 text-left text-sm transition-colors ${
+                  className={`w-full whitespace-nowrap rounded-[10px] px-3 py-2 text-left text-sm transition-colors ${
                     tab === id ? "bg-accent-soft font-semibold text-accent" : "text-muted hover:bg-raise hover:text-ink"
                   }`}
                 >
@@ -181,12 +195,10 @@ function ProfileTab() {
             </Field>
             <Field label={t("settings.accent")}>
               {(id) => (
-                <input
+                <ColorInput
                   id={id}
-                  type="color"
-                  className="field h-11 p-1"
                   value={form.accent_color}
-                  onChange={(e) => setForm({ ...form, accent_color: e.target.value })}
+                  onChange={(accent_color) => setForm({ ...form, accent_color })}
                 />
               )}
             </Field>
@@ -537,16 +549,12 @@ function AppearanceTab({ onAdjust }: { onAdjust: () => void }) {
               style={{ background: color }}
             />
           ))}
-          <label className="icon-btn grid h-9 w-9 cursor-pointer place-items-center rounded-full border border-dashed border-line">
-            <Pipette size={15} />
-            <span className="sr-only">{t("settings.accentCustom")}</span>
-            <input
-              type="color"
-              className="sr-only"
-              value={prefs.accent || "#4059e0"}
-              onChange={(e) => setPref("accent", e.target.value)}
-            />
-          </label>
+          <ColorInput
+            value={prefs.accent || "#4059e0"}
+            onChange={(value) => setPref("accent", value)}
+            label={t("settings.accentCustom")}
+            className="h-9 min-h-9 w-32 py-0"
+          />
           {prefs.accent ? (
             <Button onClick={() => setPref("accent", "")} className="h-9 min-h-9 text-xs">
               {t("settings.reset")}
@@ -557,9 +565,8 @@ function AppearanceTab({ onAdjust }: { onAdjust: () => void }) {
 
       <Field label={`${t("settings.corners")} — ${prefs.radius}px`}>
         {(id) => (
-          <input
+          <Range
             id={id}
-            type="range"
             min={0}
             max={24}
             step={2}
@@ -614,9 +621,8 @@ function AppearanceTab({ onAdjust }: { onAdjust: () => void }) {
 
       <Field label={`${t("settings.fontSize")} — ${Math.round(prefs.scale * 100)}%`}>
         {(id) => (
-          <input
+          <Range
             id={id}
-            type="range"
             min={0.85}
             max={1.35}
             step={0.05}
@@ -646,21 +652,15 @@ function AppearanceTab({ onAdjust }: { onAdjust: () => void }) {
 
       <Field label={t("settings.language")}>
         {(id) => (
-          <select
+          <Select
             id={id}
-            className="field"
             value={prefs.locale}
-            onChange={(e) => {
-              localStorage.setItem("distop.locale", e.target.value);
-              setPref("locale", e.target.value as (typeof LOCALES)[number]);
+            options={LOCALES.map((locale) => ({ value: locale, label: LOCALE_LABELS[locale] }))}
+            onChange={(value) => {
+              localStorage.setItem("distop.locale", value);
+              setPref("locale", value as (typeof LOCALES)[number]);
             }}
-          >
-            {LOCALES.map((locale) => (
-              <option key={locale} value={locale}>
-                {LOCALE_LABELS[locale]}
-              </option>
-            ))}
-          </select>
+          />
         )}
       </Field>
     </div>
@@ -688,39 +688,39 @@ function VideoSetup() {
 
       <Field label={t("voice.quality")} hint={t("voice.qualityHint")}>
         {(id) => (
-          <select
+          <Select
             id={id}
-            className="field"
             value={quality}
-            onChange={(e) => {
-              const value = e.target.value as audio.Quality;
+            options={[
+              { value: "low", label: t("voice.qualityLow") },
+              { value: "medium", label: t("voice.qualityMedium") },
+              { value: "high", label: t("voice.qualityHigh") },
+            ]}
+            onChange={(next) => {
+              const value = next as audio.Quality;
               setQualityState(value);
               audio.setQuality(value);
             }}
-          >
-            <option value="low">{t("voice.qualityLow")}</option>
-            <option value="medium">{t("voice.qualityMedium")}</option>
-            <option value="high">{t("voice.qualityHigh")}</option>
-          </select>
+          />
         )}
       </Field>
 
       <Field label={t("voice.priority")} hint={t("voice.priorityHint")}>
         {(id) => (
-          <select
+          <Select
             id={id}
-            className="field"
             value={priority}
-            onChange={(e) => {
-              const value = e.target.value as audio.Priority;
+            options={[
+              { value: "fluid", label: t("voice.priorityFluid") },
+              { value: "balanced", label: t("voice.priorityBalanced") },
+              { value: "sharp", label: t("voice.prioritySharp") },
+            ]}
+            onChange={(next) => {
+              const value = next as audio.Priority;
               setPriorityState(value);
               audio.setPriority(value);
             }}
-          >
-            <option value="fluid">{t("voice.priorityFluid")}</option>
-            <option value="balanced">{t("voice.priorityBalanced")}</option>
-            <option value="sharp">{t("voice.prioritySharp")}</option>
-          </select>
+          />
         )}
       </Field>
     </div>
@@ -883,28 +883,28 @@ function AudioSetup() {
         <>
           <Field label={t("voice.device")} hint={unnamed ? t("voice.deviceNames") : ""}>
             {(id) => (
-              <div className="flex flex-wrap items-center gap-2">
-                <select
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Select
                   id={id}
-                  className="field min-w-0 flex-1"
+                  className="w-full min-w-0 flex-1"
                   value={mic}
-                  onChange={(e) => {
-                    setMic(e.target.value);
-                    void setInputDevice(e.target.value);
+                  searchable
+                  options={[
+                    { value: "", label: t("voice.deviceDefault") },
+                    ...inputs
+                      .filter((device) => Boolean(device.deviceId))
+                      .map((device, index) => ({ value: device.deviceId, label: name(device, index, "voice.deviceUnnamed") })),
+                  ]}
+                  onChange={(value) => {
+                    setMic(value);
+                    void setInputDevice(value);
                     // Si la prueba está en marcha, sigue con el aparato nuevo:
                     // es justo lo que se quiere comprobar al cambiarlo.
-                    if (testRef.current) void startTest(e.target.value);
+                    if (testRef.current) void startTest(value);
                   }}
-                >
-                  <option value="">{t("voice.deviceDefault")}</option>
-                  {inputs.map((device, index) => (
-                    <option key={device.deviceId} value={device.deviceId}>
-                      {name(device, index, "voice.deviceUnnamed")}
-                    </option>
-                  ))}
-                </select>
+                />
                 {unnamed ? (
-                  <Button variant="ghost" onClick={() => void reveal()}>
+                  <Button className="w-full sm:w-auto" variant="ghost" onClick={() => void reveal()}>
                     {t("voice.deviceAllow")}
                   </Button>
                 ) : null}
@@ -917,9 +917,8 @@ function AudioSetup() {
             hint={t("voice.micVolumeHint")}
           >
             {(id) => (
-              <input
+              <Range
                 id={id}
-                type="range"
                 min={0}
                 max={200}
                 step={5}
@@ -964,23 +963,22 @@ function AudioSetup() {
             hint={audio.canPickOutput() ? "" : t("voice.outputFixed")}
           >
             {(id) => (
-              <select
+              <Select
                 id={id}
-                className="field"
                 value={out}
                 disabled={!audio.canPickOutput()}
-                onChange={(e) => {
-                  setOut(e.target.value);
-                  void audio.setOutputDevice(e.target.value);
+                searchable
+                options={[
+                  { value: "", label: t("voice.deviceDefault") },
+                  ...outputs
+                    .filter((device) => Boolean(device.deviceId))
+                    .map((device, index) => ({ value: device.deviceId, label: name(device, index, "voice.deviceUnnamedOut") })),
+                ]}
+                onChange={(value) => {
+                  setOut(value);
+                  void audio.setOutputDevice(value);
                 }}
-              >
-                <option value="">{t("voice.deviceDefault")}</option>
-                {outputs.map((device, index) => (
-                  <option key={device.deviceId} value={device.deviceId}>
-                    {name(device, index, "voice.deviceUnnamedOut")}
-                  </option>
-                ))}
-              </select>
+              />
             )}
           </Field>
         </>
@@ -993,9 +991,8 @@ function AudioSetup() {
         hint={t("voice.outVolumeHint")}
       >
         {(id) => (
-          <input
+          <Range
             id={id}
-            type="range"
             min={0}
             max={200}
             step={5}

@@ -228,7 +228,7 @@ export function createUser(opts: {
   username: string;
   displayName?: string;
   password?: string;
-  kind?: "local" | "guest";
+  kind?: "local" | "guest" | "portable";
 }): UserRow {
   const id = uuidv7();
   db.prepare(
@@ -243,6 +243,42 @@ export function createUser(opts: {
     Date.now(),
   );
   return findUserById(id)!;
+}
+
+/**
+ * Vincula la cuenta de esta instancia con la identidad secreta que guarda la
+ * aplicación. Quien ya está autenticado puede crear o rotar su propio vínculo;
+ * un mismo identificador nunca puede saltar a otra cuenta.
+ */
+export function linkPortableIdentity(userId: string, identityId: string, secret: string): void {
+  const existing = db
+    .prepare("SELECT user_id FROM portable_identities WHERE identity_id = ?")
+    .get(identityId) as { user_id: string } | undefined;
+  if (existing && existing.user_id !== userId) throw new Error("PORTABLE_IDENTITY_CONFLICT");
+
+  db.prepare("DELETE FROM portable_identities WHERE user_id = ? AND identity_id <> ?").run(userId, identityId);
+  db.prepare(
+    `INSERT INTO portable_identities (identity_id, user_id, secret_hash, created_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(identity_id) DO UPDATE SET secret_hash = excluded.secret_hash`,
+  ).run(identityId, userId, hashPassword(secret), Date.now());
+}
+
+/** La identidad existe solo si también demuestra conocer su secreto. */
+export function portableUser(identityId: string, secret: string): UserRow | null {
+  const row = db
+    .prepare(
+      `SELECT p.secret_hash, u.*
+         FROM portable_identities p JOIN users u ON u.id = p.user_id
+        WHERE p.identity_id = ?`,
+    )
+    .get(identityId) as (UserRow & { secret_hash: string }) | undefined;
+  if (!row || !verifyPassword(secret, row.secret_hash)) return null;
+  return row;
+}
+
+export function hasPortableIdentity(identityId: string): boolean {
+  return Boolean(db.prepare("SELECT 1 FROM portable_identities WHERE identity_id = ?").get(identityId));
 }
 
 /**

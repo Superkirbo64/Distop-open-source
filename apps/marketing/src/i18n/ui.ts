@@ -196,7 +196,7 @@ const es = {
         },
         {
           title: "Ábrelo",
-          body: "Doble clic en «Distop Setup 0.1.0.exe», donde se te haya descargado. Se instala solo y te deja el acceso directo.",
+          body: "Doble clic en «Distop Setup 0.1.1.exe», donde se te haya descargado. Se instala solo y te deja el acceso directo.",
         },
       ],
       warnTitle: "Windows va a avisarte",
@@ -435,7 +435,7 @@ const en: Dict = {
         },
         {
           title: "Open it",
-          body: "Double-click «Distop Setup 0.1.0.exe» wherever it landed. It installs itself and leaves you the shortcut.",
+          body: "Double-click «Distop Setup 0.1.1.exe» wherever it landed. It installs itself and leaves you the shortcut.",
         },
       ],
       warnTitle: "Windows will warn you",
@@ -669,7 +669,7 @@ const ptBR: Dict = {
         },
         {
           title: "Abra",
-          body: "Clique duas vezes em «Distop Setup 0.1.0.exe», onde ele tiver baixado. Ele se instala sozinho e deixa o atalho.",
+          body: "Clique duas vezes em «Distop Setup 0.1.1.exe», onde ele tiver baixado. Ele se instala sozinho e deixa o atalho.",
         },
       ],
       warnTitle: "O Windows vai avisar",

@@ -9,7 +9,7 @@ import { Announcement, ChannelHash, Cross, Speaker } from "./icons.tsx";
 import { PERMISSIONS, has, toBits, type Channel } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
-import { Button, ErrorNote, Field, Menu, MenuItem, Modal, useConfirm, useT, useErrorText } from "./ui.tsx";
+import { Button, ErrorNote, Field, Menu, MenuItem, Modal, Select, useConfirm, useT, useErrorText } from "./ui.tsx";
 import { VoiceParticipants } from "./Voice.tsx";
 import { joinVoice } from "../lib/voice.ts";
 
@@ -317,14 +317,15 @@ function CreateChannel({ communityId, open, onClose }: { communityId: string; op
 
         <Field label={t("channel.category")}>
           {(id) => (
-            <select id={id} className="field" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
-              <option value="">{t("common.none")}</option>
-              {data?.categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
+            <Select
+              id={id}
+              value={categoryId}
+              onChange={setCategoryId}
+              options={[
+                { value: "", label: t("common.none") },
+                ...(data?.categories.map((category) => ({ value: category.id, label: category.name })) ?? []),
+              ]}
+            />
           )}
         </Field>
 

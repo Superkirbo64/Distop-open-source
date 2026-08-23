@@ -1,0 +1,18 @@
+Splash reveal sound
+===================
+
+Title: Logo Reveal
+Creator: Universfield
+Source: https://pixabay.com/sound-effects/film-special-effects-logo-reveal-199582/
+Published: April 2, 2024
+License: Pixabay Content License
+Current terms: https://pixabay.com/service/terms/
+
+This sound is combined with Distop's original splash animation, artwork,
+typography and timing as a new audiovisual presentation. Playback is retimed,
+level-adjusted and faded by apps/desktop/src/splash.html. It is not offered as
+a standalone media download or used as a registered Distop sound mark.
+
+The audio is not covered by Distop's AGPL-3.0-only license. Rights and permitted
+uses remain governed by the Pixabay Content License. Do not extract and
+redistribute the audio by itself.

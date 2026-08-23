@@ -1,0 +1,30 @@
+Distop UI Sound Pack - adapted from SND01 "sine"
+=================================================
+
+Files: message.wav, mention.wav, on.wav, off.wav, voice_join.wav,
+voice_leave.wav, mute_on.wav, mute_off.wav, deafen_on.wav, deafen_off.wav,
+camera_on.wav, camera_off.wav, screen_on.wav, screen_off.wav
+Adaptation source: scripts/generate-ui-sounds.mjs
+
+Original material
+-----------------
+SND01 "sine"
+Sound designer: Yasuhiro Tsuchiya
+Publisher/operator: Dentsu Inc.
+Source and Terms of Use: https://snd.dev/
+
+The SND terms permit personal, business, commercial, and non-commercial use.
+They prohibit redistribution or sale of the original materials by themselves
+in an unprocessed form, and unprocessed trademark/sound-logo use. Copyright and
+other intellectual-property rights remain with the credited author or Dentsu.
+Review the current terms at the source before redistributing this project.
+
+Changes made for Distop
+-----------------------
+No unprocessed SND WAV is included in this directory. Each output combines at
+least two SND01 sources, changes pitch and timing, applies new attack/release
+envelopes, adds an original synthesized layer and echo, filters the result, and
+is newly mastered to a different duration and peak level.
+
+Distop's code and original additions remain AGPL-3.0-only. Rights in the
+underlying SND material remain subject to the SND Terms of Use above.

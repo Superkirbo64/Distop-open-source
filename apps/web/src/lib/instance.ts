@@ -11,6 +11,7 @@
  * sesión que ya tenías en el tuyo. La clave histórica `distop.session` se
  * conserva tal cual para same-origin, así nadie pierde su sesión al actualizar.
  */
+import type { Community } from "@distop/protocol";
 
 const ACTIVE_KEY = "distop.activeInstance";
 const LIST_KEY = "distop.instances";
@@ -20,6 +21,16 @@ export interface KnownInstance {
   url: string;
   name: string;
   last_seen: number;
+  communities?: CachedCommunity[];
+}
+
+export type CachedCommunity = Pick<Community, "id" | "name" | "icon_url" | "accent_color">;
+
+export interface PendingCommunity {
+  id: string;
+  name: string;
+  url: string;
+  previous_url: string;
 }
 
 /** Estado de la instancia local que hospeda la app de escritorio (§5). */
@@ -140,10 +151,33 @@ export function storePendingInvite(code: string): void {
   localStorage.setItem(PENDING_INVITE, code);
 }
 
+export function peekPendingInvite(): string | null {
+  return localStorage.getItem(PENDING_INVITE);
+}
+
 export function takePendingInvite(): string | null {
   const code = localStorage.getItem(PENDING_INVITE);
   if (code) localStorage.removeItem(PENDING_INVITE);
   return code;
+}
+
+const PENDING_COMMUNITY = "distop.pendingCommunity";
+
+export function storePendingCommunity(target: PendingCommunity): void {
+  sessionStorage.setItem(PENDING_COMMUNITY, JSON.stringify(target));
+}
+
+export function peekPendingCommunity(): PendingCommunity | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_COMMUNITY);
+    return raw ? (JSON.parse(raw) as PendingCommunity) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingCommunity(): void {
+  sessionStorage.removeItem(PENDING_COMMUNITY);
 }
 
 /* "Cambiar de instancia" pone esta marca antes de recargar: sin ella, la app
@@ -219,9 +253,39 @@ export function knownInstances(): KnownInstance[] {
 }
 
 export function rememberInstance(url: string, name: string): void {
-  const rest = knownInstances().filter((known) => known.url !== url);
-  const next: KnownInstance[] = [{ url, name, last_seen: Date.now() }, ...rest].slice(0, 20);
+  const list = knownInstances();
+  const previous = list.find((known) => known.url === url);
+  const rest = list.filter((known) => known.url !== url);
+  const next: KnownInstance[] = [{ ...previous, url, name, last_seen: Date.now() }, ...rest].slice(0, 20);
   localStorage.setItem(LIST_KEY, JSON.stringify(next));
+}
+
+/** Guarda solo la ficha visual necesaria para pintar una barra unificada. */
+export function rememberCommunities(url: string, communities: Community[]): void {
+  if (!url) return;
+  const list = knownInstances();
+  const previous = list.find((known) => known.url === url);
+  const cached = communities.map(({ id, name, icon_url, accent_color }) => ({ id, name, icon_url, accent_color }));
+  const entry: KnownInstance = {
+    url,
+    name: previous?.name ?? communities[0]?.name ?? url,
+    last_seen: Date.now(),
+    communities: cached,
+  };
+  localStorage.setItem(LIST_KEY, JSON.stringify([entry, ...list.filter((known) => known.url !== url)].slice(0, 20)));
+}
+
+export function forgetKnownCommunity(url: string, communityId: string): void {
+  localStorage.setItem(
+    LIST_KEY,
+    JSON.stringify(
+      knownInstances().map((known) =>
+        known.url === url
+          ? { ...known, communities: (known.communities ?? []).filter((community) => community.id !== communityId) }
+          : known,
+      ),
+    ),
+  );
 }
 
 export function forgetInstance(url: string): void {

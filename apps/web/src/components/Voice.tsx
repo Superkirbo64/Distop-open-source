@@ -59,6 +59,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Range,
   SpeakingRing,
   hueOf,
   useT,
@@ -532,8 +533,7 @@ function ModerateMenu({
             <span className="text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
               {t("voice.userVolume", { value: Math.round(level * 100) })}
             </span>
-            <input
-              type="range"
+            <Range
               min={0}
               max={200}
               step={5}

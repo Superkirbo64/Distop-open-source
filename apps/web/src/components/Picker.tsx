@@ -11,7 +11,7 @@
  * de un teclado y no de un botón de disparo.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Smile, Sticker, X } from "lucide-react";
+import { ChevronDown, Search, Smile, Sticker, X } from "lucide-react";
 import { PERMISSIONS, has, toBits, type CustomEmoji } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
@@ -82,6 +82,7 @@ export function Picker({
   const [recent, setRecent] = useState(loadRecent);
   const [gifs, setGifs] = useState<Gif[] | null>(null);
   const [gifError, setGifError] = useState<string | null>(null);
+  const [packHelpOpen, setPackHelpOpen] = useState(false);
   const busca = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -299,23 +300,39 @@ export function Picker({
             y enterarse al pulsar "guardar" es enterarse tarde. Va aqui, en el
             selector, porque es donde se descubre que faltan. */}
         {tab === "sticker" ? (
-          <details className="mt-3 rounded-[10px] border border-line p-2">
-            <summary className="cursor-pointer text-xs font-semibold">{t("picker.addPack")}</summary>
-            <p className="mt-1.5 text-[0.7rem] leading-relaxed text-muted">{t("picker.addPackFormat")}</p>
-            {puedeSubir && activeCommunityId ? (
-              <button
-                onClick={() => {
-                  setManageOpen(true);
-                  onClose();
-                }}
-                className="mt-2 w-full rounded-[10px] border border-line px-2 py-1.5 text-xs font-medium hover:border-accent"
-              >
-                {t("picker.addPackGo")}
-              </button>
-            ) : (
-              <p className="mt-2 text-[0.7rem] text-muted">{t("picker.addPackNoPermission")}</p>
-            )}
-          </details>
+          <section className="mt-3 overflow-hidden rounded-[10px] border border-line bg-surface">
+            <button
+              type="button"
+              aria-expanded={packHelpOpen}
+              onClick={() => setPackHelpOpen((current) => !current)}
+              className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left text-xs font-semibold transition-colors hover:bg-raise"
+            >
+              {t("picker.addPack")}
+              <ChevronDown
+                size={15}
+                className={`shrink-0 text-muted transition-transform ${packHelpOpen ? "rotate-180" : ""}`}
+                aria-hidden
+              />
+            </button>
+            {packHelpOpen ? (
+              <div className="border-t border-line px-3 pb-3">
+                <p className="mt-2 text-[0.7rem] leading-relaxed text-muted">{t("picker.addPackFormat")}</p>
+                {puedeSubir && activeCommunityId ? (
+                  <button
+                    onClick={() => {
+                      setManageOpen(true);
+                      onClose();
+                    }}
+                    className="mt-2 w-full rounded-[10px] border border-line px-2 py-1.5 text-xs font-medium transition-colors hover:border-accent hover:bg-accent-soft"
+                  >
+                    {t("picker.addPackGo")}
+                  </button>
+                ) : (
+                  <p className="mt-2 text-[0.7rem] text-muted">{t("picker.addPackNoPermission")}</p>
+                )}
+              </div>
+            ) : null}
+          </section>
         ) : null}
 
         {tab === "emoji" && porComunidad.length === 0 && unicodeVisible.length === 0 ? (
