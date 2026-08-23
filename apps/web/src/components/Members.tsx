@@ -8,7 +8,7 @@ import { Ban, CalendarDays, Clock, Crown, Gamepad2, MicOff, MoreVertical, UserRo
 import { PERMISSIONS, has, toBits, type GameSession, type Member } from "@distop/protocol";
 import { gameOf, useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
-import { Avatar, DisplayName, IconButton, Menu, MenuItem, Modal, useConfirm, useLocale, useT } from "./ui.tsx";
+import { Avatar, avatarOverflow, DisplayName, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, useConfirm, useLocale, useT } from "./ui.tsx";
 import { CardEffectLayer, cardBackground, profileSurfaceBackground } from "./ProfileStyle.tsx";
 import { formatDate, formatDuration } from "../i18n.ts";
 
@@ -192,7 +192,8 @@ export function Members({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <aside data-pane="members" className="flex w-full flex-col border-l border-line bg-surface">
+    <aside data-pane="members" className="relative flex w-full flex-col border-l border-line bg-surface">
+      <PanelResizeHandle />
       {/* Cabecera de la misma altura que las otras dos: las tres líneas de la
           parte de arriba tienen que quedar a la misma altura, no escalonadas. */}
       <header className="flex h-[var(--header-h)] shrink-0 items-center justify-between gap-2 border-b border-line px-3">
@@ -296,7 +297,7 @@ function ProfileCard({ member, onClose, color }: { member: Member | null; onClos
               en línea y se pinta después que el fondo de un bloque hermano, así
               que sin posicionarlo la foto se comía el avatar. El recorte contra
               la portada lo pone `cutout`, que sabe callarse cuando hay aro. */}
-          <span className="relative inline-block">
+          <span className="relative inline-block" style={{ marginBottom: avatarOverflow(user.profile_style, 112) }}>
             <Avatar
               name={member.nickname ?? user.display_name}
               url={user.avatar_url}

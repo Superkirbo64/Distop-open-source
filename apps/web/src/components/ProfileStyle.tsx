@@ -22,7 +22,7 @@ import {
 } from "@distop/protocol";
 import type { MessageKey } from "../i18n.ts";
 import { useStore } from "../store.ts";
-import { Avatar, DisplayName, ImageField, useLocale, useT } from "./ui.tsx";
+import { Avatar, avatarOverflow, DisplayName, ImageField, useLocale, useT } from "./ui.tsx";
 
 /**
  * El fondo de una tarjeta de perfil, en un solo sitio.
@@ -138,7 +138,7 @@ export function ProfileCardPreview({
       <div className="h-28 w-full" style={{ background: cardBackground(style, accent, bannerUrl || null) }} />
 
       <div className="-mt-12 px-4 pb-4">
-        <div className="relative inline-block">
+        <div className="relative inline-block" style={{ marginBottom: avatarOverflow(style, 96) }}>
           <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={96} profile={style} cutout={6} />
           {/* El punto de presencia es parte de cómo te ven: la vista previa lo enseña. */}
           <span

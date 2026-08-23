@@ -660,6 +660,59 @@ export function StatusDot({
  */
 const CARA_CON_ARO = 1.25;
 
+/**
+ * Cuánto se sale un aro o una decoración por debajo del cuadro del avatar
+ * (`size`), en px.
+ *
+ * El aro pinta con un 33.33% de inset (`.ring-stack` en styles.css) y la
+ * decoración propia se dibuja a `size * 1.32` (Avatar más abajo), la mitad de
+ * ese extra por lado. Ninguno de los dos mueve la caja de maquetación —a
+ * propósito, para que una fila de lista no se descuadre—, así que quien apile
+ * algo justo debajo de un avatar GRANDE (una tarjeta de perfil, no una fila)
+ * necesita este hueco de más o el aro se come lo de abajo.
+ */
+export function avatarOverflow(profile: ProfileStyle | null | undefined, size: number): number {
+  if (profile?.avatar_ring) return size / 3;
+  if (profile?.avatar_deco_url) return size * 0.16;
+  return 0;
+}
+
+/**
+ * Aro de "está hablando" alrededor de un avatar.
+ *
+ * `outline` y no `box-shadow`: la sombra necesitaba una capa del color del fondo
+ * para abrir hueco, y ese color se adivinaba (`--surface`) — en la lista de la
+ * barra, que no es esa superficie, el hueco salía de otro color y el resultado
+ * no se leía como un aro. El contorno deja el hueco transparente y acierta
+ * siempre. El relleno lo da `avatarOverflow`: el aro del perfil y las
+ * decoraciones se pintan FUERA de la caja del avatar, así que sin ese margen el
+ * verde caía por encima del dibujo en vez de rodearlo.
+ */
+export function SpeakingRing({
+  speaking,
+  profile,
+  size,
+  children,
+}: {
+  speaking: boolean;
+  profile: ProfileStyle | null | undefined;
+  size: number;
+  children: ReactNode;
+}) {
+  return (
+    <span
+      className="inline-grid place-items-center rounded-full transition-[outline-color] duration-150"
+      style={{
+        padding: avatarOverflow(profile, size),
+        outline: `2px solid ${speaking ? "var(--ok)" : "transparent"}`,
+        outlineOffset: 2,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
 export function Avatar({
   name,
   url,
@@ -709,7 +762,15 @@ export function Avatar({
 
   return (
     <span
-      className="relative inline-block shrink-0"
+      /* `isolate` no es decorativo: las capas de dentro (cara, asiento, aro,
+         decoración, punto de estado) se ordenan con z-index 1..5, y ese orden
+         es ASUNTO INTERNO del avatar. Sin aislar, esos números competían con la
+         página entera: cualquier panel con su propio contexto de apilado —la
+         barra de perfil lo crea con `backdrop-blur`— dejaba su contenido en la
+         capa z-auto, y entonces el aro (z:3) de una cara cualquiera de la lista
+         se pintaba ENCIMA de la tarjeta de perfil abierta. Aislado, el 3 solo
+         significa algo dentro de este avatar. */
+      className="relative isolate inline-block shrink-0"
       style={{ width: size, height: size }}
     >
       {url ? (
@@ -883,6 +944,61 @@ export function EmptyState({
       {hint ? <p className="text-sm text-muted">{hint}</p> : null}
       {action}
     </div>
+  );
+}
+
+/**
+ * Tira para ensanchar a mano el panel de miembros o el chat de voz.
+ * Los dos ocupan la misma columna de rejilla (`--w-members`), así que un único
+ * gesto de arrastre vale para cualquiera de los dos sin duplicar la lógica.
+ * Solo en escritorio: en móvil ese hueco pasa a `width: 100%` y la variable no
+ * pinta nada (§25).
+ */
+const MEMBERS_WIDTH_KEY = "distop.membersWidth";
+const MEMBERS_WIDTH_MIN = 240;
+const MEMBERS_WIDTH_MAX = 480;
+
+function clampMembersWidth(value: number): number {
+  return Math.min(MEMBERS_WIDTH_MAX, Math.max(MEMBERS_WIDTH_MIN, value));
+}
+
+export function PanelResizeHandle() {
+  const t = useT();
+  const drag = useRef<{ startX: number; startWidth: number; grid: HTMLElement } | null>(null);
+
+  // El ancho elegido la última vez, aplicado antes de que nadie arrastre nada.
+  useEffect(() => {
+    const stored = Number(localStorage.getItem(MEMBERS_WIDTH_KEY));
+    if (!stored) return;
+    document.querySelector<HTMLElement>(".app-grid")?.style.setProperty("--w-members-user", `${clampMembersWidth(stored)}px`);
+  }, []);
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={t("common.resize")}
+      className="absolute top-0 left-0 z-10 hidden h-full w-1.5 -translate-x-1/2 cursor-col-resize touch-none wide:block hover:bg-accent/40"
+      onPointerDown={(event) => {
+        const grid = event.currentTarget.closest<HTMLElement>(".app-grid");
+        const pane = event.currentTarget.parentElement;
+        if (!grid || !pane) return;
+        drag.current = { startX: event.clientX, startWidth: pane.getBoundingClientRect().width, grid };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        if (!drag.current) return;
+        // A la izquierda queda el chat: arrastrar hacia la izquierda ensancha.
+        const width = clampMembersWidth(drag.current.startWidth - (event.clientX - drag.current.startX));
+        drag.current.grid.style.setProperty("--w-members-user", `${width}px`);
+      }}
+      onPointerUp={() => {
+        if (!drag.current) return;
+        const width = parseFloat(drag.current.grid.style.getPropertyValue("--w-members-user"));
+        if (width) localStorage.setItem(MEMBERS_WIDTH_KEY, String(Math.round(width)));
+        drag.current = null;
+      }}
+    />
   );
 }
 

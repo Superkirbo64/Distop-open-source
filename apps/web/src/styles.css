@@ -271,6 +271,11 @@
 .app-grid {
   display: grid;
   height: 100dvh;
+  /* El ancho que el usuario haya arrastrado entra como VALOR POR DEFECTO, no
+     como estilo en línea sobre --w-members: en línea ganaba a todo y plegar el
+     panel dejaba de encogerlo, así que el hueco seguía ahí vacío y el chat no
+     se lo quedaba. Como fallback, las reglas de abajo siguen mandando. */
+  --w-members: var(--w-members-user, 15rem);
   grid-template-columns: var(--w-rail) var(--w-sidebar) 1fr var(--w-members);
   /* Dos filas: la de arriba se la reparten los cuatro paneles, y la de abajo la
      ocupa la barra de perfil, cruzando por debajo de la columna de comunidades.
@@ -288,7 +293,7 @@
 /* El chat lateral necesita un poco más de ancho que una lista de nombres para
    que mensajes, archivos y la caja de escritura no queden comprimidos. */
 .app-grid[data-right="voice-chat"] {
-  --w-members: 20rem;
+  --w-members: var(--w-members-user, 20rem);
 }
 
 /* Cada panel a su hueco por nombre. Sin esto se colocaban solos por orden, y

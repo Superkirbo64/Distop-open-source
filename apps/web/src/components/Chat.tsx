@@ -14,7 +14,7 @@ import { renderContent, type RenderContext } from "../lib/markdown.tsx";
 import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLocal } from "./Voice.tsx";
 import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
 import { formatBytes, formatDayHeading, formatTime } from "../i18n.ts";
-import { Avatar, Button, EmptyState, ErrorNote, IconButton, Menu, MenuItem, Modal, Spinner, useConfirm, useLocale, useT, useErrorText } from "./ui.tsx";
+import { Avatar, Button, EmptyState, ErrorNote, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, Spinner, useConfirm, useLocale, useT, useErrorText } from "./ui.tsx";
 
 const ICONS = { text: Hash, voice: Volume2, announcement: Megaphone } as const;
 const QUICK_REACTIONS = ["👍", "🎉", "❤️", "😄", "👀", "🚀"];
@@ -450,7 +450,8 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
   if (!channel || !data) return null;
 
   return (
-    <aside data-pane="members" data-panel="voice-chat" className="flex w-full flex-col border-l border-line bg-surface">
+    <aside data-pane="members" data-panel="voice-chat" className="relative flex w-full flex-col border-l border-line bg-surface">
+      <PanelResizeHandle />
       <header className="flex h-[var(--header-h)] shrink-0 items-center gap-2 border-b border-line px-3">
         <MessageSquareText size={17} className="shrink-0 text-muted" />
         <div className="min-w-0 flex-1">

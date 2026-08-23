@@ -59,6 +59,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  SpeakingRing,
   hueOf,
   useT,
 } from "./ui.tsx";
@@ -272,13 +273,10 @@ export function VoiceParticipants({
             key={state.user_id}
             className="flex items-center gap-2 rounded-lg px-2 py-1"
           >
-            <span
-              className="rounded-full transition-shadow duration-150"
-              style={{
-                boxShadow: speaking
-                  ? "0 0 0 2px var(--ok)"
-                  : "0 0 0 2px transparent",
-              }}
+            <SpeakingRing
+              speaking={speaking}
+              profile={member?.user.profile_style}
+              size={22}
             >
               <Avatar
                 name={name}
@@ -287,7 +285,7 @@ export function VoiceParticipants({
                 size={22}
                 profile={member?.user.profile_style}
               />
-            </span>
+            </SpeakingRing>
             <span
               className={`truncate text-xs ${speaking ? "text-ink" : "text-muted"}`}
             >
@@ -1484,13 +1482,10 @@ export function VoiceStage({ channelId }: { channelId: string }) {
                     <FullscreenButton />
                   </>
                 ) : (
-                  <span
-                    className="rounded-full transition-shadow duration-150"
-                    style={{
-                      boxShadow: speaking
-                        ? "0 0 0 4px color-mix(in oklab, var(--ok) 45%, transparent)"
-                        : "none",
-                    }}
+                  <SpeakingRing
+                    speaking={speaking}
+                    profile={member?.user.profile_style}
+                    size={72}
                   >
                     <Avatar
                       name={name}
@@ -1499,7 +1494,7 @@ export function VoiceStage({ channelId }: { channelId: string }) {
                       size={72}
                       profile={member?.user.profile_style}
                     />
-                  </span>
+                  </SpeakingRing>
                 )}
                 <figcaption className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg bg-bg/80 px-2 py-1 text-xs">
                   {/* Callado por decisión propia y callado por moderación se ven

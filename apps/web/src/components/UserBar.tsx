@@ -16,7 +16,7 @@ import { USER_STATUSES, type UserStatus } from "@distop/protocol";
 import { gameOf, useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
 import { Gear, Headset, Microphone } from "./icons.tsx";
-import { Avatar, DisplayName, IconButton, Menu, StatusDot, useT, type PresenceRing } from "./ui.tsx";
+import { Avatar, avatarOverflow, DisplayName, IconButton, Menu, StatusDot, useT, type PresenceRing } from "./ui.tsx";
 import { CardEffectLayer, cardBackground, profileSurfaceBackground } from "./ProfileStyle.tsx";
 import { setDeafened, setMuted } from "../lib/voice.ts";
 import { useVoiceLocal } from "./Voice.tsx";
@@ -235,7 +235,7 @@ function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: (tab?: "profil
       <div className="h-20 w-full" style={{ background: cardBackground(user.profile_style, user.accent_color, user.banner_url) }} />
 
       <div className="-mt-10 px-4">
-        <span className="inline-block">
+        <span className="relative inline-block" style={{ marginBottom: avatarOverflow(user.profile_style, 84) }}>
           <Avatar
             name={user.display_name}
             url={user.avatar_url}
