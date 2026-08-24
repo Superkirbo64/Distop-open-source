@@ -6,10 +6,10 @@
 import { randomBytes } from "node:crypto";
 import { PERMISSIONS, ALL_PERMISSIONS, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.js";
-import { publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.js";
+import { fixedPublicUrl, setFixedPublicUrl, setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.js";
 import { iceServers, relayState, setRelay, videoMode } from "./ice.js";
-import { audit, db, markCommunityRead, seedCommunity, uniqueSlug } from "./db.js";
-import { authenticate, countOwners, createGuest, createSession, createUser, findUserById, findUserByUsername, hashPassword, isInstanceOwner, revokeAllSessions, revokeSession, rotateSession, toSelfUser, verifyPassword, } from "./auth.js";
+import { audit, db, INSTANCE_ID, markCommunityRead, seedCommunity, uniqueSlug } from "./db.js";
+import { authenticate, countOwners, createGuest, createSession, createUser, findUserById, findUserByUsername, hasPortableIdentity, linkPortableIdentity, portableUser, hashPassword, isInstanceOwner, revokeAllSessions, revokeSession, rotateSession, toSelfUser, verifyPassword, } from "./auth.js";
 import { categoriesOf, channelsOf, communitiesForUser, getChannel, getCommunity, getMember, getMessage, getRole, lastReadId, membersOf, messagesOf, rolesOf, unreadOf, } from "./entities.js";
 import { MAX_SOUND_BYTES, createEmoji, deleteEmoji, deleteExpressionAttachmentsOfCommunity, emojisAvailableTo, emojisOf, getEmoji, unusableEmojis, validateSoundIcon, } from "./expressions.js";
 import { canActOn, channelPermissions, communityPermissions, highestRolePosition, memberState } from "./permissions.js";
@@ -19,6 +19,7 @@ import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAtta
 import { disconnectSession, disconnectUser, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.js";
 import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.js";
 import { statesOfCommunity } from "./voice.js";
+import { advanceTailscale, stopTailscale, tailscaleState } from "./tailscale.js";
 /* ── guardas ───────────────────────────────────────────────────────── */
 function requirePerm(communityId, userId, perm, what) {
     if (!has(communityPermissions(communityId, userId), perm))
@@ -39,6 +40,7 @@ const CHANNEL_NAME = /^[^\s#@][^#@]{0,63}$/;
 route("GET", "/health", () => instanceHealth(onlineCount()));
 route("GET", "/api/v1/health", () => instanceHealth(onlineCount()));
 route("GET", "/api/v1/info", async (ctx) => ({
+    instance_id: INSTANCE_ID,
     name: config.instanceName,
     version: VERSION,
     registration_enabled: config.registrationEnabled,
@@ -55,11 +57,12 @@ route("GET", "/api/v1/info", async (ctx) => ({
         Si hay un túnel abierto desde la app, esa manda sobre la del .env. */
     public_url: publicUrl(),
     /** Estado del túnel, para que la interfaz pueda ofrecer abrirlo o cerrarlo. */
-    tunnel: tunnelState(),
+    tunnel: { ...tunnelState(), autostart: tunnelAutostart() },
     /** Por dónde se buscan los caminos entre navegadores. Sin esto la voz solo
         funciona entre dos equipos de la misma red, y ni siquiera siempre. */
     ice_servers: await iceServers(),
-    /** Si la imagen pasa por la instancia o va directa, y con qué techo de calidad (§9.5). */
+    /** Si la imagen pasa por la instancia o va directa (§9.5). Fps y bitrate son
+        preferencia de cada cliente, no de la instancia (§10.2). */
     video: videoMode(),
     /** Instancia sin dueño: el cliente enseña la puesta en marcha, no el login. */
     setup_required: countOwners() === 0,
@@ -70,10 +73,17 @@ route("GET", "/api/v1/info", async (ctx) => ({
 }));
 function recoverableAccounts() {
     return db
-        .prepare(`SELECT u.username, u.display_name,
+        .prepare(
+    /* Las cuentas locales salen siempre, tengan comunidad o no: quien pone en
+       marcha la instancia crea su cuenta antes que su primera comunidad, y
+       exigir comunidad aqui la dejaba fuera de su propio servidor si perdia la
+       sesion en ese rato: sin contrasena que escribir y sin nada que recuperar.
+       Los invitados siguen pidiendo comunidad, o la pantalla de entrada acabaria
+       listando a todo el que paso por aqui una vez. */
+    `SELECT u.username, u.display_name, u.avatar_url,
               (SELECT name FROM communities WHERE owner_id = u.id ORDER BY created_at LIMIT 1) AS community
          FROM users u
-        WHERE u.password_hash IS NULL AND community IS NOT NULL
+        WHERE u.password_hash IS NULL AND (u.kind = 'local' OR community IS NOT NULL)
         ORDER BY u.created_at LIMIT 20`)
         .all();
 }
@@ -164,11 +174,16 @@ route("POST", "/api/v1/auth/register", async (ctx) => {
     rateLimit(`register:${ctx.ip}`, config.maxRegistrationsPerHour, 60 * 60_000);
     const body = await readJson(ctx);
     const username = v.string(body, "username", { min: 3, max: 32, pattern: USERNAME }).toLowerCase();
-    const password = v.string(body, "password", { min: 10, max: 200, trim: false });
+    // Opcional, como en /auth/bootstrap (§7.2, §34): poner una contraseña es un
+    // paso posterior, no un peaje para tener cuenta. Sin ella, se entra de vuelta
+    // por /auth/recover — igual de restringido que el arranque de la instancia.
+    const password = v.optionalString(body, "password", { max: 200 });
+    if (password && password.length < 10)
+        throw badRequest("La contraseña necesita al menos 10 caracteres.");
     const displayName = v.optionalString(body, "display_name", { max: 48 }) || username;
     if (findUserByUsername(username))
         throw conflict("Ese nombre de usuario ya existe.");
-    const user = createUser({ username, password, displayName });
+    const user = createUser({ username, displayName, ...(password ? { password } : {}) });
     return issue(user.id);
 });
 route("POST", "/api/v1/auth/login", async (ctx) => {
@@ -217,6 +232,26 @@ route("POST", "/api/v1/auth/logout", (ctx) => {
 });
 /* ── perfil (§10.1) ────────────────────────────────────────────────── */
 route("GET", "/api/v1/users/me", (ctx) => requireAuth(ctx).user);
+/**
+ * La app guarda una identidad secreta del dispositivo y la enlaza a la cuenta
+ * que ya está abierta. Así volver desde la comunidad de un amigo no exige otra
+ * contraseña ni convierte a la persona en invitada.
+ */
+route("PUT", "/api/v1/users/me/portable", async (ctx) => {
+    const { user } = requireAuth(ctx);
+    const body = await readJson(ctx);
+    const identityId = v.string(body, "identity_id", { min: 20, max: 100, pattern: /^[A-Za-z0-9_-]+$/ });
+    const secret = v.string(body, "secret", { min: 32, max: 200, pattern: /^[A-Za-z0-9_-]+$/, trim: false });
+    try {
+        linkPortableIdentity(user.id, identityId, secret);
+    }
+    catch (error) {
+        if (error instanceof Error && error.message === "PORTABLE_IDENTITY_CONFLICT")
+            throw conflict("Esa identidad ya pertenece a otra cuenta de este servidor.");
+        throw error;
+    }
+    return { linked: true };
+});
 route("PATCH", "/api/v1/users/me", async (ctx) => {
     const { user } = requireAuth(ctx);
     const body = await readJson(ctx);
@@ -1634,6 +1669,56 @@ route("POST", "/api/v1/invites/:code/join", (ctx) => {
     }
     return { community: getCommunity(invite.community_id), channel_id: invite.channel_id };
 });
+/**
+ * Una identidad de la app entra en cualquier instancia donde ya fue registrada.
+ * La primera vez exige una invitación viva: la invitación autoriza crear la
+ * cuenta portable, pero todavía no consume un uso; eso ocurre al hacer /join.
+ */
+route("POST", "/api/v1/auth/portable", async (ctx) => {
+    rateLimit(`portable:${ctx.ip}`, 30, 60 * 60_000);
+    const body = await readJson(ctx);
+    const identityId = v.string(body, "identity_id", { min: 20, max: 100, pattern: /^[A-Za-z0-9_-]+$/ });
+    const secret = v.string(body, "secret", { min: 32, max: 200, pattern: /^[A-Za-z0-9_-]+$/, trim: false });
+    const existing = portableUser(identityId, secret);
+    if (existing) {
+        // Nombre y adornos acompañan a la persona. Las imágenes no se reemplazan
+        // aquí: el cliente las copia como archivos propios de cada instancia.
+        const displayName = v.optionalString(body, "display_name", { max: 48 });
+        const bio = v.optionalString(body, "bio", { max: 500 });
+        const pronouns = v.optionalString(body, "pronouns", { max: 300 });
+        const accent = v.color(body, "accent_color");
+        const fields = [];
+        if (displayName)
+            fields.push(["display_name", displayName]);
+        if (bio !== undefined)
+            fields.push(["bio", bio || null]);
+        if (pronouns !== undefined)
+            fields.push(["pronouns", pronouns || null]);
+        if (accent !== undefined)
+            fields.push(["accent_color", accent]);
+        if (body.profile_style !== undefined)
+            fields.push(["profile_style", JSON.stringify(toProfileStyle(body.profile_style))]);
+        if (fields.length)
+            db.prepare(`UPDATE users SET ${fields.map(([key]) => `${key} = ?`).join(", ")} WHERE id = ?`).run(...fields.map(([, value]) => value), existing.id);
+        return issue(existing.id);
+    }
+    if (hasPortableIdentity(identityId))
+        throw unauthorized("La identidad del dispositivo no coincide.");
+    const inviteCode = v.string(body, "invite_code", { min: 3, max: 100, pattern: /^[A-Za-z0-9_-]+$/ });
+    liveInvite(inviteCode);
+    const displayName = v.string(body, "display_name", { min: 2, max: 48 });
+    const preferred = (v.optionalString(body, "username", { max: 32 }) || "").toLowerCase();
+    const username = USERNAME.test(preferred) && !findUserByUsername(preferred) ? preferred : slugUsername(displayName);
+    const user = createUser({ username, displayName, kind: "portable" });
+    const bio = v.optionalString(body, "bio", { max: 500 });
+    const pronouns = v.optionalString(body, "pronouns", { max: 300 });
+    const avatar = v.optionalString(body, "avatar_url", { max: 300 });
+    const banner = v.optionalString(body, "banner_url", { max: 300 });
+    const accent = v.color(body, "accent_color");
+    db.prepare(`UPDATE users SET bio = ?, pronouns = ?, avatar_url = ?, banner_url = ?, accent_color = ?, profile_style = ? WHERE id = ?`).run(bio || null, pronouns || null, avatar || null, banner || null, accent || null, JSON.stringify(toProfileStyle(body.profile_style)), user.id);
+    linkPortableIdentity(user.id, identityId, secret);
+    return issue(user.id);
+});
 /* ── abrir la instancia al mundo (§6) ──────────────────────────────── */
 /**
  * Solo quien puso en marcha la instancia. No es un permiso de comunidad: esto
@@ -1646,18 +1731,93 @@ function requireHost(ctx) {
         throw forbidden("Esto solo puede hacerlo quien hospeda la instancia.");
     return auth;
 }
+/**
+ * El túnel es la excepción estrecha: abrir una salida pública no toca datos ni
+ * credenciales de la instancia. Una sesión autenticada desde el propio PC puede
+ * manejarlo aunque no sea la primera cuenta creada. Borrar datos y configurar
+ * el relevo de voz siguen reservados a la cuenta propietaria mediante
+ * `requireHost`.
+ */
+function requireTunnelHost(ctx) {
+    const auth = requireAuth(ctx);
+    if (!isLocalRequest(ctx) && !isInstanceOwner(auth.user.id))
+        throw forbidden("El túnel solo puede manejarse desde el equipo anfitrión o con su cuenta propietaria.");
+    return auth;
+}
+/** Estado operativo y dirección efectiva en una sola foto coherente. */
+function tunnelView() {
+    return { ...tunnelState(), autostart: tunnelAutostart(), public_url: publicUrl(), fixed_url: fixedPublicUrl() };
+}
+route("PUT", "/api/v1/instance/public-url", async (ctx) => {
+    requireTunnelHost(ctx);
+    const body = await readJson(ctx);
+    const raw = typeof body.url === "string" ? body.url.trim().replace(/\/+$/, "") : "";
+    if (!raw) {
+        setFixedPublicUrl("");
+        if (tunnelAutostart() && !config.publicUrl)
+            void startTunnel();
+        return { ok: true, reachable: true, public_url: publicUrl(), error: "" };
+    }
+    let candidate;
+    try {
+        candidate = new URL(raw);
+    }
+    catch {
+        return { ok: false, reachable: false, public_url: publicUrl(), error: "La dirección no es una URL válida." };
+    }
+    if (!['http:', 'https:'].includes(candidate.protocol) || candidate.username || candidate.password) {
+        return { ok: false, reachable: false, public_url: publicUrl(), error: "La dirección debe comenzar por http:// o https:// y no incluir credenciales." };
+    }
+    try {
+        const response = await fetch(`${candidate.origin}/api/v1/info`, { signal: AbortSignal.timeout(12_000) });
+        const info = (await response.json());
+        if (!response.ok || info.instance_id !== INSTANCE_ID) {
+            return { ok: false, reachable: true, public_url: publicUrl(), error: "La dirección responde, pero pertenece a otra instancia de Distop." };
+        }
+    }
+    catch {
+        return { ok: false, reachable: false, public_url: publicUrl(), error: "No se pudo llegar a esta instancia mediante esa dirección." };
+    }
+    setFixedPublicUrl(candidate.origin);
+    stopTunnel();
+    return { ok: true, reachable: true, public_url: publicUrl(), error: "" };
+});
+route("GET", "/api/v1/instance/tailscale", (ctx) => {
+    requireTunnelHost(ctx);
+    return tailscaleState();
+});
+route("POST", "/api/v1/instance/tailscale", (ctx) => {
+    requireTunnelHost(ctx);
+    rateLimit(`tailscale:${ctx.ip}`, 8, 60_000);
+    return advanceTailscale();
+});
+route("DELETE", "/api/v1/instance/tailscale", (ctx) => {
+    requireTunnelHost(ctx);
+    return stopTailscale();
+});
 route("GET", "/api/v1/instance/tunnel", (ctx) => {
-    requireHost(ctx);
-    return tunnelState();
+    requireTunnelHost(ctx);
+    return tunnelView();
 });
 route("POST", "/api/v1/instance/tunnel", async (ctx) => {
-    requireHost(ctx);
+    requireTunnelHost(ctx);
     rateLimit(`tunnel:${ctx.ip}`, 5, 60_000);
-    return startTunnel();
+    await startTunnel();
+    return tunnelView();
 });
 route("DELETE", "/api/v1/instance/tunnel", (ctx) => {
-    requireHost(ctx);
-    return stopTunnel();
+    requireTunnelHost(ctx);
+    stopTunnel();
+    return tunnelView();
+});
+/* Que el enlace publico se abra solo al arrancar es decision de quien hospeda:
+   comodo por defecto, pero su ordenador queda accesible desde internet mientras
+   la aplicacion este abierta, y eso tiene que poder apagarse. */
+route("PUT", "/api/v1/instance/tunnel/autostart", async (ctx) => {
+    requireTunnelHost(ctx);
+    const body = await readJson(ctx);
+    setTunnelAutostart(v.bool(body, "enabled", true));
+    return { enabled: tunnelAutostart() };
 });
 /* Relevo de voz: quién puede reenviar el audio y el vídeo cuando dos redes no
    se dejan conectar en directo. Decisión de quien hospeda, desde la aplicación. */
@@ -1671,11 +1831,7 @@ route("PUT", "/api/v1/instance/relay", async (ctx) => {
     const text = (key) => typeof body[key] === "string" ? { [key]: body[key].trim() } : {};
     return setRelay({
         ...text("mode"),
-        /* Sin estas tres, el selector de Ajustes guardaba en el vacío: el cliente
-           las mandaba, aquí se filtraban, y setRelay persistía lo de siempre. */
         ...text("video"),
-        ...text("quality"),
-        ...text("priority"),
         ...text("url"),
         ...text("username"),
         ...text("credential"),

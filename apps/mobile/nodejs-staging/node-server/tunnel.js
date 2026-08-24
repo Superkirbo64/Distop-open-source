@@ -18,16 +18,25 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { createWriteStream } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { meta, setMeta } from "./db.js";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { gunzipSync } from "node:zlib";
 import { config } from "./config.js";
+import { findTunnelAddress } from "./tunnel-address.js";
 const state = { status: "off", url: "", error: "" };
 let child = null;
-/** La dirección aparece en el banner que cloudflared escribe por su salida. */
-const ADDRESS = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
+let starting = null;
 export function tunnelState() {
     return { ...state };
+}
+const CLAVE_FIJA = "public.fixed";
+/** Dirección estable elegida explícitamente por quien hospeda. */
+export function fixedPublicUrl() {
+    return meta(CLAVE_FIJA, () => "");
+}
+export function setFixedPublicUrl(url) {
+    setMeta(CLAVE_FIJA, url);
 }
 /**
  * Dirección pública efectiva: manda el túnel vivo sobre PUBLIC_URL.
@@ -35,7 +44,7 @@ export function tunnelState() {
  * que es justo lo que obligaba a editar el .env a mano.
  */
 export function publicUrl() {
-    return state.status === "on" && state.url ? state.url : config.publicUrl;
+    return fixedPublicUrl() || (state.status === "on" && state.url ? state.url : config.publicUrl);
 }
 /* ── conseguir cloudflared sin pedirle nada a nadie ─────────────────── */
 const BIN_DIR = join(dirname(resolve(config.databasePath)), "bin");
@@ -115,57 +124,96 @@ async function ensureCloudflared() {
     }
 }
 export async function startTunnel() {
-    if (state.status === "on" || state.status === "starting")
+    if (state.status === "on")
         return tunnelState();
+    // El arranque automático y un clic manual pueden coincidir. Los dos deben
+    // esperar el MISMO resultado; devolver "starting" hacía que la interfaz lo
+    // interpretase como un fallo aunque cloudflared siguiera arrancando bien.
+    if (starting)
+        return starting;
     state.status = "starting";
     state.error = "";
     state.url = "";
-    // Puede tardar: la primera vez descarga el binario (~60 MB, una única vez).
-    const bin = await ensureCloudflared();
-    if (!bin) {
-        finish("no-cloudflared");
-        return tunnelState();
-    }
-    return new Promise((done) => {
-        try {
-            // Sin `shell`: con un cmd.exe por medio, matar el proceso dejaría el
-            // túnel abierto por su cuenta.
-            child = spawn(bin, ["tunnel", "--url", `http://127.0.0.1:${config.port}`], {
-                stdio: ["ignore", "pipe", "pipe"],
-            });
-        }
-        catch {
+    starting = (async () => {
+        // Puede tardar: la primera vez descarga el binario (~60 MB, una única vez).
+        const bin = await ensureCloudflared();
+        if (!bin) {
             finish("no-cloudflared");
-            done(tunnelState());
-            return;
+            return tunnelState();
         }
-        const timer = setTimeout(() => finish("timeout"), 45_000);
-        const read = (chunk) => {
-            const found = ADDRESS.exec(String(chunk));
-            if (!found)
+        return new Promise((done) => {
+            let settled = false;
+            let output = "";
+            let timer = null;
+            const complete = (error) => {
+                if (settled)
+                    return;
+                settled = true;
+                if (timer)
+                    clearTimeout(timer);
+                if (error !== undefined)
+                    finish(error);
+                done(tunnelState());
+            };
+            let proc;
+            try {
+                // Sin `shell`: con un cmd.exe por medio, matar el proceso dejaría el
+                // túnel abierto por su cuenta.
+                proc = spawn(bin, ["tunnel", "--url", `http://127.0.0.1:${config.port}`], {
+                    stdio: ["ignore", "pipe", "pipe"],
+                });
+                child = proc;
+            }
+            catch {
+                complete("no-cloudflared");
                 return;
-            clearTimeout(timer);
-            state.status = "on";
-            state.url = found[0];
-            done(tunnelState());
-        };
-        child.stdout?.on("data", read);
-        child.stderr?.on("data", read);
-        child.on("error", () => {
-            clearTimeout(timer);
-            finish("no-cloudflared");
-            done(tunnelState());
+            }
+            // Un timeout tiene que resolver la petición y cerrar el proceso. Antes solo
+            // cambiaba el estado: el botón se quedaba cargando para siempre.
+            timer = setTimeout(() => {
+                child = null;
+                proc.kill();
+                complete("timeout");
+            }, 45_000);
+            const read = (chunk) => {
+                // stdout/stderr no respetan límites de línea: una URL puede llegar partida
+                // entre dos chunks. Guardar una cola corta evita perderla.
+                output = `${output}${String(chunk)}`.slice(-8192);
+                const found = findTunnelAddress(output);
+                if (!found)
+                    return;
+                state.status = "on";
+                state.url = found;
+                state.error = "";
+                complete();
+            };
+            proc.stdout?.on("data", read);
+            proc.stderr?.on("data", read);
+            proc.on("error", () => {
+                if (child === proc)
+                    child = null;
+                complete("no-cloudflared");
+            });
+            proc.on("exit", () => {
+                if (child === proc)
+                    child = null;
+                // Si ya habíamos devuelto una URL y después muere cloudflared, deja de
+                // anunciarse de inmediato. Un cierre tras timeout conserva ese error.
+                if (settled) {
+                    if (state.status === "on")
+                        finish("");
+                    return;
+                }
+                complete(state.status === "starting" ? "crashed" : "");
+            });
         });
-        child.on("exit", () => {
-            clearTimeout(timer);
-            // Si ya estaba en marcha, esto es un cierre; si no, es que no arrancó.
-            if (state.status === "starting")
-                finish("crashed");
-            else
-                finish("");
-            done(tunnelState());
-        });
-    });
+    })();
+    try {
+        return await starting;
+    }
+    finally {
+        starting = null;
+    }
 }
 export function stopTunnel() {
     child?.kill();
@@ -183,4 +231,40 @@ for (const signal of ["SIGINT", "SIGTERM", "exit"]) {
     process.on(signal, () => {
         child?.kill();
     });
+}
+/* ── abrirlo solo ────────────────────────────────────────────────────── */
+const CLAVE_AUTO = "tunnel.autostart";
+/** ¿Debe publicarse la instancia sola al arrancar? Por defecto sí. */
+export function tunnelAutostart() {
+    return meta(CLAVE_AUTO, () => "1") === "1";
+}
+export function setTunnelAutostart(on) {
+    setMeta(CLAVE_AUTO, on ? "1" : "0");
+}
+/**
+ * Abrir el enlace público sin que nadie lo pida (§5, §6).
+ *
+ * Quien hospeda no tiene por qué saber que existe un túnel: lo que quiere es
+ * una dirección que pasarle a sus amigos. Así que se abre solo al arrancar y
+ * la invitación ya nace pública.
+ *
+ * Dos condiciones, y las dos importan:
+ *  - Solo si la instancia ya tiene dueño. Una recién instalada no se publica
+ *    antes de que alguien la reclame, o el primer desconocido que encuentre la
+ *    dirección se la queda.
+ *  - Solo si nadie lo ha apagado en los ajustes.
+ *
+ * Que falle no es motivo para no arrancar: la instancia sigue sirviendo en
+ * local y la interfaz enseña el error.
+ */
+export async function autostartTunnel(hayDueno) {
+    if (!hayDueno || !tunnelAutostart() || config.publicUrl || fixedPublicUrl())
+        return;
+    try {
+        await startTunnel();
+    }
+    catch (err) {
+        state.error = err instanceof Error ? err.message : String(err);
+        state.status = "error";
+    }
 }

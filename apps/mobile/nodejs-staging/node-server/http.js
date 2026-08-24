@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { config, MAX_UPLOAD_BYTES } from "./config.js";
 import { authenticate } from "./auth.js";
-import { publicUrl } from "./tunnel.js";
 export class HttpError extends Error {
     status;
     code;
@@ -23,16 +22,26 @@ export const conflict = (msg) => new HttpError(409, "CONFLICT", msg);
  * Se mira el socket, nunca una cabecera: las cabeceras las escribe el cliente.
  * Con un proxy delante el socket es el del proxy, así que ahí nunca es local.
  */
+/* Cabeceras que solo existen cuando la peticion viene de fuera por delante: las
+   pone el borde de Cloudflare y quien llega desde internet no las puede quitar.
+   Sin esto no habia forma de distinguir al agente del tunel —que habla desde
+   127.0.0.1— de la persona sentada delante del ordenador. */
+const MARCAS_DE_REENVIO = ["cf-ray", "cf-connecting-ip", "cf-visitor", "x-forwarded-for", "x-forwarded-host"];
+function llegaPorDelante(ctx) {
+    return MARCAS_DE_REENVIO.some((cabecera) => ctx.req.headers[cabecera] !== undefined);
+}
 export function isLocalRequest(ctx) {
     if (config.trustProxy)
         return false;
-    /* Con la instancia publicada —un túnel abierto o PUBLIC_URL puesta— el socket
-       SIGUE siendo 127.0.0.1, porque quien se conecta de verdad es el agente del
-       túnel corriendo en esta misma máquina. Sin esta comprobación, "estoy sentado
-       delante del ordenador" pasaba a significar "tengo la URL", y con eso
-       /auth/recover entregaba una sesión de quien hospeda a cualquiera que la
-       pidiera. Publicada la instancia, nadie es local. */
-    if (publicUrl())
+    /* PUBLIC_URL puesta a mano: alguien colgo la instancia de internet por un
+       camino que no conocemos, asi que no podemos reconocer sus reenvios. Ahi no
+       hay nadie local, como antes. */
+    if (config.publicUrl)
+        return false;
+    /* Con el tunel que abre la propia app si sabemos reconocerlos, y por eso
+       estar sentado delante del ordenador sigue valiendo aunque este publicada:
+       una peticion reenviada trae marcas, la tuya no. */
+    if (llegaPorDelante(ctx))
         return false;
     const address = ctx.req.socket.remoteAddress ?? "";
     return address === "::1" || address === "127.0.0.1" || address.startsWith("::ffff:127.");

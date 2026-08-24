@@ -254,6 +254,38 @@ test("el túnel se maneja desde el equipo anfitrión, no por cualquier admin rem
   assert.equal(relevo.status, 403, "ni decidir por dónde pasa la voz de la instancia");
 });
 
+test("la instancia publica su id y solo fija una dirección que vuelve al mismo servidor", async () => {
+  const login = await call("POST", "/api/v1/auth/login", {
+    body: { username: "ana", password: "contrasena-larga-1" },
+  });
+  const info = await call("GET", "/api/v1/info");
+  assert.equal(typeof info.json.instance_id, "string");
+
+  const { setTunnelAutostart } = await import("./tunnel.ts");
+  setTunnelAutostart(false);
+  const fixed = await call("PUT", "/api/v1/instance/public-url", {
+    token: login.json.access_token,
+    body: { url: base },
+  });
+  assert.equal(fixed.status, 200);
+  assert.equal(fixed.json.ok, true);
+  assert.equal(fixed.json.public_url, base);
+
+  const invalid = await call("PUT", "/api/v1/instance/public-url", {
+    token: login.json.access_token,
+    body: { url: "ftp://no-es-publicable.example" },
+  });
+  assert.equal(invalid.json.ok, false);
+
+  const cleared = await call("PUT", "/api/v1/instance/public-url", {
+    token: login.json.access_token,
+    body: { url: "" },
+  });
+  assert.equal(cleared.json.ok, true);
+  assert.equal(cleared.json.public_url, "");
+  setTunnelAutostart(true);
+});
+
 test("el relevo de voz se configura desde la aplicación y no acepta un valor que no relevaría", async () => {
   const { setRelay, relayState, iceServers } = await import("./ice.ts");
   const urls = async () =>

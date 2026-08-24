@@ -28,13 +28,14 @@ import {
   instanceBase,
   isLocalInstance,
   isPackaged,
-  parseInvite,
+  normalizeInstanceUrl,
   peekPendingCommunity,
   setActiveInstance,
   takePendingInvite,
   type PendingCommunity,
 } from "./lib/instance.ts";
 import { phoneCanHost, startPhoneServer } from "./lib/phoneHost.ts";
+import { ensurePortableIdentity } from "./lib/portable.ts";
 import { onStaleBuild, watchBuild } from "./lib/version.ts";
 import type { Invite as InviteEntity } from "@distop/protocol";
 
@@ -136,6 +137,7 @@ export function App() {
   const [pendingCommunity, setPendingCommunity] = useState<PendingCommunity | null>(() => peekPendingCommunity());
   const [mobilePane, setMobilePane] = useState<"nav" | "main" | "members">("main");
   const [membersOpen, setMembersOpen] = usePanel("members", true);
+  const [changedPublicUrl, setChangedPublicUrl] = useState("");
   const isMobile = useIsMobile();
   const activeChannel = activeData?.channels.find((channel) => channel.id === activeChannelId);
   const voiceChat = activeChannel?.kind === "voice";
@@ -163,6 +165,16 @@ export function App() {
     })();
   }, [boot]);
 
+  /* Toda forma de entrada termina poniendo `user` en el store. Enlazar aquí la
+     identidad del dispositivo evita que una dirección pública nueva cree otra
+     persona: el servidor puede devolver el mismo user_id, membresías y roles. */
+  useEffect(() => {
+    if (!user) return;
+    void ensurePortableIdentity(user).catch(() => {
+      // Compatibilidad con instancias antiguas: conservar la sesión actual.
+    });
+  }, [user?.id]);
+
   /* El servidor puede abrir el túnel en paralelo al arranque del cliente. La
      primera /info aún puede verlo como "starting"; sin esta sincronización la
      URL pública existía, pero la interfaz conservaba 127.0.0.1 toda la sesión. */
@@ -176,6 +188,12 @@ export function App() {
         const tunnel = await api<{ status: string; public_url: string }>("GET", "/api/v1/instance/tunnel");
         if (cancelled) return;
         useStore.setState({ publicUrl: tunnel.public_url });
+        if (tunnel.public_url) {
+          const key = "distop.lastPublicUrl";
+          const previous = localStorage.getItem(key);
+          if (previous && previous !== tunnel.public_url) setChangedPublicUrl(tunnel.public_url);
+          localStorage.setItem(key, tunnel.public_url);
+        }
         if (tunnel.status === "starting") timer = setTimeout(syncTunnel, 750);
         else if (tunnel.status === "on") timer = setTimeout(syncTunnel, 10_000);
       } catch {
@@ -322,6 +340,16 @@ export function App() {
         blocked={creating || joining || invite || Boolean(inviteCode)}
       />
       <WallpaperTuner />
+      {changedPublicUrl ? (
+        <div className="fixed right-4 bottom-4 z-50 flex max-w-sm flex-col gap-2 rounded-card border border-line bg-raise p-4 shadow-[var(--shadow)]">
+          <p className="text-sm font-semibold">{t("share.addressChanged")}</p>
+          <code className="truncate rounded bg-sunken p-2 text-xs">{changedPublicUrl}</code>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setChangedPublicUrl("")}>{t("common.close")}</Button>
+            <Button variant="primary" onClick={() => void navigator.clipboard.writeText(changedPublicUrl)}>{t("common.copy")}</Button>
+          </div>
+        </div>
+      ) : null}
       <StaleBuild />
     </div>
   );
@@ -360,7 +388,7 @@ function UnavailableSwitch({ target, onBack }: { target: PendingCommunity; onBac
         {error ? <ErrorNote>{error}</ErrorNote> : null}
         <div className="flex justify-end gap-2">
           <Button onClick={onBack}>{t("common.back")}</Button>
-          <Button variant="primary" onClick={() => void retry()} disabled={busy || !parseInvite(link)?.code}>
+          <Button variant="primary" onClick={() => void retry()} disabled={busy || !normalizeInstanceUrl(link)}>
             {t("community.joinAction")}
           </Button>
         </div>

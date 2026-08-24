@@ -25,15 +25,11 @@ import { meta, setMeta } from "./db.js";
 import { badRequest } from "./http.js";
 /** Descubrimiento de dirección pública. Varios porque uno solo puede estar caído. */
 const STUN = [{ urls: ["stun:stun.cloudflare.com:3478", "stun:stun.l.google.com:19302"] }];
-const QUALITIES = ["low", "medium", "high"];
-const PRIORITIES = ["fluid", "balanced", "sharp"];
 const DEFAULT = {
     mode: "direct",
     // Por defecto por la instancia: es lo único que funciona sin configurar nada,
     // y una comunidad casera son cuatro personas, no cuarenta.
     video: "host",
-    quality: "medium",
-    priority: "balanced",
     url: "",
     username: "",
     credential: "",
@@ -51,10 +47,6 @@ function stored() {
             saved.mode = "direct";
         if (saved.video !== "direct")
             saved.video = "host";
-        if (!QUALITIES.includes(saved.quality))
-            saved.quality = "medium";
-        if (!PRIORITIES.includes(saved.priority))
-            saved.priority = "balanced";
         return saved;
     }
     catch {
@@ -144,8 +136,6 @@ export function relayState() {
     return {
         mode: relay.mode,
         video: relay.video,
-        quality: relay.quality,
-        priority: relay.priority,
         url: relay.url,
         username: relay.username,
         keyId: relay.keyId,
@@ -155,17 +145,12 @@ export function relayState() {
 }
 /** Lo necesita cualquiera que entre, no solo quien hospeda: va en /info. */
 export function videoMode() {
-    const relay = stored();
-    return { mode: relay.video, quality: relay.quality, priority: relay.priority };
+    return { mode: stored().video };
 }
 export async function setRelay(next) {
     const relay = { ...stored(), ...next };
     if (relay.video !== "direct")
         relay.video = "host";
-    if (!QUALITIES.includes(relay.quality))
-        relay.quality = "medium";
-    if (!PRIORITIES.includes(relay.priority))
-        relay.priority = "balanced";
     // Con el vídeo pasando por la instancia no hay conexión directa que arreglar,
     // así que un relevo TURN no pintaría nada: se guarda igual por si se cambia.
     if (relay.mode === "cloudflare" || relay.mode === "metered") {

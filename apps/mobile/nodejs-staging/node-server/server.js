@@ -13,6 +13,8 @@ import { countOwners, pruneSessions } from "./auth.js";
 import { handleRequest } from "./http.js";
 import { handleUpgrade } from "./gateway.js";
 import { setState, VERSION } from "./instance.js";
+import { autostartTunnel } from "./tunnel.js";
+import { restoreTailscale } from "./tailscale.js";
 import "./api.js"; // registra las rutas
 /* Junto al servidor por convención (repo y paquetes de escritorio/Termux); la
    variable existe para los entornos donde esa convención no puede cumplirse,
@@ -110,6 +112,11 @@ server.listen(config.port, config.host, () => {
             "",
         ].join("\n"));
     }
+    /* El enlace publico se abre solo, para que quien hospeda solo tenga que
+       crear la invitacion. Nunca en una instancia sin duenno: publicarla antes
+       de que alguien la reclame es regalarsela al primero que pase. */
+    void autostartTunnel(countOwners() > 0);
+    restoreTailscale();
 });
 /** Cierre limpio: sin esto, docker stop deja WAL a medio escribir. */
 for (const signal of ["SIGINT", "SIGTERM"]) {

@@ -13,9 +13,11 @@ import { api } from "../lib/api.ts";
 import {
   clientOrigin,
   connectToInstance,
+  forgetKnownCommunity,
   instanceBase,
   isPackaged,
   knownInstances,
+  normalizeInstanceUrl,
   parseInvite,
   rememberCommunities,
   setActiveInstance,
@@ -64,11 +66,12 @@ export function Rail({
   const unread = useCommunityUnread();
 
   const [status, setStatus] = useState(false);
+  const [knownRevision, setKnownRevision] = useState(0);
   const [unavailable, setUnavailable] = useState<{ community: CachedCommunity; url: string } | null>(null);
 
   useEffect(() => {
     if (isPackaged() && instanceBase) rememberCommunities(instanceBase, communities);
-  }, [communities]);
+  }, [communities, knownRevision]);
 
   const visibleCommunities = useMemo(() => {
     const here = communities.map((community) => ({ community, url: instanceBase }));
@@ -175,6 +178,7 @@ export function Rail({
         target={unavailable}
         user={user}
         onClose={() => setUnavailable(null)}
+        onForget={() => setKnownRevision((revision) => revision + 1)}
       />
     </nav>
   );
@@ -203,10 +207,12 @@ function UnavailableCommunity({
   target,
   user,
   onClose,
+  onForget,
 }: {
   target: { community: CachedCommunity; url: string } | null;
   user: ReturnType<typeof useStore.getState>["user"];
   onClose: () => void;
+  onForget: () => void;
 }) {
   const t = useT();
   const [link, setLink] = useState("");
@@ -228,6 +234,13 @@ function UnavailableCommunity({
     }
   }
 
+  function forget(): void {
+    if (!target || !confirm(t("community.forgetConfirm"))) return;
+    forgetKnownCommunity(target.url, target.community.id);
+    onForget();
+    onClose();
+  }
+
   return (
     <Modal open={Boolean(target)} onClose={onClose} title={target?.community.name ?? t("community.unavailableTitle")}>
       <div className="flex flex-col gap-4">
@@ -236,9 +249,10 @@ function UnavailableCommunity({
           {(id) => <input id={id} className="field" value={link} onChange={(event) => setLink(event.target.value)} />}
         </Field>
         {error ? <ErrorNote>{error}</ErrorNote> : null}
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="danger" onClick={forget}>{t("community.forget")}</Button>
           <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="primary" onClick={() => void retry()} disabled={busy || !parseInvite(link)?.code}>
+          <Button variant="primary" onClick={() => void retry()} disabled={busy || !normalizeInstanceUrl(link)}>
             {t("community.joinAction")}
           </Button>
         </div>
@@ -531,6 +545,15 @@ interface TunnelState {
   public_url: string;
   /** Si se abre solo al arrancar. Solo viene en la respuesta de quien hospeda. */
   autostart?: boolean;
+  fixed_url?: string;
+}
+
+interface TailscaleState {
+  step: number;
+  state: "missing" | "login" | "ready" | "active" | "error";
+  url: string;
+  error: string;
+  hint_url: string;
 }
 
 /**
@@ -550,6 +573,8 @@ function ShareInstance() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [autostart, setAutostart] = useState(true);
+  const [mode, setMode] = useState<"cloudflare" | "tailscale">("cloudflare");
+  const [tailscale, setTailscale] = useState<TailscaleState | null>(null);
 
   // Solo quien hospeda puede abrir el túnel; para el resto, la sección se queda
   // en "esta es la dirección" sin botones que darían 403.
@@ -558,11 +583,26 @@ function ShareInstance() {
       .then((state) => {
         setIsHost(true);
         setTunnel(state);
+        if (state.fixed_url?.endsWith(".ts.net")) setMode("tailscale");
         useStore.setState({ publicUrl: state.public_url });
         if (typeof state.autostart === "boolean") setAutostart(state.autostart);
       })
       .catch(() => setIsHost(false));
   }, []);
+
+  useEffect(() => {
+    if (!isHost || mode !== "tailscale") return;
+    let cancelled = false;
+    const load = () => void api<TailscaleState>("GET", "/api/v1/instance/tailscale")
+      .then((state) => !cancelled && setTailscale(state))
+      .catch((err) => !cancelled && setError(errorText(err)));
+    load();
+    const timer = setInterval(load, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isHost, mode, errorText]);
 
   async function toggleAutostart(enabled: boolean): Promise<void> {
     setAutostart(enabled);
@@ -576,6 +616,13 @@ function ShareInstance() {
 
   const address = publicUrl || clientOrigin();
   const isLocal = !publicUrl && /localhost|127\.0\.0\.1|\[::1\]/.test(address);
+  const tailscaleTextKey = {
+    missing: "share.tailscale.missing",
+    login: "share.tailscale.login",
+    ready: "share.tailscale.ready",
+    active: "share.tailscale.active",
+    error: "share.tailscale.error",
+  } as const;
 
   async function toggle(): Promise<void> {
     setBusy(true);
@@ -586,6 +633,43 @@ function ShareInstance() {
       // La dirección nueva manda ya para las invitaciones, sin reiniciar nada.
       useStore.setState({ publicUrl: state.public_url });
       if (state.status === "error") setError(t(state.error === "no-cloudflared" ? "share.needsCloudflared" : "share.failed"));
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function advanceFixed(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const state = await api<TailscaleState>("POST", "/api/v1/instance/tailscale");
+      setTailscale(state);
+      if (state.url && state.state === "active") useStore.setState({ publicUrl: state.url });
+      /* La primera activación devuelve una URL oficial que ya contiene el
+         tailnet y el equipo. Abrirla evita mandar a la persona a buscar Funnel
+         a mano en una consola cuyo menú cambia con frecuencia. El enlace queda
+         también visible por si el navegador bloquea la pestaña automática. */
+      if (state.hint_url) window.open(state.hint_url, "_blank", "noopener,noreferrer");
+      if (state.error) setError(state.error);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disableFixed(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      const state = await api<TailscaleState>("DELETE", "/api/v1/instance/tailscale");
+      setTailscale(state);
+      setMode("cloudflare");
+      const cloudflare = await api<TunnelState>("GET", "/api/v1/instance/tunnel");
+      setTunnel(cloudflare);
+      useStore.setState({ publicUrl: cloudflare.public_url });
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -616,28 +700,75 @@ function ShareInstance() {
       {isLocal ? <p className="text-xs text-warn">{t("share.localOnly")}</p> : <p className="text-xs text-ok">{t("share.ready")}</p>}
 
       {isHost ? (
-        <div className="flex flex-col gap-1.5">
-          <Button variant={tunnel?.status === "on" ? "ghost" : "primary"} onClick={toggle} disabled={busy}>
-            {busy ? t("share.opening") : tunnel?.status === "on" ? t("share.closeLink") : t("share.createLink")}
-          </Button>
-          <p className="text-xs text-muted">
-            {tunnel?.status === "on" ? t("share.linkTemporary") : t("share.createLinkHint")}
-          </p>
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2 rounded-[10px] bg-sunken p-1">
+            <Button variant={mode === "cloudflare" ? "primary" : "ghost"} onClick={() => setMode("cloudflare")}>
+              Cloudflare
+            </Button>
+            <Button variant={mode === "tailscale" ? "primary" : "ghost"} onClick={() => setMode("tailscale")}>
+              Tailscale Funnel
+            </Button>
+          </div>
 
-          {/* Se abre solo al arrancar, pero el ordenador queda accesible desde
-              internet mientras la app este abierta: tiene que poder apagarse. */}
-          <label className="flex items-start gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={autostart}
-              onChange={(e) => void toggleAutostart(e.target.checked)}
-              style={{ accentColor: "var(--accent)" }}
-            />
-            <span>
-              <span className="font-semibold">{t("share.autostart")}</span>
-              <span className="block text-muted">{t("share.autostartHint")}</span>
-            </span>
-          </label>
+          {mode === "cloudflare" ? (
+            <div className="flex flex-col gap-1.5">
+              <Button variant={tunnel?.status === "on" ? "ghost" : "primary"} onClick={toggle} disabled={busy}>
+                {busy ? t("share.opening") : tunnel?.status === "on" ? t("share.closeLink") : t("share.createLink")}
+              </Button>
+              <p className="text-xs text-muted">{t("share.cloudflareHint")}</p>
+              <label className="flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={autostart}
+                  onChange={(e) => void toggleAutostart(e.target.checked)}
+                  style={{ accentColor: "var(--accent)" }}
+                />
+                <span>
+                  <span className="font-semibold">{t("share.autostart")}</span>
+                  <span className="block text-muted">{t("share.autostartHint")}</span>
+                </span>
+              </label>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 rounded-[10px] border border-line p-3">
+              <p className="text-xs font-semibold">{t("share.fixedStep", { step: String(tailscale?.step ?? 1) })}</p>
+              <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs text-muted">
+                <li>{t("share.tutorial.install")}</li>
+                <li>{t("share.tutorial.continue")}</li>
+                <li>{t("share.tutorial.authorize")}</li>
+                <li>{t("share.tutorial.finish")}</li>
+              </ol>
+              <a
+                className="text-xs font-semibold text-accent underline underline-offset-2"
+                href="https://tailscale.com/docs/features/tailscale-funnel"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("share.officialTutorial")}
+              </a>
+              <p className="text-xs text-muted">
+                {t(tailscaleTextKey[tailscale?.state ?? "ready"])}
+              </p>
+              {tailscale?.url ? <code className="truncate rounded bg-sunken p-2 text-xs">{tailscale.url}</code> : null}
+              {tailscale?.hint_url ? (
+                <div className="flex flex-col gap-2 rounded-[10px] border-2 border-accent bg-accent/10 p-3 shadow-[0_0_0_3px_color-mix(in_srgb,var(--accent)_20%,transparent)]">
+                  <p className="text-xs font-bold text-accent">{t("share.authorizationRequired")}</p>
+                  <p className="text-xs text-muted">{t("share.authorizationHint")}</p>
+                  <a className="btn btn-primary min-h-10 w-full text-center text-sm font-bold" href={tailscale.hint_url} target="_blank" rel="noreferrer">
+                    {t("share.enableFunnel")}
+                  </a>
+                </div>
+              ) : null}
+              {tailscale?.state === "active" ? (
+                <Button variant="ghost" onClick={() => void disableFixed()} disabled={busy}>{t("share.useCloudflare")}</Button>
+              ) : (
+                <Button variant="primary" onClick={() => void advanceFixed()} disabled={busy}>
+                  {busy ? t("common.loading") : t("share.continue")}
+                </Button>
+              )}
+              <p className="text-xs text-muted">{t("share.tailscaleFairUse")}</p>
+            </div>
+          )}
 
           {error ? <ErrorNote>{error}</ErrorNote> : null}
         </div>

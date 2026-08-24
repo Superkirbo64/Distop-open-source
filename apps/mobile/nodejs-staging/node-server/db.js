@@ -261,6 +261,19 @@ const MIGRATIONS = [
   );
   CREATE INDEX idx_game_sessions_user ON game_sessions(user_id, started_at DESC);
   `,
+    /* Identidad del dispositivo, compartida entre instancias.
+       La instancia solo guarda un hash del secreto: el identificador por si solo
+       no permite suplantar a nadie. `user_id` es unico porque una cuenta local
+       representa a una sola persona portable en este servidor. */
+    `
+  CREATE TABLE portable_identities (
+    identity_id TEXT PRIMARY KEY,
+    user_id      TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    secret_hash  TEXT NOT NULL,
+    created_at   INTEGER NOT NULL
+  );
+  CREATE INDEX idx_portable_user ON portable_identities(user_id);
+  `,
 ];
 const current = db.prepare("PRAGMA user_version").get().user_version;
 for (let i = current; i < MIGRATIONS.length; i++) {

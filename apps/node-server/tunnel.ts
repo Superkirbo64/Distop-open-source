@@ -42,13 +42,24 @@ export function tunnelState(): TunnelState {
   return { ...state };
 }
 
+const CLAVE_FIJA = "public.fixed";
+
+/** Dirección estable elegida explícitamente por quien hospeda. */
+export function fixedPublicUrl(): string {
+  return meta(CLAVE_FIJA, () => "");
+}
+
+export function setFixedPublicUrl(url: string): void {
+  setMeta(CLAVE_FIJA, url);
+}
+
 /**
  * Dirección pública efectiva: manda el túnel vivo sobre PUBLIC_URL.
  * Así las invitaciones salen con la dirección buena sin reiniciar la instancia,
  * que es justo lo que obligaba a editar el .env a mano.
  */
 export function publicUrl(): string {
-  return state.status === "on" && state.url ? state.url : config.publicUrl;
+  return fixedPublicUrl() || (state.status === "on" && state.url ? state.url : config.publicUrl);
 }
 
 /* ── conseguir cloudflared sin pedirle nada a nadie ─────────────────── */
@@ -263,7 +274,7 @@ export function setTunnelAutostart(on: boolean): void {
  * local y la interfaz enseña el error.
  */
 export async function autostartTunnel(hayDueno: boolean): Promise<void> {
-  if (!hayDueno || !tunnelAutostart() || config.publicUrl) return;
+  if (!hayDueno || !tunnelAutostart() || config.publicUrl || fixedPublicUrl()) return;
   try {
     await startTunnel();
   } catch (err) {

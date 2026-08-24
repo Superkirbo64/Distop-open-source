@@ -7,9 +7,9 @@ import { randomBytes } from "node:crypto";
 import { PERMISSIONS, ALL_PERMISSIONS, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
-import { setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
+import { fixedPublicUrl, setFixedPublicUrl, setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
 import { iceServers, relayState, setRelay, videoMode } from "./ice.ts";
-import { audit, db, markCommunityRead, seedCommunity, uniqueSlug } from "./db.ts";
+import { audit, db, INSTANCE_ID, markCommunityRead, seedCommunity, uniqueSlug } from "./db.ts";
 import {
   authenticate,
   countOwners,
@@ -80,6 +80,7 @@ import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAtta
 import { disconnectSession, disconnectUser, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.ts";
 import { statesOfCommunity } from "./voice.ts";
+import { advanceTailscale, stopTailscale, tailscaleState } from "./tailscale.ts";
 
 /* ── guardas ───────────────────────────────────────────────────────── */
 
@@ -105,6 +106,7 @@ route("GET", "/health", () => instanceHealth(onlineCount()));
 route("GET", "/api/v1/health", () => instanceHealth(onlineCount()));
 
 route("GET", "/api/v1/info", async (ctx) => ({
+  instance_id: INSTANCE_ID,
   name: config.instanceName,
   version: VERSION,
   registration_enabled: config.registrationEnabled,
@@ -2162,8 +2164,59 @@ function requireTunnelHost(ctx: Ctx): ReturnType<typeof requireAuth> {
 
 /** Estado operativo y dirección efectiva en una sola foto coherente. */
 function tunnelView() {
-  return { ...tunnelState(), autostart: tunnelAutostart(), public_url: publicUrl() };
+  return { ...tunnelState(), autostart: tunnelAutostart(), public_url: publicUrl(), fixed_url: fixedPublicUrl() };
 }
+
+route("PUT", "/api/v1/instance/public-url", async (ctx) => {
+  requireTunnelHost(ctx);
+  const body = await readJson(ctx);
+  const raw = typeof body.url === "string" ? body.url.trim().replace(/\/+$/, "") : "";
+  if (!raw) {
+    setFixedPublicUrl("");
+    if (tunnelAutostart() && !config.publicUrl) void startTunnel();
+    return { ok: true, reachable: true, public_url: publicUrl(), error: "" };
+  }
+
+  let candidate: URL;
+  try {
+    candidate = new URL(raw);
+  } catch {
+    return { ok: false, reachable: false, public_url: publicUrl(), error: "La dirección no es una URL válida." };
+  }
+  if (!['http:', 'https:'].includes(candidate.protocol) || candidate.username || candidate.password) {
+    return { ok: false, reachable: false, public_url: publicUrl(), error: "La dirección debe comenzar por http:// o https:// y no incluir credenciales." };
+  }
+
+  try {
+    const response = await fetch(`${candidate.origin}/api/v1/info`, { signal: AbortSignal.timeout(12_000) });
+    const info = (await response.json()) as { instance_id?: string };
+    if (!response.ok || info.instance_id !== INSTANCE_ID) {
+      return { ok: false, reachable: true, public_url: publicUrl(), error: "La dirección responde, pero pertenece a otra instancia de Distop." };
+    }
+  } catch {
+    return { ok: false, reachable: false, public_url: publicUrl(), error: "No se pudo llegar a esta instancia mediante esa dirección." };
+  }
+
+  setFixedPublicUrl(candidate.origin);
+  stopTunnel();
+  return { ok: true, reachable: true, public_url: publicUrl(), error: "" };
+});
+
+route("GET", "/api/v1/instance/tailscale", (ctx) => {
+  requireTunnelHost(ctx);
+  return tailscaleState();
+});
+
+route("POST", "/api/v1/instance/tailscale", (ctx) => {
+  requireTunnelHost(ctx);
+  rateLimit(`tailscale:${ctx.ip}`, 8, 60_000);
+  return advanceTailscale();
+});
+
+route("DELETE", "/api/v1/instance/tailscale", (ctx) => {
+  requireTunnelHost(ctx);
+  return stopTailscale();
+});
 
 route("GET", "/api/v1/instance/tunnel", (ctx) => {
   requireTunnelHost(ctx);
