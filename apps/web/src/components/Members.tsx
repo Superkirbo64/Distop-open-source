@@ -91,10 +91,13 @@ export function Members({ onClose }: { onClose: () => void }) {
             return (
               /* La placa es el banner del perfil, sin catálogo aparte: quien elige
                  su banner ya eligió su placa. Va en background-image y el hover en
-                 background-color, por eso conviven sin pisarse (ver styles.css). */
+                 background-color, por eso conviven sin pisarse (ver styles.css).
+
+                 `cv-row` (styles.css): las filas fuera del viewport no pagan
+                 layout ni pintura y sus animaciones (aros, fx-*) se pausan solas. */
               <li
                 key={member.user.id}
-                className={`group flex items-center gap-2 rounded-[10px] px-2 py-1.5 hover:bg-raise${member.user.banner_url ? " plate" : ""}`}
+                className={`group cv-row flex items-center gap-2 rounded-[10px] px-2 py-1.5 hover:bg-raise${member.user.banner_url ? " plate" : ""}`}
                 style={plateStyle(member.user.banner_url)}
               >
                 <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setProfile(member)}>
@@ -131,7 +134,13 @@ export function Members({ onClose }: { onClose: () => void }) {
                 </button>
 
                 {canModerate && (canKick || canBan || canTimeout) ? (
+                  /* `floating` no es estético: el content-visibility de la fila
+                     trae `contain: paint`, que recorta a la caja de la fila
+                     cualquier despliegue posicionado dentro — el menú absoluto
+                     de antes quedaba cortado a una línea. Portalizado al body,
+                     el recorte no lo alcanza. */
                   <Menu
+                    floating
                     trigger={({ onClick }) => (
                       <IconButton label={t("members.title")} onClick={onClick} className="h-7 w-7 opacity-0 group-hover:opacity-100 focus:opacity-100">
                         <MoreVertical size={14} />

@@ -3,7 +3,7 @@
  * El historial se agrupa por autor y por día para que leer una conversación
  * larga no sea una lista plana de bloques repetidos.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, CornerUpLeft, Hash, Megaphone, MessageSquareText, MonitorUp, MoreVertical, Paperclip, PhoneOff, Pin, Search, Smile, VideoOff, Volume2, X } from "lucide-react";
 import { People, Send, Upload } from "./icons.tsx";
 import { PERMISSIONS, has, isJumbo, toBits, type Attachment, type Channel, type Member, type Message } from "@distop/protocol";
@@ -53,16 +53,32 @@ export function Chat({
   const [editing, setEditing] = useState<Message | null>(null);
   const [showPins, setShowPins] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
-  const voiceLocal = useVoiceLocal();
-  const [voiceNoteOff, setVoiceNoteOff] = useState(false);
-  /* Se descarta la nota, no el aviso: vuelve a aparecer la próxima vez que
-     entres a una sala de voz, que es cuando otra vez importa. */
-  useEffect(() => {
-    if (voiceLocal.channelId) setVoiceNoteOff(false);
-  }, [voiceLocal.channelId]);
+  const [viewing, setViewing] = useState<Attachment | null>(null);
+  /* Antes el visor vivía dentro de cada fila y cambiar de canal lo desmontaba;
+     con el estado subido aquí hay que conservar ese cierre a mano. */
+  useEffect(() => setViewing(null), [channelId]);
 
   const channel = data?.channels.find((c) => c.id === channelId);
   const memberIndex = useMemo(() => new Map((data?.members ?? []).map((m) => [m.user.id, m])), [data?.members]);
+  /* Índice por id para resolver la respuesta de cada mensaje en O(1): con
+     find() el render del historial recorría la lista entera por cada fila. */
+  const messageIndex = useMemo(() => new Map((messages ?? []).map((m) => [m.id, m])), [messages]);
+
+  /* Identidades estables para que el React.memo de MessageRow surta efecto:
+     una closure nueva por fila invalidaría la comparación en cada render, así
+     que reciben el mensaje como argumento en vez de capturarlo. `confirm` y
+     `t` ya son estables (useCallback en ui.tsx; `t` solo cambia de identidad
+     con el idioma). */
+  const handleReply = useCallback((message: Message) => setReplyTo(message), []);
+  const handleEdit = useCallback((message: Message) => setEditing(message), []);
+  const handleViewImage = useCallback((file: Attachment) => setViewing(file), []);
+  const handleCloseImage = useCallback(() => setViewing(null), []);
+  const handleDelete = useCallback(
+    async (message: Message) => {
+      if (await confirm(t("message.deleteConfirm"))) await api("DELETE", `/api/v1/messages/${message.id}`);
+    },
+    [confirm, t],
+  );
 
   /* Los nombres que hacen falta para pintar `<@id>` y `<#id>`. Se pasan al
      markdown en vez de que él lea el estado: así renderContent sigue siendo una
@@ -154,62 +170,12 @@ export function Chat({
 
         <VoiceStage channelId={channel.id} />
 
-        <div className="flex flex-col items-center gap-2 px-4 py-4">
-          {voiceLocal.channelId === channel.id ? (
-            /* Pastilla de cristal en vez de barra opaca: flota sobre la sala y
-               deja quitar la cámara o la pantalla sin colgar la llamada. */
-            /* `relative z-20` no es decoración: `backdrop-blur` crea contexto de
-               apilamiento, así que el z-30 del menú de sonidos se resuelve DENTRO
-               de la pastilla y no la sube por encima de la nota de abajo —que
-               también lleva blur y va después en el DOM. Sin esto, a 390 px la
-               nota se comía los clics de la tabla de sonidos. */
-            <div className="relative z-20 flex items-center gap-1 rounded-full border border-line bg-surface/60 p-1 shadow-[var(--shadow)] backdrop-blur-md">
-              {/* La tabla de sonidos va primero: es lo que se usa durante la
-                  llamada, y colgar es lo último que se hace. */}
-              {communityId && data ? (
-                <VoiceSoundboard
-                  communityId={communityId}
-                  communityName={data.community.name}
-                  muted={voiceLocal.muted || voiceLocal.forcedMuted}
-                />
-              ) : null}
-              <span className="h-5 w-px shrink-0 bg-line" />
-              {voiceLocal.video ? (
-                <>
-                  <button
-                    onClick={() => void setVideoSource(null)}
-                    className="btn btn-ghost rounded-full border-transparent px-3 text-xs"
-                  >
-                    {voiceLocal.video === "camera" ? <VideoOff size={15} /> : <MonitorUp size={15} />}
-                    {t(voiceLocal.video === "camera" ? "voice.cameraOff" : "voice.screenOff")}
-                  </button>
-                  <span className="h-5 w-px shrink-0 bg-line" />
-                </>
-              ) : null}
-              <button onClick={leaveVoice} className="btn btn-danger rounded-full border-transparent px-4 text-xs">
-                <PhoneOff size={15} />
-                {t("voice.disconnect")}
-              </button>
-            </div>
-          ) : (
-            <Button
-              variant="primary"
-              disabled={!has(permissions, PERMISSIONS.CONNECT_VOICE)}
-              onClick={() => void joinVoice(channel.id)}
-            >
-              {t("voice.join")}
-            </Button>
-          )}
-          <VoiceSoundError error={voiceLocal.soundError} />
-          {voiceNoteOff ? null : (
-            <div className="flex max-w-md items-center gap-1 rounded-2xl border border-line bg-surface/50 py-1.5 pr-1.5 pl-3.5 backdrop-blur-md">
-              <p className="text-xs leading-relaxed text-muted">{t("voice.limits")}</p>
-              <IconButton label={t("common.close")} onClick={() => setVoiceNoteOff(true)} className="shrink-0">
-                <X size={15} />
-              </IconButton>
-            </div>
-          )}
-        </div>
+        <ChatVoiceHeader
+          channel={channel}
+          communityId={communityId}
+          communityName={data.community.name}
+          canConnect={has(permissions, PERMISSIONS.CONNECT_VOICE)}
+        />
         {confirmElement}
       </main>
     );
@@ -325,16 +291,15 @@ export function Chat({
                     isSelf={message.author_id === user?.id}
                     canManage={has(permissions, PERMISSIONS.MANAGE_MESSAGES)}
                     canReact={has(permissions, PERMISSIONS.ADD_REACTIONS)}
-                    replyTarget={messages.find((m) => m.id === message.reply_to_id)}
+                    replyTarget={message.reply_to_id ? messageIndex.get(message.reply_to_id) : undefined}
                     renderCtx={renderCtx}
                     mentioned={
                       (user ? message.content.includes(`<@${user.id}>`) : false) || message.mentions_everyone
                     }
-                    onReply={() => setReplyTo(message)}
-                    onEdit={() => setEditing(message)}
-                    onDelete={async () => {
-                      if (await confirm(t("message.deleteConfirm"))) await api("DELETE", `/api/v1/messages/${message.id}`);
-                    }}
+                    onReply={handleReply}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onViewImage={handleViewImage}
                     myId={user?.id ?? ""}
                   />
                 </div>
@@ -384,11 +349,95 @@ export function Chat({
         onCancelReply={() => setReplyTo(null)}
       />
 
+      <ImageViewer viewing={viewing} onClose={handleCloseImage} />
       <EditMessage message={editing} onClose={() => setEditing(null)} />
       <PinnedMessages channelId={channel.id} open={showPins} onClose={() => setShowPins(false)} members={memberIndex} />
       <ChannelSearch channelId={channel.id} open={showSearch} onClose={() => setShowSearch(false)} members={memberIndex} />
       {confirmElement}
     </main>
+  );
+}
+
+/**
+ * Controles de llamada del canal de voz activo.
+ * Vive aparte de Chat a propósito: useVoiceLocal emite en cada transición de
+ * habla (~180 ms durante una llamada), y con el hook dentro de Chat cada
+ * emisión repintaba también el historial completo. Aquí el repintado se queda
+ * en esta franja.
+ */
+function ChatVoiceHeader({
+  channel,
+  communityId,
+  communityName,
+  canConnect,
+}: {
+  channel: Channel;
+  communityId: string | null;
+  communityName: string;
+  canConnect: boolean;
+}) {
+  const t = useT();
+  const voiceLocal = useVoiceLocal();
+  const [voiceNoteOff, setVoiceNoteOff] = useState(false);
+  /* Se descarta la nota, no el aviso: vuelve a aparecer la próxima vez que
+     entres a una sala de voz, que es cuando otra vez importa. */
+  useEffect(() => {
+    if (voiceLocal.channelId) setVoiceNoteOff(false);
+  }, [voiceLocal.channelId]);
+
+  return (
+    <div className="flex flex-col items-center gap-2 px-4 py-4">
+      {voiceLocal.channelId === channel.id ? (
+        /* Pastilla de cristal en vez de barra opaca: flota sobre la sala y
+           deja quitar la cámara o la pantalla sin colgar la llamada. */
+        /* `relative z-20` no es decoración: `backdrop-blur` crea contexto de
+           apilamiento, así que el z-30 del menú de sonidos se resuelve DENTRO
+           de la pastilla y no la sube por encima de la nota de abajo —que
+           también lleva blur y va después en el DOM. Sin esto, a 390 px la
+           nota se comía los clics de la tabla de sonidos. */
+        <div className="relative z-20 flex items-center gap-1 rounded-full border border-line bg-surface/60 p-1 shadow-[var(--shadow)] backdrop-blur-md">
+          {/* La tabla de sonidos va primero: es lo que se usa durante la
+              llamada, y colgar es lo último que se hace. */}
+          {communityId ? (
+            <VoiceSoundboard
+              communityId={communityId}
+              communityName={communityName}
+              muted={voiceLocal.muted || voiceLocal.forcedMuted}
+            />
+          ) : null}
+          <span className="h-5 w-px shrink-0 bg-line" />
+          {voiceLocal.video ? (
+            <>
+              <button
+                onClick={() => void setVideoSource(null)}
+                className="btn btn-ghost rounded-full border-transparent px-3 text-xs"
+              >
+                {voiceLocal.video === "camera" ? <VideoOff size={15} /> : <MonitorUp size={15} />}
+                {t(voiceLocal.video === "camera" ? "voice.cameraOff" : "voice.screenOff")}
+              </button>
+              <span className="h-5 w-px shrink-0 bg-line" />
+            </>
+          ) : null}
+          <button onClick={leaveVoice} className="btn btn-danger rounded-full border-transparent px-4 text-xs">
+            <PhoneOff size={15} />
+            {t("voice.disconnect")}
+          </button>
+        </div>
+      ) : (
+        <Button variant="primary" disabled={!canConnect} onClick={() => void joinVoice(channel.id)}>
+          {t("voice.join")}
+        </Button>
+      )}
+      <VoiceSoundError error={voiceLocal.soundError} />
+      {voiceNoteOff ? null : (
+        <div className="flex max-w-md items-center gap-1 rounded-2xl border border-line bg-surface/50 py-1.5 pr-1.5 pl-3.5 backdrop-blur-md">
+          <p className="text-xs leading-relaxed text-muted">{t("voice.limits")}</p>
+          <IconButton label={t("common.close")} onClick={() => setVoiceNoteOff(true)} className="shrink-0">
+            <X size={15} />
+          </IconButton>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -412,11 +461,25 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
   const markRead = useStore((s) => s.markRead);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
+  const [viewing, setViewing] = useState<Attachment | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
   const channel = data?.channels.find((candidate) => candidate.id === channelId && candidate.kind === "voice");
   const memberIndex = useMemo(() => new Map((data?.members ?? []).map((member) => [member.user.id, member])), [data?.members]);
+  // Mismo índice O(1) y mismas identidades estables que en Chat: MessageRow es
+  // compartido y su React.memo depende de ellas.
+  const messageIndex = useMemo(() => new Map((messages ?? []).map((m) => [m.id, m])), [messages]);
+  const handleReply = useCallback((message: Message) => setReplyTo(message), []);
+  const handleEdit = useCallback((message: Message) => setEditing(message), []);
+  const handleViewImage = useCallback((file: Attachment) => setViewing(file), []);
+  const handleCloseImage = useCallback(() => setViewing(null), []);
+  const handleDelete = useCallback(
+    async (message: Message) => {
+      if (await confirm(t("message.deleteConfirm"))) await api("DELETE", `/api/v1/messages/${message.id}`);
+    },
+    [confirm, t],
+  );
   const renderCtx = useMemo<RenderContext>(
     () => ({
       users: new Map((data?.members ?? []).map((member) => [member.user.id, member.nickname ?? member.user.display_name])),
@@ -438,6 +501,7 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     setReplyTo(null);
     setEditing(null);
+    setViewing(null);
     atBottom.current = true;
   }, [channelId]);
 
@@ -502,14 +566,13 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
                   isSelf={message.author_id === user?.id}
                   canManage={has(permissions, PERMISSIONS.MANAGE_MESSAGES)}
                   canReact={has(permissions, PERMISSIONS.ADD_REACTIONS)}
-                  replyTarget={messages.find((candidate) => candidate.id === message.reply_to_id)}
+                  replyTarget={message.reply_to_id ? messageIndex.get(message.reply_to_id) : undefined}
                   renderCtx={renderCtx}
                   mentioned={(user ? message.content.includes(`<@${user.id}>`) : false) || message.mentions_everyone}
-                  onReply={() => setReplyTo(message)}
-                  onEdit={() => setEditing(message)}
-                  onDelete={async () => {
-                    if (await confirm(t("message.deleteConfirm"))) await api("DELETE", `/api/v1/messages/${message.id}`);
-                  }}
+                  onReply={handleReply}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onViewImage={handleViewImage}
                   myId={user?.id ?? ""}
                 />
               );
@@ -539,6 +602,7 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
         onCancelReply={() => setReplyTo(null)}
       />
 
+      <ImageViewer viewing={viewing} onClose={handleCloseImage} />
       <EditMessage message={editing} onClose={() => setEditing(null)} />
       {confirmElement}
     </aside>
@@ -547,7 +611,12 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
 
 /* ── una línea del historial ───────────────────────────────────────── */
 
-function MessageRow({
+/* React.memo porque el historial entero se repinta con cada mensaje nuevo, cada
+   "escribiendo…" y cada cambio del store que toque a Chat: con cientos de filas
+   eso era volver a pasar el markdown de todas. Solo funciona si TODAS las props
+   son primitivas o referencias estables — por eso los callbacks reciben el
+   mensaje como argumento en vez de capturarlo en una closure por fila. */
+const MessageRow = memo(function MessageRow({
   message,
   member,
   roles,
@@ -561,6 +630,7 @@ function MessageRow({
   onReply,
   onEdit,
   onDelete,
+  onViewImage,
   myId,
 }: {
   message: Message;
@@ -573,14 +643,14 @@ function MessageRow({
   replyTarget: Message | undefined;
   renderCtx: RenderContext;
   mentioned: boolean;
-  onReply: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  onReply: (message: Message) => void;
+  onEdit: (message: Message) => void;
+  onDelete: (message: Message) => void;
+  onViewImage: (file: Attachment) => void;
   myId: string;
 }) {
   const t = useT();
   const locale = useLocale();
-  const [viewing, setViewing] = useState<Attachment | null>(null);
 
   const jumbo = isJumbo(message.content);
 
@@ -650,7 +720,7 @@ function MessageRow({
                 <li key={file.id}>
                   {/* Abre en un diálogo, no en otra pestaña: mirar una foto no
                       debería sacarte de la conversación ni de la llamada. */}
-                  <button onClick={() => setViewing(file)} aria-label={t("message.imageOpen")}>
+                  <button onClick={() => onViewImage(file)} aria-label={t("message.imageOpen")}>
                     <img
                       src={file.url}
                       alt={file.filename}
@@ -700,22 +770,6 @@ function MessageRow({
         ) : null}
       </div>
 
-      <Modal open={viewing !== null} onClose={() => setViewing(null)} title={viewing?.filename ?? ""}>
-        {viewing ? (
-          <div className="flex flex-col gap-3">
-            <img src={viewing.url} alt={viewing.filename} className="max-h-[70vh] w-full rounded-[10px] object-contain" />
-            <a
-              href={viewing.url}
-              download={viewing.filename}
-              className="btn btn-ghost self-start"
-            >
-              <Paperclip size={14} />
-              {viewing.filename} · {formatBytes(locale, viewing.size)}
-            </a>
-          </div>
-        ) : null}
-      </Modal>
-
       {/* `invisible` y no `hidden`: ocupando sitio siempre, aparecer al pasar el
           ratón no reflota el texto de los mensajes largos. */}
       <div className="invisible flex shrink-0 gap-0.5 self-start rounded-[10px] border border-line bg-surface p-0.5 shadow-[var(--shadow)] group-hover:visible group-focus-within:visible">
@@ -746,7 +800,7 @@ function MessageRow({
           </Menu>
         ) : null}
 
-        <IconButton label={t("message.reply")} onClick={onReply} className="h-7 w-7">
+        <IconButton label={t("message.reply")} onClick={() => onReply(message)} className="h-7 w-7">
           <CornerUpLeft size={15} />
         </IconButton>
 
@@ -764,7 +818,7 @@ function MessageRow({
                   <MenuItem
                     onClick={() => {
                       close();
-                      onEdit();
+                      onEdit(message);
                     }}
                   >
                     {t("message.edit")}
@@ -784,7 +838,7 @@ function MessageRow({
                   danger
                   onClick={() => {
                     close();
-                    onDelete();
+                    onDelete(message);
                   }}
                 >
                   {t("message.delete")}
@@ -795,6 +849,33 @@ function MessageRow({
         ) : null}
       </div>
     </article>
+  );
+});
+
+/**
+ * Visor de imagen ÚNICO para todo el historial.
+ * Antes cada fila montaba su propio <dialog>: cientos de diálogos vacíos en el
+ * DOM y un motivo más para repintar filas. Con el estado en el contenedor hay
+ * un solo modal y las filas solo avisan de qué adjunto abrir.
+ */
+function ImageViewer({ viewing, onClose }: { viewing: Attachment | null; onClose: () => void }) {
+  const locale = useLocale();
+  return (
+    <Modal open={viewing !== null} onClose={onClose} title={viewing?.filename ?? ""}>
+      {viewing ? (
+        <div className="flex flex-col gap-3">
+          <img src={viewing.url} alt={viewing.filename} className="max-h-[70vh] w-full rounded-[10px] object-contain" />
+          <a
+            href={viewing.url}
+            download={viewing.filename}
+            className="btn btn-ghost self-start"
+          >
+            <Paperclip size={14} />
+            {viewing.filename} · {formatBytes(locale, viewing.size)}
+          </a>
+        </div>
+      ) : null}
+    </Modal>
   );
 }
 

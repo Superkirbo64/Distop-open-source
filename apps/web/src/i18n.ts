@@ -3,8 +3,6 @@
  * Las claves faltantes caen a español en vez de romper la interfaz.
  */
 import { es, type MessageKey } from "./locales/es.ts";
-import { en } from "./locales/en.ts";
-import { ptBR } from "./locales/pt-BR.ts";
 
 export const LOCALES = ["es", "pt-BR", "en"] as const;
 export type Locale = (typeof LOCALES)[number];
@@ -15,12 +13,28 @@ export const LOCALE_LABELS: Record<Locale, string> = {
   en: "English",
 };
 
-const DICTIONARIES: Record<Locale, Record<MessageKey, string>> = { es, en, "pt-BR": ptBR };
+/* Solo el español viaja en el bundle inicial: es la fuente tipada de las claves
+   y el fallback, así que no puede faltar. Los otros dos llegan por loadLocale
+   como chunks aparte, que la mayoría de sesiones nunca descarga. */
+const DICTIONARIES: Partial<Record<Locale, Record<MessageKey, string>>> = { es };
 
 export type { MessageKey };
 
+/**
+ * Descarga en diferido el diccionario de un idioma. Los import() van con rutas
+ * literales para que Vite pueda partir cada locale en su propio chunk; con una
+ * ruta calculada los metería todos juntos. Idempotente: pedir un idioma ya
+ * cargado (o el español) no vuelve a la red.
+ */
+export async function loadLocale(locale: Locale): Promise<void> {
+  if (DICTIONARIES[locale]) return;
+  if (locale === "en") DICTIONARIES.en = (await import("./locales/en.ts")).en;
+  else if (locale === "pt-BR") DICTIONARIES["pt-BR"] = (await import("./locales/pt-BR.ts")).ptBR;
+}
+
 export function translate(locale: Locale, key: MessageKey, vars?: Record<string, string | number>): string {
-  const template = DICTIONARIES[locale][key] ?? es[key] ?? key;
+  // Mientras el chunk del idioma no haya llegado se enseña español, no la clave.
+  const template = DICTIONARIES[locale]?.[key] ?? es[key] ?? key;
   if (!vars) return template;
   return template.replace(/\{(\w+)\}/g, (match, name: string) => String(vars[name] ?? match));
 }

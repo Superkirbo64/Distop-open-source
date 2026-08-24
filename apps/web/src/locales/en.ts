@@ -8,7 +8,6 @@ export const en: Record<keyof typeof es, string> = {
   "common.delete": "Delete",
   "common.close": "Close",
   "common.loading": "Loading…",
-  "common.retry": "Retry",
   "common.optional": "optional",
   "common.resize": "Drag to resize",
   "update.available": "A new version of the app is available.",
@@ -59,13 +58,11 @@ export const en: Record<keyof typeof es, string> = {
   "auth.recoverTitle": "Accounts on this device",
   "auth.recoverHint": "These accounts have no password. Since you're on this device, you can just walk right in.",
   "auth.registrationClosed": "Registration is closed on this server.",
-  "auth.guestClosed": "This server does not allow guests.",
 
   "setup.title": "Create your user",
   "setup.subtitle":
     "Pick a name and get in: no emails, no verification. You create your community once you're inside, whenever you want.",
   "setup.yourName": "Your name",
-  "setup.communityName": "Your community's name",
   "setup.password": "Password",
   "setup.passwordHint":
     "Optional for now. Without it you only get in from this device; you can set it any time from Settings.",
@@ -100,8 +97,6 @@ export const en: Record<keyof typeof es, string> = {
   "connect.title": "Connect to a community",
   "connect.hint":
     "The app travels with you; each community lives on its own server. Paste the address of the community you want to join.",
-  "connect.url": "Community address",
-  "connect.urlHint": "The same one you would use in the browser, with https:// in front.",
   "connect.action": "Connect",
   "connect.checking": "Checking…",
   "connect.invalid": "That address is not valid. Only http or https addresses are accepted.",
@@ -110,11 +105,9 @@ export const en: Record<keyof typeof es, string> = {
   "connect.notInstance": "Something answers at that address, but it is not a Distop server.",
   "connect.known": "Recent communities",
   "connect.forget": "Forget",
-  "connect.hostHere": "Host here",
   "connect.hostHint":
     "Your community runs on this computer, inside the app: your data stays with you. It will be available while this machine is on, and speed depends on your connection.",
   "connect.hostEnter": "Enter my community",
-  "connect.hostStarting": "Starting the server…",
   "connect.androidHint":
     "Choose which community to join: an invite link, your PC on this same Wi-Fi, or a server running on this very phone.",
   "connect.preparing": "Starting your server…",
@@ -148,23 +141,14 @@ export const en: Record<keyof typeof es, string> = {
   "share.address": "Address to invite people to",
   "share.localOnly":
     "Right now your server only exists on this computer. A link with this address will not work for anyone else.",
-  "share.howTo":
-    "Two ways to open it up: a tunnel (easiest, no router changes) or opening the port and pointing a domain at it.",
-  "share.tunnel": "Quick tunnel with Cloudflare, no account or config:",
-  "share.thenSet":
-    "Copy the URL it gives you and put it in PUBLIC_URL in your .env. From then on invites use that address.",
   "share.ready":
     "Your server is reachable from outside. Invites already use this address.",
   "share.createLink": "Create public link",
   "share.autostart": "Open the public link on start-up",
   "share.autostartHint":
     "Your community will be reachable from the internet while the app is open. Turn it off and it only works on this machine until you open it by hand.",
-  "share.createLinkHint":
-    "Opens a Cloudflare tunnel and gives you an https address that works outside your home. No account, no router changes; on first use the app downloads the tunnel engine by itself (one time only).",
   "share.closeLink": "Close public link",
   "share.opening": "Opening the tunnel…",
-  "share.linkTemporary":
-    "This link lives while the server is on. After a restart the address will be a different one.",
   "share.needsCloudflared":
     "The tunnel engine could not be prepared automatically. It is usually the connection: check the internet and retry; the download happens only once.",
   "share.failed": "Could not open the tunnel. Check your internet connection.",
@@ -177,7 +161,6 @@ export const en: Record<keyof typeof es, string> = {
   "share.tailscale.ready": "Tailscale is connected. The next step enables Funnel and keeps this address permanently.",
   "share.tailscale.active": "Fixed address active. It survives restarts and invites keep using the same URL.",
   "share.tailscale.error": "A Tailscale step still needs attention. Open the indicated link and retry.",
-  "share.openRequiredPage": "Open the required page",
   "share.tutorial.install": "Install Tailscale, create your account and sign in.",
   "share.tutorial.continue": "Press “Continue / retry” here; do not look for Funnel in the admin console.",
   "share.tutorial.authorize": "If authorization is needed, Distop opens the “Enable Funnel” page directly.",
@@ -192,8 +175,6 @@ export const en: Record<keyof typeof es, string> = {
   "share.addressChanged": "The public address changed after restarting. Copy this new address for members or enable Tailscale Funnel to keep it fixed.",
 
   "community.yours": "Your communities",
-  "rail.otherInstances": "Other servers",
-  "rail.otherInstance": "Go to {name}",
   "community.create": "Create community",
   "community.createTitle": "New community",
   "community.name": "Name",
@@ -206,7 +187,6 @@ export const en: Record<keyof typeof es, string> = {
     "You lose access until someone invites you again. Leave?",
   "community.manage": "Community settings",
   "community.invite": "Invite people",
-  "community.members": "Members",
   "community.join": "Join with a link",
   "invite.willUse": "The link will use this address:",
   "invite.check": "Check that it works",
@@ -401,8 +381,6 @@ export const en: Record<keyof typeof es, string> = {
   "voice.denied":
     "You did not allow the microphone. Enable it from the padlock in the address bar and join again.",
   "voice.noDevice": "No microphone found. Plug one in and try again.",
-  "voice.peerToPeer":
-    "Direct audio with {count} people. It does not go through the server.",
   "voice.throughHost":
     "Voice through the server with {count} people. It works while the server is on.",
   "voice.videoDirect": "Video goes straight between browsers.",
@@ -477,12 +455,9 @@ export const en: Record<keyof typeof es, string> = {
   "voice.relayHostOnly": "Only the host can change this.",
   "voice.device": "Microphone",
   "voice.deviceDefault": "System default",
-  "voice.test": "Test your microphone",
-  "voice.testHint": "Talk: if the bar moves, we can hear you.",
   "voice.limits":
     "Voice goes straight between browsers. It works well up to about 6 people per channel; above that you need a media server, which comes later.",
 
-  "nav.panel": "Channels (Ctrl+B)",
   "members.title": "Members",
   "members.online": "Online",
   "members.offline": "Offline",
@@ -529,6 +504,16 @@ export const en: Record<keyof typeof es, string> = {
     "Windows would not list the open programs, so only Steam games can be recognised.",
   "settings.gameNothing":
     "None of the {processes} open programs is a known game, and Steam has no session running. Steam and Epic games are recognised on their own; for anything else, add its executable to games.json ({catalog} recognised right now).",
+  "settings.desktopApp": "App",
+  "settings.desktopApps": "Built-in apps",
+  "settings.desktopAppsHint":
+    "Turned off, its tab disappears and its memory is freed. Your session is kept: turn it back on and you're in without relinking.",
+  "settings.desktopWhatsapp": "WhatsApp",
+  "settings.desktopTelegram": "Telegram",
+  "settings.gameWatch": "Game detection on this device",
+  "settings.gameWatchHint":
+    "Turned off, the app stops looking at this device's processes entirely, not just the reporting.",
+  "settings.gameWatchToggle": "Detect games",
   "settings.avatar": "Your avatar",
   "settings.avatarHint":
     "Upload a PNG, JPG, GIF or WebP, or paste a link. Animated GIFs work too: nothing is charged for that here.",
@@ -561,8 +546,6 @@ export const en: Record<keyof typeof es, string> = {
   "settings.wallpaperSearch": "Search a wallpaper",
   "settings.wallpaperHide": "Close the search",
   "settings.wallpaperClear": "Remove wallpaper",
-  "settings.wallpaperHint":
-    "Wallhaven's tags are in English. Saved on this device.",
   "settings.wallpaperPlaceholder": "mountains, abstract, city at night…",
   "settings.wallpaperEmpty": "Nothing for that search. Try another word.",
   "settings.wallpaperError": "Couldn't search. Wallhaven didn't answer.",
@@ -598,7 +581,6 @@ export const en: Record<keyof typeof es, string> = {
   "manage.title": "Manage {name}",
   "manage.overview": "General",
   "manage.roles": "Roles",
-  "manage.members": "Members",
   "manage.invites": "Invites",
   "manage.audit": "Audit log",
   "manage.data": "Data",
@@ -648,15 +630,11 @@ export const en: Record<keyof typeof es, string> = {
   "unread.newMessages": "New messages",
   "unread.jump": "Jump to latest",
   "unread.jumpCount": "{count} unread",
-  "unread.markRead": "Mark as read",
 
-  "message.emoji": "Emoji",
   "message.dropHere": "Drop the files to attach them",
   "message.mentionUser": "Mention someone",
   "message.mentionChannel": "Link a channel",
-  "message.mentionedYou": "Mentions you",
   "message.imageOpen": "View full image",
-  "message.editLast": "Edit last message",
 
   "settings.notifications": "Alerts",
   "settings.notifyAll": "Every message",
@@ -676,7 +654,6 @@ export const en: Record<keyof typeof es, string> = {
     "The browser has them blocked for this site. Change it from the padlock in the address bar.",
   "settings.notifyUnsupported": "This browser does not support them.",
 
-  "voice.moderate": "Moderate",
   "voice.person": "Options for this person",
   "voice.forceMute": "Mute",
   "voice.forceUnmute": "Give the floor back",
@@ -706,7 +683,6 @@ export const en: Record<keyof typeof es, string> = {
     "They're uploaded by whoever can manage the community.",
   "picker.gifError": "The GIF search did not answer.",
   "picker.open": "Emojis, stickers and GIFs",
-  "picker.gifSaving": "Saving the GIF on the server…",
 
   "emoji.title": "Emojis, stickers and sounds",
   "emoji.hint":
@@ -735,11 +711,7 @@ export const en: Record<keyof typeof es, string> = {
   "profile.nameStyle": "Name style",
   "profile.theme": "Profile theme",
   "profile.memberSince": "Member since",
-  "profileStyle.title": "Profile look",
-  "profileStyle.hint":
-    "All free, nothing to unlock. The whole catalogue ships with the server.",
   "profileStyle.deco": "Avatar decoration",
-  "profileStyle.rings": "Bundled rings",
   "profileStyle.ringsCredit":
     "Rings: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
   "profileStyle.ownDeco": "Your own decoration",
@@ -756,7 +728,6 @@ export const en: Record<keyof typeof es, string> = {
   "profileStyle.gradientPreview": "Gradient preview",
   "profileStyle.gradientAngle": "Direction",
   "profileStyle.gradientBalance": "Blend point",
-  "profileStyle.useAccent": "Use the accent colour",
   "style.none": "None",
   "style.neon": "Neon",
   "style.ember": "Ember",
@@ -777,11 +748,11 @@ export const en: Record<keyof typeof es, string> = {
   "style.gradient": "Gradient",
   "style.pop": "Pop",
   "style.animated": "Animated",
+  "style.breathe": "Breathe",
   "style.embers": "Embers",
   "style.snow": "Snow",
   "style.fireworks": "Fireworks",
   "style.bubbles": "Bubbles",
-  "emoji.usedBy": "Created by",
   "emoji.telegramImport": "Import from a Telegram pack",
   "emoji.telegramHint":
     "Type the pack name (the one in t.me/addstickers/name). Static stickers only for now.",
@@ -813,5 +784,4 @@ export const en: Record<keyof typeof es, string> = {
 
   "profile.edit": "Edit profile",
   "profile.copyUser": "Copy username",
-  "profile.title": "My account",
 };

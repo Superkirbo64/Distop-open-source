@@ -11,7 +11,7 @@
  * de un teclado y no de un botón de disparo.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Search, Smile, Sticker, X } from "lucide-react";
+import { ChevronDown, Search, X } from "lucide-react";
 import { PERMISSIONS, has, toBits, type CustomEmoji } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
@@ -49,7 +49,7 @@ function loadRecent(): string[] {
   }
 }
 
-export function rememberEmoji(token: string): void {
+function rememberEmoji(token: string): void {
   const lista = [token, ...loadRecent().filter((x) => x !== token)].slice(0, RECENT_MAX);
   localStorage.setItem(RECENT_KEY, JSON.stringify(lista));
 }
@@ -237,7 +237,9 @@ export function Picker({
                 title={emoji}
                 className="grid h-9 w-9 place-items-center rounded-lg text-lg hover:bg-raise"
               >
-                {animatedIdFor(emoji) ? <AnimatedEmoji char={emoji} size={24} /> : emoji}
+                {/* En reposo, quietos: cincuenta bucles a la vez en esta
+                    rejilla costaban CPU; en hover cada uno cuenta lo suyo. */}
+                {animatedIdFor(emoji) ? <AnimatedEmoji char={emoji} size={24} playOn="hover" /> : emoji}
               </button>
             ))}
           </Section>
@@ -385,5 +387,3 @@ function TokenButton({
     </button>
   );
 }
-
-export { Smile as PickerIcon, Sticker as StickerIcon };

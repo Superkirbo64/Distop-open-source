@@ -21,7 +21,7 @@
  */
 import { app } from "electron";
 import { execFile } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { detectGame, parseEpicManifest, parseRegDword, parseRegString, parseTasklist, pickGame } from "./game-detection";
 
@@ -114,7 +114,12 @@ function catalogPath(): string {
   return join(app.getPath("userData"), "games.json");
 }
 
-/** El fichero de la persona manda; el de fábrica solo siembra el primero. */
+let catalogCache: Map<string, string> | null = null;
+let catalogMtime = -1;
+
+/** El fichero de la persona manda; el de fábrica solo siembra el primero.
+    Se relee solo cuando su mtime cambia: editar aplica sin reiniciar, pero la
+    pasada de cada 12 s paga un stat en vez de un parseo entero. */
 function loadCatalog(): Map<string, string> {
   const file = catalogPath();
   if (!existsSync(file)) {
@@ -124,6 +129,15 @@ function loadCatalog(): Map<string, string> {
       // Sin permisos de escritura se sigue con el de fábrica.
     }
   }
+  let mtime = 0;
+  try {
+    mtime = statSync(file).mtimeMs;
+  } catch {
+    // Sin fichero legible: mtime 0 y se parsea lo que haya (o el de fábrica).
+  }
+  if (catalogCache && mtime === catalogMtime) return catalogCache;
+  catalogMtime = mtime;
+
   let raw: Record<string, unknown> = DEFAULT_CATALOG;
   try {
     raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
@@ -134,6 +148,7 @@ function loadCatalog(): Map<string, string> {
   for (const [exe, name] of Object.entries(raw)) {
     if (typeof name === "string" && name.trim()) map.set(exe.toLowerCase(), name.trim().slice(0, 100));
   }
+  catalogCache = map;
   return map;
 }
 

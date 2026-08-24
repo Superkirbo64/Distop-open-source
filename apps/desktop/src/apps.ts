@@ -16,6 +16,8 @@ export interface AppViews {
   /** La vista del cliente: destino del preload, del IPC y del arranque. */
   distop: WebContentsView;
   show(id: TabId): void;
+  /** Apaga un huésped: fuera de la ventana y su proceso renderer liberado. */
+  disable(id: GuestId): void;
   layout(): void;
 }
 
@@ -33,8 +35,10 @@ export function createAppViews(
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      // Ni la voz ni el WebSocket pueden dormirse porque estés mirando WhatsApp.
-      backgroundThrottling: false,
+      // El throttling queda activo: los mensajes del WebSocket despiertan al
+      // renderer igualmente. Solo durante una llamada el proceso principal lo
+      // desactiva a mano (setBackgroundThrottling) para que el audio y los
+      // medidores no se duerman mirando WhatsApp o con la ventana en bandeja.
     },
   });
   views.set("distop", distop);
@@ -82,15 +86,31 @@ export function createAppViews(
     return view;
   };
 
+  let activeId: TabId = "distop";
+
   const show = (id: TabId): void => {
     const view = views.get(id) ?? (id === "distop" ? distop : create(id));
+    activeId = id;
     for (const [key, other] of views) other.setVisible(key === id);
     layout();
     view.webContents.focus();
   };
 
+  /* Apagar libera el proceso renderer completo del huésped. Su sesión
+     (partition persist:) queda en disco: al reactivarlo se entra sin volver a
+     vincular. La política de la partition no se toca: la próxima creación pasa
+     por hardenGuestSession igual que la primera. */
+  const disable = (id: GuestId): void => {
+    const view = views.get(id);
+    if (!view) return;
+    views.delete(id);
+    if (activeId === id) show("distop");
+    win.contentView.removeChildView(view);
+    view.webContents.close();
+  };
+
   layout();
-  return { distop, show, layout };
+  return { distop, show, disable, layout };
 }
 
 function hardenGuestSession(guest: Guest): void {

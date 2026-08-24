@@ -3,7 +3,7 @@
  * Tres rutas justifican treinta líneas de router propio, no una dependencia:
  * la aplicación entera vive detrás de una sesión y solo /invite es profunda.
  */
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { useStore } from "./store.ts";
 import { CreateCommunity, JoinCommunity, Rail } from "./components/Rail.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
@@ -15,9 +15,14 @@ import { Auth } from "./views/Auth.tsx";
 import { Connect } from "./views/Connect.tsx";
 import { Setup } from "./views/Setup.tsx";
 import { Invite } from "./views/Invite.tsx";
-import { Settings, type SettingsTab } from "./views/Settings.tsx";
+import type { SettingsTab } from "./views/Settings.tsx";
 import { WallpaperTuner } from "./components/Wallpaper.tsx";
-import { Manage } from "./views/Manage.tsx";
+
+/* Ajustes y administración pesan miles de líneas y la mayoría de sesiones no
+   los abren: van en su propio chunk y se piden con el primer clic. Una vez
+   montados no se desmontan, para que la animación de cierre del modal viva. */
+const Settings = lazy(() => import("./views/Settings.tsx").then((m) => ({ default: m.Settings })));
+const Manage = lazy(() => import("./views/Manage.tsx").then((m) => ({ default: m.Manage })));
 import { Button, ErrorNote, Field, Modal, Spinner, Toggle, useErrorText, useT } from "./components/ui.tsx";
 import { api } from "./lib/api.ts";
 import {
@@ -141,6 +146,30 @@ export function App() {
   const isMobile = useIsMobile();
   const activeChannel = activeData?.channels.find((channel) => channel.id === activeChannelId);
   const voiceChat = activeChannel?.kind === "voice";
+
+  // Montados con el primer uso y ya no se desmontan (ver el lazy de arriba).
+  const [settingsMounted, setSettingsMounted] = useState(false);
+  const [manageMounted, setManageMounted] = useState(false);
+  useEffect(() => {
+    if (settings !== null) setSettingsMounted(true);
+  }, [settings]);
+  useEffect(() => {
+    if (manage) setManageMounted(true);
+  }, [manage]);
+
+  /* El panel de miembros plegado se desmonta cuando termina la animación de su
+     columna (--dur-3 = 0.42s): plegado ya no re-renderiza con cada presencia ni
+     retiene su DOM (banners incluidos). En móvil manda mobilePane, como siempre. */
+  const membersVisible = isMobile ? mobilePane === "members" : membersOpen;
+  const [membersMounted, setMembersMounted] = useState(membersVisible);
+  useEffect(() => {
+    if (membersVisible) {
+      setMembersMounted(true);
+      return;
+    }
+    const timer = setTimeout(() => setMembersMounted(false), 450);
+    return () => clearTimeout(timer);
+  }, [membersVisible]);
 
   // Al cambiar a una sala de voz, el lateral se convierte en su chat y se abre
   // una vez. Si la persona lo cierra después, se respeta hasta cambiar de canal.
@@ -310,13 +339,13 @@ export function App() {
         onJoinCommunity={() => setJoining(true)}
       />
 
-      {/* Siempre hay un lateral montado: plegarlo anima su columna y evita saltos.
-          En móvil lo esconde la rejilla, no React. */}
+      {/* El lateral sigue montado DURANTE el pliegue (la columna anima sin
+          saltos) y se desmonta al terminar: plegado no cuesta nada. */}
       {voiceChat ? (
         <VoiceChatPanel onClose={() => (isMobile ? setMobilePane("main") : setMembersOpen(false))} />
-      ) : (
+      ) : membersMounted ? (
         <Members onClose={() => (isMobile ? setMobilePane("main") : setMembersOpen(false))} />
-      )}
+      ) : null}
 
       {/* Fuera del panel de canales y en su propia fila: así la barra de perfil
           cruza por debajo de la columna de comunidades en vez de terminar donde
@@ -326,8 +355,16 @@ export function App() {
         <UserBar onOpenSettings={(tab = "profile") => setSettings(tab)} />
       </div>
 
-      <Settings open={settings !== null} initialTab={settings ?? "profile"} onClose={() => setSettings(null)} />
-      <Manage open={manage} onClose={() => setManage(false)} />
+      {settingsMounted ? (
+        <Suspense fallback={null}>
+          <Settings open={settings !== null} initialTab={settings ?? "profile"} onClose={() => setSettings(null)} />
+        </Suspense>
+      ) : null}
+      {manageMounted ? (
+        <Suspense fallback={null}>
+          <Manage open={manage} onClose={() => setManage(false)} />
+        </Suspense>
+      ) : null}
       <CreateInvite open={invite} onClose={() => setInvite(false)} />
       {/* Crear la comunidad desemboca en invitar: una comunidad de uno no es
           una comunidad, y el enlace es el siguiente paso natural, no un menú

@@ -25,7 +25,7 @@ import type {
 } from "@distop/protocol";
 import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
 import { connect, disconnect, onEvent, onStatus, sendCommand, type ConnectionStatus } from "./lib/gateway.ts";
-import { detectLocale, type Locale } from "./i18n.ts";
+import { detectLocale, loadLocale, type Locale } from "./i18n.ts";
 import { notify, setSoundsEnabled, type NotifyLevel } from "./lib/notify.ts";
 import { configureVoice, currentChannel, handleSignal, resumeVoice, setSoundError, setVideoMode, syncPeers } from "./lib/voice.ts";
 import { playClip } from "./lib/relay.ts";
@@ -152,6 +152,9 @@ interface State {
   activeCommunityId: string | null;
   activeChannelId: string | null;
   prefs: Prefs;
+  /** Sube cuando llega el chunk del idioma activo: los textos ya montados se
+      repintan sin que cambie prefs.locale (que se fijó antes de la descarga). */
+  localeEpoch: number;
 
   boot: () => Promise<void>;
   authenticate: (path: string, body: unknown) => Promise<void>;
@@ -214,7 +217,7 @@ function loadPrefs(): Prefs {
  * Todo lo de aquí es gratis y reversible; no hay ninguna opción que dependa de
  * pagar, ni ninguna que se guarde para "una versión mejor" (§10).
  */
-export function applyPrefs(prefs: Prefs): void {
+function applyPrefs(prefs: Prefs): void {
   const root = document.documentElement;
   const dark = prefs.theme === "dark" || (prefs.theme === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
   root.dataset.theme = dark ? "dark" : "light";
@@ -266,6 +269,20 @@ const MESSAGE_PAGE = 50;
 /** Se aprenden en /info y se aplican en READY, cuando ya se sabe quién soy. */
 let iceServers: RTCIceServer[] = [];
 
+/* Pide en segundo plano el diccionario del idioma (solo el español viene en el
+   bundle). Al resolver, si sigue siendo el activo —pudo cambiar durante la
+   descarga—, sube el contador para que los textos ya pintados se repinten. */
+function ensureLocale(locale: Locale): void {
+  void loadLocale(locale)
+    .then(() => {
+      if (useStore.getState().prefs.locale === locale)
+        useStore.setState((state) => ({ localeEpoch: state.localeEpoch + 1 }));
+    })
+    .catch(() => {
+      // Sin red queda el fallback en español; el próximo cambio de idioma reintenta.
+    });
+}
+
 export const useStore = create<State>()((set, get) => ({
   ready: false,
   user: null,
@@ -297,9 +314,12 @@ export const useStore = create<State>()((set, get) => ({
   activeCommunityId: null,
   activeChannelId: null,
   prefs: loadPrefs(),
+  localeEpoch: 0,
 
   async boot() {
     applyPrefs(get().prefs);
+    // El idioma detectado puede necesitar su chunk; no se espera a la descarga.
+    ensureLocale(get().prefs.locale);
 
     // Se pregunta siempre, antes que nada: una instancia sin dueño enseña la
     // puesta en marcha, no un formulario de acceso a un sitio que es tuyo.
@@ -431,6 +451,21 @@ export const useStore = create<State>()((set, get) => ({
   },
 
   async openChannel(channelId) {
+    /* Al abandonar un canal, su historial vuelve a la última página: el resto
+       sigue en el servidor y loadOlder lo repagina igual que siempre. Sin esta
+       poda, una sesión larga retiene los historiales completos de cada canal
+       visitado, y MESSAGE_CREATE los sigue engordando en segundo plano. */
+    const previous = get().activeChannelId;
+    if (previous && previous !== channelId) {
+      const left = get().messages[previous];
+      if (left && left.length > MESSAGE_PAGE) {
+        set((state) => ({
+          messages: { ...state.messages, [previous]: left.slice(-MESSAGE_PAGE) },
+          hasMore: { ...state.hasMore, [previous]: true },
+        }));
+      }
+    }
+
     set({ activeChannelId: channelId });
 
     if (!get().messages[channelId]) {
@@ -510,6 +545,9 @@ export const useStore = create<State>()((set, get) => ({
     set({ prefs });
     applyPrefs(prefs);
     localStorage.setItem(`distop.${key}`, String(value));
+
+    // Un idioma nuevo puede no tener su diccionario aún; mientras baja se ve español.
+    if (key === "locale") ensureLocale(value as Locale);
 
     // Tema e idioma acompañan a la persona entre dispositivos; escala y densidad
     // son de este dispositivo y se quedan en su almacenamiento local.
@@ -707,6 +745,7 @@ onEvent((event: ServerEvent) => {
           [event.d.channel_id]: { ...(state.typing[event.d.channel_id] ?? {}), [event.d.user_id]: event.d.until },
         },
       });
+      ensureTypingSweep();
       return;
     }
 
@@ -875,20 +914,35 @@ onEvent((event: ServerEvent) => {
 });
 
 /* Los indicadores de escritura caducan solos: si alguien cierra la pestaña a
-   mitad de un mensaje, su "está escribiendo" no se queda para siempre. */
-setInterval(() => {
+   mitad de un mensaje, su "está escribiendo" no se queda para siempre. El
+   barrido solo corre mientras alguien escribe: en reposo no hay ningún timer
+   despierto (importa en el escritorio, donde una llamada desactiva el
+   throttling y los intervalos corren a ritmo de primer plano). */
+let typingSweep: ReturnType<typeof setInterval> | null = null;
+
+function sweepTyping(): void {
   const { typing } = useStore.getState();
   const now = Date.now();
   let changed = false;
+  let empty = true;
   const next: typeof typing = {};
 
   for (const [channelId, users] of Object.entries(typing)) {
     const alive = Object.fromEntries(Object.entries(users).filter(([, until]) => until > now));
     if (Object.keys(alive).length !== Object.keys(users).length) changed = true;
+    if (Object.keys(alive).length > 0) empty = false;
     next[channelId] = alive;
   }
   if (changed) useStore.setState({ typing: next });
-}, 2000);
+  if (empty && typingSweep) {
+    clearInterval(typingSweep);
+    typingSweep = null;
+  }
+}
+
+function ensureTypingSweep(): void {
+  typingSweep ??= setInterval(sweepTyping, 2000);
+}
 
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   const { prefs } = useStore.getState();
@@ -911,7 +965,12 @@ function paintTitle(): void {
   document.title = `${prefix}${BRAND.name}`;
 }
 
-useStore.subscribe(paintTitle);
+/* unread se reemplaza por referencia en cada mutación que lo toca, así que el
+   diff por identidad basta: el resto de setState (typing, presencias, voz…) ya
+   no paga el reduce del título. */
+useStore.subscribe((state, previous) => {
+  if (state.unread !== previous.unread) paintTitle();
+});
 
 /* Volver a la ventana con el canal abierto delante es haberlo leído. Sin esto,
    el contador se queda encendido sobre mensajes que ya tienes a la vista. */

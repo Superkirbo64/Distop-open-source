@@ -21,3 +21,7 @@ apps/mobile/release/
 
 # ajustes locales de Claude Code: llevan rutas y usuario de esta maquina
 .claude/settings.local.json
+
+# Instaladores locales (Electron + Tauri) copiados por conveniencia
+/release/
+apps/desktop-tauri/src-tauri/target/

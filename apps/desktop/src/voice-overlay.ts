@@ -51,13 +51,21 @@ function cleanState(raw: unknown): VoiceOverlayState {
   };
 }
 
+export interface VoiceOverlayHandle {
+  update(raw: unknown): void;
+  destroy(): void;
+}
+
 /**
  * Widget de llamada para Windows. Es otra ventana en vez de inyectarse dentro
  * del juego: así no toca procesos ajenos ni dispara anticheats. Funciona encima
  * de juegos en ventana o ventana sin bordes, que es también el modo compatible
  * documentado por Discord para su overlay.
+ *
+ * Nace con la primera llamada y muere al colgar (destroy): su renderer solo
+ * existe mientras hay algo que mostrar.
  */
-export function createVoiceOverlay(host: BrowserWindow): { update(raw: unknown): void } {
+export function createVoiceOverlay(host: BrowserWindow): VoiceOverlayHandle {
   const overlay = new BrowserWindow({
     width: 284,
     height: 120,
@@ -103,6 +111,7 @@ export function createVoiceOverlay(host: BrowserWindow): { update(raw: unknown):
   };
 
   const refresh = (): void => {
+    if (overlay.isDestroyed()) return;
     if (!shouldShow()) {
       overlay.hide();
       return;
@@ -112,14 +121,37 @@ export function createVoiceOverlay(host: BrowserWindow): { update(raw: unknown):
     overlay.showInactive();
   };
 
-  host.on("minimize", () => setTimeout(refresh, 120));
-  host.on("hide", refresh);
-  host.on("restore", () => overlay.hide());
-  host.on("show", () => overlay.hide());
-  host.on("closed", () => {
-    if (!overlay.isDestroyed()) overlay.destroy();
+  // Al crearse en plena llamada, el primer update llega antes de que termine
+  // loadFile y su webContents.send se perdería: al cargar se reenvía el último.
+  overlay.webContents.on("did-finish-load", () => {
+    overlay.webContents.send("voice-overlay:state", current);
   });
+
+  /* Con nombre para poder quitarlos: el overlay se crea y destruye por llamada,
+     y unos listeners anónimos sobre host/screen se acumularían en cada ciclo. */
+  const onMinimize = (): void => {
+    setTimeout(refresh, 120);
+  };
+  const onHide = refresh;
+  const onRestore = (): void => overlay.hide();
+  const onShow = (): void => overlay.hide();
+
+  host.on("minimize", onMinimize);
+  host.on("hide", onHide);
+  host.on("restore", onRestore);
+  host.on("show", onShow);
   screen.on("display-metrics-changed", refresh);
+
+  const destroy = (): void => {
+    host.off("minimize", onMinimize);
+    host.off("hide", onHide);
+    host.off("restore", onRestore);
+    host.off("show", onShow);
+    host.off("closed", destroy);
+    screen.removeListener("display-metrics-changed", refresh);
+    if (!overlay.isDestroyed()) overlay.destroy();
+  };
+  host.on("closed", destroy);
 
   return {
     update(raw: unknown): void {
@@ -129,5 +161,6 @@ export function createVoiceOverlay(host: BrowserWindow): { update(raw: unknown):
         refresh();
       }
     },
+    destroy,
   };
 }

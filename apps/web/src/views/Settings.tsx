@@ -42,7 +42,7 @@ import { askNotifyPermission, notifyPermission, type NotifyLevel } from "../lib/
 /** Paleta de partida. Cualquier otro color sale del selector, sin cortapisas. */
 const ACCENTS = ["#4059e0", "#7b5cff", "#c2389c", "#d94f43", "#e08c2f", "#2f9e6f", "#2f8fd6", "#5b6472"];
 
-export type SettingsTab = "profile" | "appearance" | "alerts" | "voice" | "account";
+export type SettingsTab = "profile" | "appearance" | "alerts" | "voice" | "account" | "app";
 
 export function Settings({ open, onClose, initialTab = "profile" }: { open: boolean; onClose: () => void; initialTab?: SettingsTab }) {
   const t = useT();
@@ -59,6 +59,8 @@ export function Settings({ open, onClose, initialTab = "profile" }: { open: bool
     ["voice", t("settings.voice")],
     ["account", t("settings.account")],
   ];
+  // Ajustes del cascarón: solo existen dentro de la app de escritorio.
+  if (window.distop) tabs.push(["app", t("settings.desktopApp")]);
 
   return (
     <Modal open={open} onClose={onClose} title={t("settings.title")} size="lg">
@@ -87,6 +89,7 @@ export function Settings({ open, onClose, initialTab = "profile" }: { open: bool
           {tab === "alerts" ? <AlertsTab /> : null}
           {tab === "voice" ? <VoiceTab /> : null}
           {tab === "account" ? <AccountTab onClose={onClose} /> : null}
+          {tab === "app" ? <DesktopTab /> : null}
         </div>
       </div>
     </Modal>
@@ -367,6 +370,74 @@ function GameActivityCard() {
       <Toggle checked={history} onChange={(v) => void toggle("show_game_history", v)} label={t("settings.gameHistory")} hint={t("settings.gameHistoryHint")} />
       <GameDetectionCheck />
     </section>
+  );
+}
+
+/**
+ * Ajustes del cascarón de escritorio: qué aplicaciones integradas existen y si
+ * se vigila el juego abierto en este equipo. La autoridad es el proceso
+ * principal: cada interruptor pinta lo que main confirma, no lo que se pidió.
+ * Apagar WhatsApp/Telegram quita su pestaña y libera su proceso entero; la
+ * sesión queda en el disco y reactivar no obliga a vincular de nuevo.
+ */
+function DesktopTab() {
+  const t = useT();
+  const appsBridge = window.distop?.apps;
+  const gamesBridge = window.distop?.games;
+  const [tabs, setTabs] = useState<{ whatsapp: boolean; telegram: boolean } | null>(null);
+  const [gameWatch, setGameWatch] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    void appsBridge?.prefs().then(setTabs).catch(() => undefined);
+    void gamesBridge?.watch?.().then(setGameWatch).catch(() => undefined);
+    // Los puentes viven en window y no cambian durante la sesión.
+  }, [appsBridge, gamesBridge]);
+
+  async function toggleApp(id: "whatsapp" | "telegram", enabled: boolean) {
+    try {
+      const next = await appsBridge!.set(id, enabled);
+      if (next) setTabs(next);
+    } catch {
+      // main no confirmó: el interruptor se queda como estaba.
+    }
+  }
+
+  async function toggleWatch(enabled: boolean) {
+    try {
+      setGameWatch(await gamesBridge!.setWatch!(enabled));
+    } catch {
+      // Ídem: sin confirmación no se pinta el cambio.
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      {appsBridge ? (
+        <section className="flex flex-col gap-3 rounded-[10px] border border-line p-3">
+          <div>
+            <h3 className="text-sm font-semibold">{t("settings.desktopApps")}</h3>
+            <p className="text-xs text-muted">{t("settings.desktopAppsHint")}</p>
+          </div>
+          {tabs ? (
+            <>
+              <Toggle checked={tabs.whatsapp} onChange={(v) => void toggleApp("whatsapp", v)} label={t("settings.desktopWhatsapp")} />
+              <Toggle checked={tabs.telegram} onChange={(v) => void toggleApp("telegram", v)} label={t("settings.desktopTelegram")} />
+            </>
+          ) : null}
+        </section>
+      ) : null}
+      {gamesBridge?.setWatch ? (
+        <section className="flex flex-col gap-3 rounded-[10px] border border-line p-3">
+          <div>
+            <h3 className="text-sm font-semibold">{t("settings.gameWatch")}</h3>
+            <p className="text-xs text-muted">{t("settings.gameWatchHint")}</p>
+          </div>
+          {gameWatch !== null ? (
+            <Toggle checked={gameWatch} onChange={(v) => void toggleWatch(v)} label={t("settings.gameWatchToggle")} />
+          ) : null}
+        </section>
+      ) : null}
+    </div>
   );
 }
 

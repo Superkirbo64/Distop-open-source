@@ -44,7 +44,7 @@ const DEFAULTS = { wallpaperVeil: 78, wallpaperBlur: 0, wallpaperBright: 100, wa
  * lo usa igual que el banner del perfil. Separarlo fue lo que evitó escribir dos
  * veces la búsqueda, el antirrebote y la rejilla.
  */
-export function WallpaperSearch({ current, onPick }: { current: string; onPick: (url: string) => void }) {
+function WallpaperSearch({ current, onPick }: { current: string; onPick: (url: string) => void }) {
   const t = useT();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Wallpaper[] | null>(null);

@@ -8,7 +8,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "common.delete": "Excluir",
   "common.close": "Fechar",
   "common.loading": "Carregando…",
-  "common.retry": "Tentar de novo",
   "common.optional": "opcional",
   "common.resize": "Arraste para mudar a largura",
   "update.available": "Há uma versão nova do aplicativo.",
@@ -60,13 +59,11 @@ export const ptBR: Record<keyof typeof es, string> = {
   "auth.recoverHint":
     "Estas contas não têm senha. Como você está neste equipamento, pode continuar sem digitar nada.",
   "auth.registrationClosed": "Este servidor está com o cadastro fechado.",
-  "auth.guestClosed": "Este servidor não aceita convidados.",
 
   "setup.title": "Crie seu usuário",
   "setup.subtitle":
     "Escolha um nome e entre: sem e-mails nem verificações. Sua comunidade você cria já lá dentro, quando quiser.",
   "setup.yourName": "Seu nome",
-  "setup.communityName": "Nome da sua comunidade",
   "setup.password": "Senha",
   "setup.passwordHint":
     "Opcional por ora. Sem ela você entra só neste dispositivo; dá para definir quando quiser em Configurações.",
@@ -101,8 +98,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "connect.title": "Conectar a uma comunidade",
   "connect.hint":
     "O aplicativo viaja com você; cada comunidade vive no seu próprio servidor. Cole o endereço da comunidade em que você quer entrar.",
-  "connect.url": "Endereço da comunidade",
-  "connect.urlHint": "O mesmo que você usaria no navegador, com https:// na frente.",
   "connect.action": "Conectar",
   "connect.checking": "Verificando…",
   "connect.invalid": "Esse endereço não é válido. Só são aceitos endereços http ou https.",
@@ -111,11 +106,9 @@ export const ptBR: Record<keyof typeof es, string> = {
   "connect.notInstance": "Algo responde nesse endereço, mas não é um servidor do Distop.",
   "connect.known": "Comunidades recentes",
   "connect.forget": "Esquecer",
-  "connect.hostHere": "Hospedar aqui",
   "connect.hostHint":
     "Sua comunidade roda neste computador, dentro do aplicativo: seus dados ficam com você. Ela estará disponível enquanto esta máquina estiver ligada, e a velocidade depende da sua conexão.",
   "connect.hostEnter": "Entrar na minha comunidade",
-  "connect.hostStarting": "Iniciando o servidor…",
   "connect.androidHint":
     "Escolha em qual comunidade entrar: um link de convite, seu PC nesta mesma Wi-Fi, ou um servidor rodando neste próprio celular.",
   "connect.preparing": "Iniciando seu servidor…",
@@ -150,23 +143,14 @@ export const ptBR: Record<keyof typeof es, string> = {
   "share.address": "Endereço para convidar",
   "share.localOnly":
     "Agora seu servidor só existe neste computador. Um link com este endereço não vai funcionar para mais ninguém.",
-  "share.howTo":
-    "Dois caminhos para abrir ao mundo: um túnel (mais fácil, sem mexer no roteador) ou abrir a porta e apontar um domínio.",
-  "share.tunnel": "Túnel rápido com Cloudflare, sem conta nem configuração:",
-  "share.thenSet":
-    "Copie a URL devolvida e coloque em PUBLIC_URL no seu .env. A partir daí os convites já saem com esse endereço.",
   "share.ready":
     "Seu servidor está acessível de fora. Os convites já usam este endereço.",
   "share.createLink": "Criar link público",
   "share.autostart": "Abrir o link público ao iniciar",
   "share.autostartHint":
     "Sua comunidade ficará acessível pela internet enquanto o aplicativo estiver aberto. Se desligar, só funciona neste computador até você abrir na mão.",
-  "share.createLinkHint":
-    "Abre um túnel da Cloudflare e dá um endereço https que funciona fora da sua casa. Sem conta e sem mexer no roteador; na primeira vez o aplicativo baixa sozinho o motor do túnel (uma única vez).",
   "share.closeLink": "Fechar o link público",
   "share.opening": "Abrindo o túnel…",
-  "share.linkTemporary":
-    "Este link vive enquanto o servidor estiver ligado. Ao reiniciar, o endereço será outro.",
   "share.needsCloudflared":
     "Não deu para preparar o motor do túnel automaticamente. Costuma ser a conexão: confira a internet e tente de novo; o download acontece uma única vez.",
   "share.failed":
@@ -180,7 +164,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "share.tailscale.ready": "O Tailscale está conectado. O próximo passo ativa o Funnel e mantém este endereço para sempre.",
   "share.tailscale.active": "Endereço fixo ativo. Ele sobrevive a reinicializações e os convites continuam usando a mesma URL.",
   "share.tailscale.error": "Ainda falta concluir uma etapa no Tailscale. Abra o link indicado e tente novamente.",
-  "share.openRequiredPage": "Abrir a página necessária",
   "share.tutorial.install": "Instale o Tailscale, crie sua conta e entre.",
   "share.tutorial.continue": "Clique em “Continuar / tentar novamente” aqui; não procure o Funnel no console.",
   "share.tutorial.authorize": "Se for necessária autorização, o Distop abre diretamente a página “Enable Funnel”.",
@@ -195,8 +178,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "share.addressChanged": "O endereço público mudou ao reiniciar. Copie o novo endereço para os membros ou ative o Tailscale Funnel para mantê-lo fixo.",
 
   "community.yours": "Suas comunidades",
-  "rail.otherInstances": "Outros servidores",
-  "rail.otherInstance": "Ir para {name}",
   "community.create": "Criar comunidade",
   "community.createTitle": "Nova comunidade",
   "community.name": "Nome",
@@ -209,7 +190,6 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Você perde o acesso até ser convidado de novo. Sair?",
   "community.manage": "Configurações da comunidade",
   "community.invite": "Convidar gente",
-  "community.members": "Membros",
   "community.join": "Entrar com um link",
   "invite.willUse": "O link vai sair com este endereço:",
   "invite.check": "Verificar se funciona",
@@ -405,8 +385,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.denied":
     "Você não liberou o microfone. Ative no cadeado da barra de endereço e entre de novo.",
   "voice.noDevice": "Nenhum microfone encontrado. Conecte um e tente de novo.",
-  "voice.peerToPeer":
-    "Áudio direto com {count} pessoa(s). Não passa pelo servidor.",
   "voice.throughHost":
     "Voz pelo servidor com {count} pessoa(s). Funciona enquanto ele estiver ligado.",
   "voice.videoDirect": "O vídeo vai direto entre navegadores.",
@@ -484,12 +462,9 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.relayHostOnly": "Só quem hospeda pode mudar isso.",
   "voice.device": "Microfone",
   "voice.deviceDefault": "O do sistema",
-  "voice.test": "Teste seu microfone",
-  "voice.testHint": "Fale: se a barra mexer, estamos te ouvindo.",
   "voice.limits":
     "A voz vai direto entre navegadores. Funciona bem até umas 6 pessoas por canal; acima disso precisa de um servidor de mídia, que vem depois.",
 
-  "nav.panel": "Canais (Ctrl+B)",
   "members.title": "Membros",
   "members.online": "On-line",
   "members.offline": "Desconectados",
@@ -535,6 +510,16 @@ export const ptBR: Record<keyof typeof es, string> = {
     "O Windows não deixou consultar os programas abertos, então só dá para reconhecer os jogos da Steam.",
   "settings.gameNothing":
     "Nenhum dos {processes} programas abertos é um jogo conhecido, e a Steam não tem partida em andamento. Jogos da Steam e da Epic são reconhecidos sozinhos; para qualquer outro, adicione o executável ao games.json ({catalog} reconhecidos agora).",
+  "settings.desktopApp": "Aplicativo",
+  "settings.desktopApps": "Aplicativos integrados",
+  "settings.desktopAppsHint":
+    "Desligado, a aba some e a memória é liberada. Sua sessão não é encerrada: ao reativar você entra sem vincular de novo.",
+  "settings.desktopWhatsapp": "WhatsApp",
+  "settings.desktopTelegram": "Telegram",
+  "settings.gameWatch": "Detecção de jogos neste computador",
+  "settings.gameWatchHint":
+    "Desligada, o aplicativo para de olhar os processos deste computador por completo, não só o envio.",
+  "settings.gameWatchToggle": "Detectar jogos",
   "settings.avatar": "Seu avatar",
   "settings.avatarHint":
     "Envie um PNG, JPG, GIF ou WebP, ou cole um link. GIFs animados valem igual: aqui não se cobra por isso.",
@@ -568,8 +553,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.wallpaperSearch": "Buscar um papel de parede",
   "settings.wallpaperHide": "Fechar a busca",
   "settings.wallpaperClear": "Remover o papel de parede",
-  "settings.wallpaperHint":
-    "As etiquetas do Wallhaven estão em inglês. Fica neste dispositivo.",
   "settings.wallpaperPlaceholder": "mountains, abstract, city at night…",
   "settings.wallpaperEmpty":
     "Nada para essa busca. O Wallhaven etiqueta em inglês: tente «mountains» no lugar de «montanhas».",
@@ -606,7 +589,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "manage.title": "Administrar {name}",
   "manage.overview": "Geral",
   "manage.roles": "Cargos",
-  "manage.members": "Membros",
   "manage.invites": "Convites",
   "manage.audit": "Auditoria",
   "manage.data": "Dados",
@@ -657,15 +639,11 @@ export const ptBR: Record<keyof typeof es, string> = {
   "unread.newMessages": "Mensagens novas",
   "unread.jump": "Ir para o final",
   "unread.jumpCount": "{count} não lidas",
-  "unread.markRead": "Marcar como lida",
 
-  "message.emoji": "Emoji",
   "message.dropHere": "Solte os arquivos para anexar",
   "message.mentionUser": "Mencionar alguém",
   "message.mentionChannel": "Vincular um canal",
-  "message.mentionedYou": "Menciona você",
   "message.imageOpen": "Ver imagem completa",
-  "message.editLast": "Editar a última mensagem",
 
   "settings.notifications": "Avisos",
   "settings.notifyAll": "Todas as mensagens",
@@ -684,7 +662,6 @@ export const ptBR: Record<keyof typeof es, string> = {
     "O navegador as bloqueou para este site. Mude pelo cadeado na barra de endereços.",
   "settings.notifyUnsupported": "Este navegador não as aceita.",
 
-  "voice.moderate": "Moderar",
   "voice.person": "Opções desta pessoa",
   "voice.forceMute": "Silenciar",
   "voice.forceUnmute": "Devolver a palavra",
@@ -714,7 +691,6 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Quem envia \u00e9 quem tem permiss\u00e3o para gerenciar a comunidade.",
   "picker.gifError": "A busca de GIF não respondeu.",
   "picker.open": "Emojis, stickers e GIF",
-  "picker.gifSaving": "Salvando o GIF no servidor…",
 
   "emoji.title": "Emojis, stickers e sons",
   "emoji.hint":
@@ -743,11 +719,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "profile.nameStyle": "Estilo do nome",
   "profile.theme": "Tema do perfil",
   "profile.memberSince": "Membro desde",
-  "profileStyle.title": "Aparência do perfil",
-  "profileStyle.hint":
-    "Tudo grátis, sem desbloquear nada. O catálogo inteiro vem com o servidor.",
   "profileStyle.deco": "Decoração do avatar",
-  "profileStyle.rings": "Anéis inclusos",
   "profileStyle.ringsCredit":
     "Anéis: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
   "profileStyle.ownDeco": "Sua própria decoração",
@@ -764,7 +736,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "profileStyle.gradientPreview": "Prévia do gradiente",
   "profileStyle.gradientAngle": "Direção",
   "profileStyle.gradientBalance": "Ponto de mistura",
-  "profileStyle.useAccent": "Usar a cor de destaque",
   "style.none": "Nenhum",
   "style.neon": "Neon",
   "style.ember": "Brasa",
@@ -785,11 +756,11 @@ export const ptBR: Record<keyof typeof es, string> = {
   "style.gradient": "Degradê",
   "style.pop": "Pop",
   "style.animated": "Animado",
+  "style.breathe": "Respiração",
   "style.embers": "Brasas",
   "style.snow": "Neve",
   "style.fireworks": "Fogos de artifício",
   "style.bubbles": "Bolhas",
-  "emoji.usedBy": "Criado por",
   "emoji.telegramImport": "Importar de um pacote do Telegram",
   "emoji.telegramHint":
     "Digite o nome do pacote (o de t.me/addstickers/nome). Só estáticos por enquanto.",
@@ -822,5 +793,4 @@ export const ptBR: Record<keyof typeof es, string> = {
 
   "profile.edit": "Editar perfil",
   "profile.copyUser": "Copiar nome de usuário",
-  "profile.title": "Minha conta",
 };

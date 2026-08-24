@@ -752,12 +752,12 @@ export function setSoundError(error: VoiceSoundIssue | null): void {
 }
 
 /** ¿Sale mi voz de verdad? Lo que impone la instancia cuenta igual que el botón. */
-export function effectiveMuted(): boolean {
+function effectiveMuted(): boolean {
   return state.muted || state.forcedMuted;
 }
 
 /** ¿Oigo la sala de verdad? */
-export function effectiveDeafened(): boolean {
+function effectiveDeafened(): boolean {
   return state.deafened || state.forcedDeafened;
 }
 

@@ -1,0 +1,6 @@
+src-tauri/target/
+src-tauri/gen/
+# Generados por scripts/stage-server.mjs: el Node oficial descargado (~85MB)
+# y la copia empaquetable del node-server + cliente web.
+src-tauri/binaries/
+src-tauri/staging/

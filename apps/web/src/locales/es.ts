@@ -7,7 +7,6 @@ export const es = {
   "common.delete": "Eliminar",
   "common.close": "Cerrar",
   "common.loading": "Cargando…",
-  "common.retry": "Reintentar",
   "common.optional": "opcional",
   "common.resize": "Arrastra para cambiar el ancho",
   "update.available": "Hay una versión nueva de la aplicación.",
@@ -59,13 +58,11 @@ export const es = {
   "auth.recoverHint":
     "Estas cuentas no tienen contraseña. Como entras desde este equipo, puedes continuar sin escribir nada.",
   "auth.registrationClosed": "Este servidor tiene el registro cerrado.",
-  "auth.guestClosed": "Este servidor no admite invitados.",
 
   "setup.title": "Crea tu usuario",
   "setup.subtitle":
     "Ponte un nombre y entra: sin correos ni verificaciones. Tu comunidad la creas ya dentro, cuando quieras.",
   "setup.yourName": "Tu nombre",
-  "setup.communityName": "Nombre de tu comunidad",
   "setup.password": "Contraseña",
   "setup.passwordHint":
     "Opcional ahora. Sin ella entras solo desde este dispositivo; puedes ponerla cuando quieras desde Ajustes.",
@@ -100,8 +97,6 @@ export const es = {
   "connect.title": "Conectar a una comunidad",
   "connect.hint":
     "La aplicación viaja contigo; las comunidades viven cada una en su servidor. Pega la dirección de la comunidad a la que quieres entrar.",
-  "connect.url": "Dirección de la comunidad",
-  "connect.urlHint": "La misma que usarías en el navegador, con https:// delante.",
   "connect.action": "Conectar",
   "connect.checking": "Comprobando…",
   "connect.invalid": "Esa dirección no es válida. Solo se admiten direcciones http o https.",
@@ -110,11 +105,9 @@ export const es = {
   "connect.notInstance": "En esa dirección responde algo, pero no es un servidor de Distop.",
   "connect.known": "Comunidades recientes",
   "connect.forget": "Olvidar",
-  "connect.hostHere": "Hospedar aquí",
   "connect.hostHint":
     "Tu comunidad corre en este ordenador, dentro de la aplicación: tus datos se quedan contigo. Estará disponible mientras este equipo esté encendido, y la velocidad depende de tu conexión.",
   "connect.hostEnter": "Entrar en mi comunidad",
-  "connect.hostStarting": "Arrancando el servidor…",
   "connect.androidHint":
     "Elige a qué comunidad entrar: un enlace de invitación, tu PC en esta misma Wi-Fi, o un servidor corriendo en este mismo teléfono.",
   "connect.preparing": "Arrancando tu servidor…",
@@ -151,23 +144,14 @@ export const es = {
   "share.address": "Dirección para invitar",
   "share.localOnly":
     "Ahora mismo tu servidor solo existe en este ordenador. Un enlace con esta dirección no le funcionará a nadie más.",
-  "share.howTo":
-    "Para abrirla al mundo hay dos caminos: un túnel (lo más fácil, sin tocar el router) o abrir el puerto y apuntar un dominio.",
-  "share.tunnel": "Túnel rápido con Cloudflare, sin cuenta ni configuración:",
-  "share.thenSet":
-    "Copia la URL que te devuelva y ponla en PUBLIC_URL de tu .env. A partir de ahí las invitaciones ya salen con esa dirección.",
   "share.ready":
     "Tu servidor es alcanzable desde fuera. Las invitaciones ya usan esta dirección.",
   "share.createLink": "Crear enlace público",
   "share.autostart": "Abrir el enlace público al arrancar",
   "share.autostartHint":
     "Tu comunidad será accesible desde internet mientras la aplicación esté abierta. Si lo apagas, solo funcionará en este equipo hasta que lo abras a mano.",
-  "share.createLinkHint":
-    "Abre un túnel de Cloudflare y da una dirección https que funciona fuera de tu casa. No hace falta cuenta ni tocar el router; la primera vez la aplicación descarga sola el motor del túnel (una única vez).",
   "share.closeLink": "Cerrar el enlace público",
   "share.opening": "Abriendo el túnel…",
-  "share.linkTemporary":
-    "Este enlace vive mientras el servidor esté encendido. Al reiniciar, la dirección será otra.",
   "share.needsCloudflared":
     "No se pudo preparar el motor del túnel automáticamente. Suele ser la conexión: comprueba internet y reintenta; la descarga se hace una sola vez.",
   "share.failed": "No se pudo abrir el túnel. Revisa tu conexión a internet.",
@@ -180,7 +164,6 @@ export const es = {
   "share.tailscale.ready": "Tailscale está conectado. El siguiente paso activa Funnel y fija esta dirección para siempre.",
   "share.tailscale.active": "Dirección fija activa. Se conserva al reiniciar y las invitaciones seguirán usando la misma URL.",
   "share.tailscale.error": "Falta completar un paso en Tailscale. Abre el enlace indicado y vuelve a intentarlo.",
-  "share.openRequiredPage": "Abrir la página necesaria",
   "share.tutorial.install": "Instala Tailscale, crea tu cuenta e inicia sesión.",
   "share.tutorial.continue": "Pulsa «Continuar / reintentar» aquí; no busques Funnel en la consola.",
   "share.tutorial.authorize": "Si hace falta autorización, Distop abrirá directamente la página «Enable Funnel».",
@@ -195,8 +178,6 @@ export const es = {
   "share.addressChanged": "La dirección pública cambió al reiniciar. Copia esta nueva dirección para tus miembros o activa Tailscale Funnel para fijarla.",
 
   "community.yours": "Tus comunidades",
-  "rail.otherInstances": "Otros servidores",
-  "rail.otherInstance": "Ir a {name}",
   "community.create": "Crear comunidad",
   "community.createTitle": "Nueva comunidad",
   "community.name": "Nombre",
@@ -209,7 +190,6 @@ export const es = {
     "Perderás el acceso hasta que te vuelvan a invitar. ¿Salir?",
   "community.manage": "Ajustes de la comunidad",
   "community.invite": "Invitar gente",
-  "community.members": "Miembros",
   "community.join": "Entrar con un enlace",
   "invite.willUse": "El enlace saldrá con esta dirección:",
   "invite.check": "Comprobar que funciona",
@@ -411,8 +391,6 @@ export const es = {
     "No diste permiso al micrófono. Actívalo en el candado de la barra de direcciones y vuelve a entrar.",
   "voice.noDevice":
     "No se encontró ningún micrófono. Conecta uno y vuelve a intentarlo.",
-  "voice.peerToPeer":
-    "Audio directo con {count} persona(s). No pasa por el servidor.",
   "voice.throughHost":
     "Voz por el servidor con {count} persona(s). Funciona mientras esté encendido.",
   "voice.videoDirect": "El vídeo va directo entre navegadores.",
@@ -490,12 +468,9 @@ export const es = {
   "voice.relayHostOnly": "Solo quien hospeda puede cambiar esto.",
   "voice.device": "Micrófono",
   "voice.deviceDefault": "El del sistema",
-  "voice.test": "Prueba tu micrófono",
-  "voice.testHint": "Habla: si la barra se mueve, te estamos oyendo.",
   "voice.limits":
     "La voz va directa entre navegadores. Funciona muy bien hasta unas 6 personas por canal; por encima hace falta un servidor de medios, que llega más adelante.",
 
-  "nav.panel": "Canales (Ctrl+B)",
   "members.title": "Miembros",
   "members.online": "En línea",
   "members.offline": "Desconectados",
@@ -542,6 +517,16 @@ export const es = {
     "Windows no dejó consultar los programas abiertos, así que solo se reconocen los juegos de Steam.",
   "settings.gameNothing":
     "Ninguno de los {processes} programas abiertos es un juego conocido, y Steam no tiene ninguna partida en marcha. Se reconocen solos los juegos de Steam y de Epic; para cualquier otro, añade su ejecutable a games.json ({catalog} reconocidos ahora).",
+  "settings.desktopApp": "Aplicación",
+  "settings.desktopApps": "Aplicaciones integradas",
+  "settings.desktopAppsHint":
+    "Apagada, su pestaña desaparece y su memoria se libera. Tu sesión no se cierra: al reactivarla entras sin volver a vincular.",
+  "settings.desktopWhatsapp": "WhatsApp",
+  "settings.desktopTelegram": "Telegram",
+  "settings.gameWatch": "Detección de juegos en este equipo",
+  "settings.gameWatchHint":
+    "Apagada, la aplicación deja de mirar los procesos de este equipo por completo, no solo el reporte.",
+  "settings.gameWatchToggle": "Detectar juegos",
   "settings.avatar": "Tu avatar",
   "settings.avatarHint":
     "Sube un PNG, JPG, GIF o WebP, o pega un enlace. Los GIF animados valen igual: aquí no se cobra por eso.",
@@ -575,8 +560,6 @@ export const es = {
   "settings.wallpaperSearch": "Buscar un fondo",
   "settings.wallpaperHide": "Cerrar el buscador",
   "settings.wallpaperClear": "Quitar el fondo",
-  "settings.wallpaperHint":
-    "Las etiquetas de Wallhaven están en inglés. Se guarda en este dispositivo.",
   "settings.wallpaperPlaceholder": "mountains, abstract, city at night…",
   "settings.wallpaperEmpty":
     "Nada con esa búsqueda. Wallhaven etiqueta en inglés: prueba «mountains» en vez de «montañas».",
@@ -613,7 +596,6 @@ export const es = {
   "manage.title": "Administrar {name}",
   "manage.overview": "General",
   "manage.roles": "Roles",
-  "manage.members": "Miembros",
   "manage.invites": "Invitaciones",
   "manage.audit": "Auditoría",
   "manage.data": "Datos",
@@ -665,15 +647,11 @@ export const es = {
   "unread.newMessages": "Mensajes nuevos",
   "unread.jump": "Ir a lo último",
   "unread.jumpCount": "{count} sin leer",
-  "unread.markRead": "Marcar como leído",
 
-  "message.emoji": "Emoji",
   "message.dropHere": "Suelta los archivos para adjuntarlos",
   "message.mentionUser": "Mencionar a alguien",
   "message.mentionChannel": "Enlazar un canal",
-  "message.mentionedYou": "Te menciona",
   "message.imageOpen": "Ver imagen completa",
-  "message.editLast": "Editar el último mensaje",
 
   "settings.notifications": "Avisos",
   "settings.notifyAll": "Todos los mensajes",
@@ -692,7 +670,6 @@ export const es = {
     "El navegador las tiene bloqueadas para este sitio. Se cambia desde el candado de la barra de direcciones.",
   "settings.notifyUnsupported": "Este navegador no las admite.",
 
-  "voice.moderate": "Moderar",
   "voice.person": "Opciones de esta persona",
   "voice.forceMute": "Silenciar",
   "voice.forceUnmute": "Devolver la palabra",
@@ -722,7 +699,6 @@ export const es = {
     "Los sube quien tenga permiso para gestionar la comunidad.",
   "picker.gifError": "El buscador de GIF no respondió.",
   "picker.open": "Emojis, stickers y GIF",
-  "picker.gifSaving": "Guardando el GIF en el servidor…",
 
   "emoji.title": "Emojis, stickers y sonidos",
   "emoji.hint":
@@ -751,11 +727,7 @@ export const es = {
   "profile.nameStyle": "Estilo del nombre",
   "profile.theme": "Tema del perfil",
   "profile.memberSince": "Miembro desde",
-  "profileStyle.title": "Aspecto del perfil",
-  "profileStyle.hint":
-    "Todo gratis, sin desbloquear nada. El catálogo entero viene con el servidor.",
   "profileStyle.deco": "Decoración del avatar",
-  "profileStyle.rings": "Aros incluidos",
   "profileStyle.ringsCredit":
     "Aros: Original Lab — SillyTavern Avatar Decorations Community Project (CC BY 4.0).",
   "profileStyle.ownDeco": "Tu propia decoración",
@@ -772,7 +744,6 @@ export const es = {
   "profileStyle.gradientPreview": "Vista previa del gradiente",
   "profileStyle.gradientAngle": "Dirección",
   "profileStyle.gradientBalance": "Punto de mezcla",
-  "profileStyle.useAccent": "Usar el color de acento",
   "style.none": "Ninguno",
   "style.neon": "Neón",
   "style.ember": "Brasa",
@@ -793,11 +764,11 @@ export const es = {
   "style.gradient": "Degradado",
   "style.pop": "Pop",
   "style.animated": "Animado",
+  "style.breathe": "Respiración",
   "style.embers": "Brasas",
   "style.snow": "Nieve",
   "style.fireworks": "Fuegos artificiales",
   "style.bubbles": "Burbujas",
-  "emoji.usedBy": "Creado por",
   "emoji.telegramImport": "Importar de un paquete de Telegram",
   "emoji.telegramHint":
     "Escribe el nombre del paquete (el de la URL t.me/addstickers/nombre). Solo estáticos por ahora.",
@@ -830,7 +801,6 @@ export const es = {
 
   "profile.edit": "Editar perfil",
   "profile.copyUser": "Copiar nombre de usuario",
-  "profile.title": "Mi cuenta",
 } as const;
 
 export type MessageKey = keyof typeof es;

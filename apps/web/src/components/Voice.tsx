@@ -4,7 +4,7 @@
  * y quien está conectada tiene un panel fijo encima de su barra de usuario con
  * lo que se usa cada dos minutos: callar, ensordecer y colgar.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   Clock3,
@@ -35,7 +35,11 @@ import {
 } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { sendCommand } from "../lib/gateway.ts";
-import { MarbleRace } from "./MarbleRace.tsx";
+/* En diferido: el panel de la carrera (y su física en lib/marbleRace.ts) solo
+   se descarga cuando alguien de la llamada abre una sala, no en el chunk
+   inicial que paga todo el mundo al entrar. El import de Racer es solo de
+   tipos, así que no lo devuelve al bundle. */
+const MarbleRace = lazy(() => import("./MarbleRace.tsx").then((m) => ({ default: m.MarbleRace })));
 import * as audio from "../lib/relay.ts";
 import type { Racer } from "../lib/marbleRace.ts";
 import type { MessageKey } from "../i18n.ts";
@@ -732,7 +736,7 @@ function screenBox(width: number, height: number, aspect: number) {
 }
 
 /** Aleatorio visual pero estable por usuario: no cambia de tamaño en cada render. */
-export function gravityRadius(userId: string): number {
+function gravityRadius(userId: string): number {
   let hash = 2_166_136_261;
   for (let i = 0; i < userId.length; i += 1) {
     hash ^= userId.charCodeAt(i);
@@ -1222,10 +1226,22 @@ function GravityStage({
     }
     raf = requestAnimationFrame(frame);
 
+    // Pestaña oculta: nada que mirar, nada que calcular. Al volver se reinicia
+    // lastTime para no integrar de golpe todo el dt acumulado durante el parón.
+    const onVisibility = () => {
+      cancelAnimationFrame(raf);
+      if (!document.hidden) {
+        lastTime = performance.now();
+        raf = requestAnimationFrame(frame);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
     return () => {
       cancelAnimationFrame(raf);
       resizeObserver.disconnect();
       themeObserver.disconnect();
+      document.removeEventListener("visibilitychange", onVisibility);
       canvas.removeEventListener("dblclick", onDoubleClick);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
@@ -1420,15 +1436,19 @@ export function VoiceStage({ channelId }: { channelId: string }) {
        empujaban los mandos fuera de la pantalla y no había forma de colgar. */
     <div className="relative flex min-h-0 flex-1 flex-col">
       {lobby && inRace ? (
-        <MarbleRace
-          lobby={lobby}
-          racers={racers}
-          isHost={lobby.host_id === selfId}
-          racing={Boolean(selfId && (lobby.seed === null || lobby.runners.includes(selfId)))}
-          onWorld={(world) => sendCommand({ t: "RACE_WORLD", d: { channel_id: channelId, world } })}
-          onStart={() => sendCommand({ t: "RACE_START", d: { channel_id: channelId } })}
-          onLeave={() => sendCommand({ t: "RACE_LEAVE", d: { channel_id: channelId } })}
-        />
+        /* fallback null: mientras baja el chunk se sigue viendo la llamada
+           tal cual; el panel aparece entero cuando está listo. */
+        <Suspense fallback={null}>
+          <MarbleRace
+            lobby={lobby}
+            racers={racers}
+            isHost={lobby.host_id === selfId}
+            racing={Boolean(selfId && (lobby.seed === null || lobby.runners.includes(selfId)))}
+            onWorld={(world) => sendCommand({ t: "RACE_WORLD", d: { channel_id: channelId, world } })}
+            onStart={() => sendCommand({ t: "RACE_START", d: { channel_id: channelId } })}
+            onLeave={() => sendCommand({ t: "RACE_LEAVE", d: { channel_id: channelId } })}
+          />
+        </Suspense>
       ) : null}
       {gravity ? (
         <GravityStage

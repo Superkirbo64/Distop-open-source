@@ -24,10 +24,13 @@ import { playUi } from "../lib/notify.ts";
 
 export function useT() {
   const locale = useStore((s) => s.prefs.locale);
+  // El diccionario llega en diferido: el contador cambia al aterrizar el chunk
+  // y fuerza un `t` nuevo, que repinta los textos que salieron en español.
+  const epoch = useStore((s) => s.localeEpoch);
   return useCallback(
     (key: MessageKey, vars?: Record<string, string | number>) =>
       translate(locale, key, vars),
-    [locale],
+    [locale, epoch],
   );
 }
 
@@ -1377,8 +1380,16 @@ export function Avatar({
           }
         >
           <span className="ring-layer ring-base" />
-          <span className="ring-layer ring-accents" />
-          <span className="ring-layer ring-particles" />
+          {/* A 32px o menos, solo la estructura: los acentos y las partículas
+              van en `screen` y a ese tamaño son ruido ilegible que triplica
+              las superficies compuestas de cada fila de lista. El aro sigue
+              puesto —la base es el dibujo— y completo en tamaños mayores. */}
+          {size > 32 ? (
+            <>
+              <span className="ring-layer ring-accents" />
+              <span className="ring-layer ring-particles" />
+            </>
+          ) : null}
         </span>
       ) : null}
 

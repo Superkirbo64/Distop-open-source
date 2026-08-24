@@ -116,6 +116,9 @@ function match(method: string, pathname: string): { handler: Handler; params: Re
 
 const MAX_JSON_BYTES = 1024 * 1024;
 
+/** Solo para cuerpos pequeños (JSON y similares): acumula TODO en memoria.
+    Las subidas de archivos van por storage.ts:saveUploadStream, que fluye a
+    disco justamente para no pagar aquí un pico de RAM del tamaño del archivo. */
 export async function readBody(req: IncomingMessage, limit: number): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;

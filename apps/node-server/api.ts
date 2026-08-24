@@ -66,7 +66,6 @@ import {
   isLocalRequest,
   notFound,
   rateLimit,
-  readBody,
   readJson,
   requireAuth,
   route,
@@ -76,7 +75,7 @@ import {
   type Ctx,
 } from "./http.ts";
 import { instanceHealth, invalidateStorageCache, VERSION } from "./instance.ts";
-import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, serveFile } from "./storage.ts";
+import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
 import { disconnectSession, disconnectUser, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.ts";
 import { statesOfCommunity } from "./voice.ts";
@@ -2311,9 +2310,9 @@ route("POST", "/api/v1/uploads", async (ctx) => {
   const filename = decodeURIComponent(String(ctx.req.headers["x-filename"] ?? "archivo"));
   if (!contentType) throw badRequest("Falta la cabecera content-type.");
 
-  const data = await readBody(ctx.req, MAX_UPLOAD_BYTES);
-  if (data.length === 0) throw badRequest("El archivo está vacío.");
-  return saveUpload({ ownerId: user.id, filename, contentType, data });
+  // Directo a disco según llega (§28.3): bufferizar hasta 500 MB en RAM era un
+  // pico letal en el anfitrión modesto. Los errores (413, vacío, firma) no cambian.
+  return saveUploadStream({ ownerId: user.id, filename, contentType, body: ctx.req, limit: MAX_UPLOAD_BYTES });
 });
 
 route("GET", "/api/v1/files/:id", (ctx) => serveFile(ctx, ctx.params.id!));

@@ -12,10 +12,12 @@
  * duerma, pero cerrar la app del todo la apaga.
  *
  * En el navegador y en Electron este módulo no hace nada: isNativePlatform()
- * es false y ningún método toca el puente.
+ * es false y ningún método toca el puente. Por eso @capacitor/core se importa
+ * en diferido: el bundle que cargan el escritorio y el navegador no lleva el
+ * runtime de Capacitor, y el APK (donde el WebView nativo ya inyecta
+ * window.Capacitor antes de que corra este código) lo carga al arrancar el
+ * servidor y solo entonces.
  */
-import { Capacitor, registerPlugin } from "@capacitor/core";
-
 export const PHONE_INSTANCE_URL = "http://127.0.0.1:5000";
 
 interface NodeEnginePlugin {
@@ -29,7 +31,7 @@ interface HostServicePlugin {
 
 /** ¿Esta app puede hospedar en el propio teléfono? (solo el APK Android) */
 export function phoneCanHost(): boolean {
-  return Capacitor.isNativePlatform();
+  return Boolean(window.Capacitor?.isNativePlatform?.());
 }
 
 async function probe(timeoutMs: number): Promise<boolean> {
@@ -54,6 +56,8 @@ export function phoneServerAlive(): Promise<boolean> {
  */
 export async function startPhoneServer(): Promise<boolean> {
   if (!phoneCanHost()) return false;
+
+  const { registerPlugin } = await import("@capacitor/core");
 
   try {
     await registerPlugin<NodeEnginePlugin>("CapacitorNodeJS").start({});

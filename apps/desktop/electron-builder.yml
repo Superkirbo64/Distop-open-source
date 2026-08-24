@@ -22,6 +22,15 @@ extraResources:
       # El proyecto Node del APK (si se generó) no pinta nada en el escritorio.
       - "**/*"
       - "!nodejs/**"
+      # Los sourcemaps solo los abre DevTools: fuera del instalador. La web
+      # hosteada los conserva (vite.config sigue con sourcemap: true).
+      - "!**/*.map"
+      # El pack completo de emoji animado (~68 MB) se queda para instancias y
+      # host-bundle; el instalador lleva solo el set curado del picker (abajo)
+      # y el cliente cae a la fuente Noto o al carácter plano para el resto.
+      - "!emoji-animated/**"
+  - from: staging/emoji-curated
+    to: web/dist/emoji-animated
   - from: ../node-server
     to: node-server
     filter:

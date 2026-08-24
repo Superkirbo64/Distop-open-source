@@ -84,7 +84,7 @@ export function playUi(name: UiSound): void {
   }
 }
 
-export function canNotify(): boolean {
+function canNotify(): boolean {
   return typeof Notification !== "undefined";
 }
 

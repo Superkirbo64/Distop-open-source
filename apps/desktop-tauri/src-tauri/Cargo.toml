@@ -1,0 +1,36 @@
+# Spike B1 (ver ../README.md). La feature `unstable` existe SOLO por la
+# incógnita 1: la API multi-webview de tauri v2 vive detrás de ella.
+[package]
+name = "distop-desktop"
+version = "0.1.0"
+description = "Cascarón Tauri de Distop (Proyecto B, spike)"
+edition = "2021"
+license = "AGPL-3.0"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["unstable", "tray-icon"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Job Object con kill-on-close para el sidecar del node-server (src/host.rs):
+# ni un crash del cascarón deja un node.exe huérfano sirviendo la comunidad.
+win32job = "2"
+# Acceso COM al WebView2 real (la misma versión que usa tauri por debajo):
+# los handlers de PermissionRequested y NewWindowRequested de src/permissions.rs.
+webview2-com = "0.38"
+windows = "0.61"
+# Detección de juegos sin procesos externos (src/games.rs): sysinfo enumera
+# procesos y winreg lee el registro de Steam — muere el tasklist.exe de cada 12s.
+sysinfo = "0.33"
+winreg = "0.55"
+# Paridad de cascarón: una sola instancia, arranque con Windows, enlaces
+# externos al navegador del sistema y auto-update firmado.
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+
+[features]
+default = []

@@ -6,13 +6,8 @@
  */
 import { contextBridge, ipcRenderer } from "electron";
 import type { GameScan } from "./games";
-
-export interface HostStatus {
-  state: "off" | "starting" | "on" | "error";
-  url: string;
-  error: string;
-  log: string[];
-}
+// Solo el tipo: se borra al compilar y el preload no arrastra nada de host.ts.
+import type { HostStatus } from "./host";
 
 const api = {
   platform: process.platform as string,
@@ -39,6 +34,18 @@ const api = {
       ipcRenderer.on("games:change", listener);
       return () => ipcRenderer.removeListener("games:change", listener);
     },
+    /** El sondeo local entero (tasklist + registro), no solo el reporte. */
+    watch: (): Promise<boolean> => ipcRenderer.invoke("games:watch") as Promise<boolean>,
+    setWatch: (enabled: boolean): Promise<boolean> =>
+      ipcRenderer.invoke("games:setWatch", enabled) as Promise<boolean>,
+  },
+
+  /** Aplicaciones integradas del cascarón (§15): apagada = pestaña y proceso fuera. */
+  apps: {
+    prefs: (): Promise<{ whatsapp: boolean; telegram: boolean }> =>
+      ipcRenderer.invoke("apps:prefs") as Promise<{ whatsapp: boolean; telegram: boolean }>,
+    set: (id: "whatsapp" | "telegram", enabled: boolean): Promise<{ whatsapp: boolean; telegram: boolean } | null> =>
+      ipcRenderer.invoke("apps:set", id, enabled) as Promise<{ whatsapp: boolean; telegram: boolean } | null>,
   },
 
   /** Foto mínima de la llamada para el widget transparente de Windows. */
@@ -46,7 +53,5 @@ const api = {
     update: (state: unknown): void => ipcRenderer.send("voice-overlay:update", state),
   },
 };
-
-export type DistopBridge = typeof api;
 
 contextBridge.exposeInMainWorld("distop", api);

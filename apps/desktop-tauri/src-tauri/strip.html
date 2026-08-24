@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Distop</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #0b0a14; overflow: hidden; }
+  header {
+    display: flex; align-items: center; gap: 2px;
+    height: 36px; box-sizing: border-box; padding: 0 10px;
+    background: #0b0a14; border-bottom: 1px solid #1a1830;
+    font: 12px/1 -apple-system, "Segoe UI", system-ui, sans-serif;
+    user-select: none;
+  }
+  button {
+    height: 26px; padding: 0 14px; border: 0; border-radius: 7px;
+    background: transparent; color: #98a0b3; font: inherit; cursor: pointer;
+  }
+  button:hover { background: #17162a; color: #e8eaf2; }
+  button[aria-pressed="true"] { background: #1e2340; color: #e8eaf2; }
+  button:focus-visible { outline: 2px solid #7b90ff; outline-offset: 1px; }
+  button[hidden] { display: none; }
+  @media (prefers-reduced-motion: no-preference) { button { transition: background 120ms, color 120ms; } }
+</style>
+</head>
+<body>
+  <header>
+    <button type="button" data-app="distop" aria-pressed="true">Distop</button>
+    <button type="button" data-app="whatsapp" aria-pressed="false">WhatsApp</button>
+    <button type="button" data-app="telegram" aria-pressed="false">Telegram</button>
+  </header>
+<script>
+(function () {
+  var invoke = window.__TAURI__.core.invoke;
+  var tabs = Array.prototype.slice.call(document.querySelectorAll("button[data-app]"));
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      tabs.forEach(function (other) {
+        other.setAttribute("aria-pressed", String(other === tab));
+      });
+      invoke("shell_switch", { id: tab.getAttribute("data-app") });
+    });
+  });
+
+  /* Las pestañas apagadas en Ajustes no existen: ni botón ni proceso. Si la
+     apagada era la activa, el proceso principal ya volvió a Distop. */
+  function apply(state) {
+    var hiddenPressed = false;
+    tabs.forEach(function (tab) {
+      var id = tab.getAttribute("data-app");
+      if (id === "distop") return;
+      var off = Boolean(state) && state[id] === false;
+      tab.hidden = off;
+      if (off && tab.getAttribute("aria-pressed") === "true") hiddenPressed = true;
+    });
+    if (hiddenPressed) {
+      tabs.forEach(function (tab) {
+        tab.setAttribute("aria-pressed", String(tab.getAttribute("data-app") === "distop"));
+      });
+    }
+  }
+  invoke("shell_tabs").then(apply);
+  window.__TAURI__.event.listen("shell:tabs", function (event) { apply(event.payload); });
+})();
+</script>
+</body>
+</html>

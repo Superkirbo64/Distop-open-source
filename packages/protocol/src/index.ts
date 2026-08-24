@@ -176,7 +176,11 @@ export type Nameplate = (typeof NAMEPLATES)[number];
 export const NAME_FONTS = ["default", "display", "mono", "serif", "round", "wide", "pixel", "arcade"] as const;
 export type NameFont = (typeof NAME_FONTS)[number];
 
-export const NAME_EFFECTS = ["plain", "gradient", "neon", "pop", "animated"] as const;
+/* "breathe" es la respiración que antes llevaba "plain" de serie. Se separó
+   porque el default animaba cada nombre visible de la app a la vez —lista de
+   miembros entera incluida— sin que nadie lo pidiera: ahora quien la quiera
+   la elige, y "plain" queda quieto de verdad. */
+export const NAME_EFFECTS = ["plain", "gradient", "neon", "pop", "animated", "breathe"] as const;
 export type NameEffect = (typeof NAME_EFFECTS)[number];
 
 export const PROFILE_EFFECTS = [

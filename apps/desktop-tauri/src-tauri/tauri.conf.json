@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Distop Tauri Beta",
+  "version": "0.1.0",
+  "identifier": "com.distop.tauri",
+  "build": {
+    "frontendDist": "../../web/dist",
+    "beforeBuildCommand": "node scripts/stage-server.mjs",
+    "beforeDevCommand": "node scripts/stage-server.mjs"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: https:; media-src 'self' blob: https:; connect-src 'self' https: wss: http://127.0.0.1:* ws://127.0.0.1:*; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEZFRkJCMDkyQkMyOUVEMDQKUldRRTdTbThrckQ3L2w1Mmp2Mk1BMVZ3YnNsWDlHRU5OcUh4WU5tMXIrQ283NFU5Q3dKU25EQkMK",
+      "endpoints": [
+        "https://github.com/Superkirbo64/Distop-open-source/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
+    "externalBin": ["binaries/node"],
+    "resources": {
+      "staging/node-server": "node-server",
+      "staging/web/dist": "web/dist"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/64x64.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ]
+  }
+}

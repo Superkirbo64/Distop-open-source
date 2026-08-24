@@ -59,6 +59,28 @@
     });
   });
 
+  /* Las pestañas apagadas en Ajustes no existen: ni botón ni proceso. Si la
+     apagada era la activa, main ya volvió a Distop; aquí la franja converge. */
+  function apply(state) {
+    var hiddenPressed = false;
+    tabs.forEach(function (tab) {
+      var id = tab.getAttribute("data-app");
+      if (id === "distop") return;
+      var off = Boolean(state) && state[id] === false;
+      tab.hidden = off;
+      if (off && tab.getAttribute("aria-pressed") === "true") hiddenPressed = true;
+    });
+    if (hiddenPressed) {
+      tabs.forEach(function (tab) {
+        tab.setAttribute("aria-pressed", String(tab.getAttribute("data-app") === "distop"));
+      });
+    }
+  }
+  if (window.distopShell.tabs) {
+    window.distopShell.tabs().then(apply);
+    window.distopShell.onTabs(apply);
+  }
+
   fit();
   window.addEventListener("resize", fit);
   if (navigator.windowControlsOverlay) {

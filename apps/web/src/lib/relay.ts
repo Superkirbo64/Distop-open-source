@@ -79,12 +79,12 @@ const MAX_LAG = 0.5;
 /** Duración de un paquete, en microsegundos, para numerarlos al decodificar. */
 const FRAME_US = 20_000;
 
-export function supported(): boolean {
+function supported(): boolean {
   return typeof AudioEncoder === "function" && typeof MediaStreamTrackProcessor === "function";
 }
 
 /** El vídeo pide dos cosas más: codificarlo y volver a montar la pista al recibirlo. */
-export function videoSupported(): boolean {
+function videoSupported(): boolean {
   return supported() && typeof VideoEncoder === "function" && typeof MediaStreamTrackGenerator === "function";
 }
 
@@ -864,7 +864,7 @@ export function dropVideo(id: Snowflake): void {
   viewers.delete(id);
 }
 
-export function drop(id: Snowflake): void {
+function drop(id: Snowflake): void {
   const player = players.get(id);
   if (!player) return;
   if (player.decoder.state !== "closed") player.decoder.close();
@@ -877,4 +877,7 @@ export function dropAll(): void {
   for (const id of [...players.keys()]) drop(id);
   for (const id of [...viewers.keys()]) dropVideo(id);
   stopClips();
+  // Colgar debe devolver la memoria: los PCM decodificados pesan mucho más que
+  // el mp3. El próximo uso re-descarga y la caché HTTP amortigua el coste.
+  clips.clear();
 }

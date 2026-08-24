@@ -3,13 +3,16 @@
  * El nombre que sube el usuario nunca toca el sistema de ficheros: se guarda en
  * la base y en disco vive un UUID, lo que cierra path traversal por construcción.
  */
-import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, statSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
+import { Transform, type Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { uuidv7 } from "@distop/protocol";
 import type { Attachment } from "@distop/protocol";
 import { config } from "./config.ts";
 import { db } from "./db.ts";
-import { HttpError, notFound, rateLimit, type Ctx, HANDLED } from "./http.ts";
+import { HttpError, badRequest, notFound, rateLimit, type Ctx, HANDLED } from "./http.ts";
 
 const ROOT = resolve(config.storagePath);
 mkdirSync(ROOT, { recursive: true });
@@ -36,6 +39,44 @@ export function hasAudioSignature(contentType: string, data: Uint8Array): boolea
   return true;
 }
 
+/** Nombre en disco compartido por las dos rutas de guardado: UUID + extensión
+    saneada dentro de un cajón por mes, para que un directorio no acumule
+    decenas de miles de entradas con los años. */
+function nuevaRutaEnDisco(filename: string): { id: string; relative: string; full: string } {
+  const id = uuidv7();
+  const ext = extname(filename).toLowerCase();
+  const bucket = new Date().toISOString().slice(0, 7); // AAAA-MM
+  mkdirSync(join(ROOT, bucket), { recursive: true });
+  const relative = join(bucket, `${id}${SAFE_EXT.test(ext) ? ext : ".bin"}`);
+  return { id, relative, full: join(ROOT, relative) };
+}
+
+/** La fila y la forma que ve el cliente, idénticas venga el archivo de un
+    Buffer o de un stream: si divergen, un adjunto se guarda y luego no se ve. */
+function insertarAdjunto(opts: {
+  id: string;
+  ownerId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  relative: string;
+}): Attachment {
+  const name = sanitizeName(opts.filename);
+  db.prepare(
+    `INSERT INTO attachments (id, message_id, owner_id, filename, content_type, size, path, created_at)
+     VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`,
+  ).run(opts.id, opts.ownerId, name, opts.contentType, opts.size, opts.relative, Date.now());
+
+  return {
+    id: opts.id,
+    message_id: null,
+    filename: name,
+    content_type: opts.contentType,
+    size: opts.size,
+    url: `/api/v1/files/${opts.id}`,
+  };
+}
+
 export function saveUpload(opts: {
   ownerId: string;
   filename: string;
@@ -51,27 +92,111 @@ export function saveUpload(opts: {
     throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "El contenido no coincide con el formato de audio indicado.");
   }
 
-  const id = uuidv7();
-  const ext = extname(opts.filename).toLowerCase();
-  const bucket = new Date().toISOString().slice(0, 7); // AAAA-MM
-  mkdirSync(join(ROOT, bucket), { recursive: true });
-
-  const relative = join(bucket, `${id}${SAFE_EXT.test(ext) ? ext : ".bin"}`);
-  writeFileSync(join(ROOT, relative), opts.data);
-
-  db.prepare(
-    `INSERT INTO attachments (id, message_id, owner_id, filename, content_type, size, path, created_at)
-     VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, opts.ownerId, sanitizeName(opts.filename), opts.contentType, opts.data.length, relative, Date.now());
-
-  return {
+  const { id, relative, full } = nuevaRutaEnDisco(opts.filename);
+  writeFileSync(full, opts.data);
+  return insertarAdjunto({
     id,
-    message_id: null,
-    filename: sanitizeName(opts.filename),
-    content_type: opts.contentType,
+    ownerId: opts.ownerId,
+    filename: opts.filename,
+    contentType: opts.contentType,
     size: opts.data.length,
-    url: `/api/v1/files/${id}`,
-  };
+    relative,
+  });
+}
+
+/* La firma más larga que mira hasAudioSignature es la de WAV: 12 bytes. Con
+   retener eso de cada subida de audio ya se puede validar sin tener el cuerpo. */
+const FIRMA_BYTES = 12;
+
+/**
+ * La subida de archivos (§28.3), del socket directo a disco: bufferizar el
+ * cuerpo entero en RAM (http.ts:readBody) significaba que un vídeo al límite
+ * de MAX_UPLOAD_SIZE_MB era un pico de cientos de MB en el proceso — letal en
+ * el escritorio, donde la instancia vive en un utilityProcess, y en una
+ * Raspberry Pi con varias subidas a la vez.
+ *
+ * El cuerpo fluye a un temporal JUNTO al destino final (mismo volumen), así el
+ * rename de cierre es atómico y nunca queda visible un archivo a medias. El
+ * límite se aplica contando bytes al vuelo: superarlo destruye el stream,
+ * borra el temporal y responde el mismo 413 de siempre — el cap no se relaja,
+ * es un invariante de seguridad (§22).
+ */
+export async function saveUploadStream(opts: {
+  ownerId: string;
+  filename: string;
+  contentType: string;
+  body: Readable;
+  limit: number;
+}): Promise<Attachment> {
+  // Antes de tocar el disco: un tipo prohibido no debe costar ni un byte escrito.
+  if (!config.allowedUploadTypes.includes(opts.contentType)) {
+    throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", `Tipo de archivo no permitido: ${opts.contentType}.`, {
+      allowed: config.allowedUploadTypes,
+    });
+  }
+
+  const { id, relative, full } = nuevaRutaEnDisco(opts.filename);
+  const temporal = `${full}.part`;
+
+  const esAudio = opts.contentType.startsWith("audio/");
+  const cabecera: Buffer[] = [];
+  let cabeceraBytes = 0;
+  let firmaComprobada = false;
+  const firmaValida = (): boolean => hasAudioSignature(opts.contentType, Buffer.concat(cabecera, cabeceraBytes));
+
+  let total = 0;
+  const contador = new Transform({
+    transform(chunk: Buffer, _enc, done) {
+      total += chunk.length;
+      if (total > opts.limit) {
+        // Mismo error que readBody: para el cliente nada cambia, solo deja de costar RAM.
+        done(new HttpError(413, "PAYLOAD_TOO_LARGE", `El cuerpo supera ${opts.limit} bytes.`));
+        return;
+      }
+      if (esAudio && !firmaComprobada) {
+        if (cabeceraBytes < FIRMA_BYTES) {
+          const trozo = chunk.subarray(0, FIRMA_BYTES - cabeceraBytes);
+          cabecera.push(trozo);
+          cabeceraBytes += trozo.length;
+        }
+        // En cuanto hay cabecera completa se decide: abortar aquí evita escribir
+        // cientos de MB de un fichero renombrado que igual iba a rechazarse.
+        if (cabeceraBytes >= FIRMA_BYTES) {
+          firmaComprobada = true;
+          if (!firmaValida()) {
+            done(new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "El contenido no coincide con el formato de audio indicado."));
+            return;
+          }
+        }
+      }
+      done(null, chunk);
+    },
+  });
+
+  try {
+    // pipeline y no .pipe: propaga errores en ambos sentidos, respeta backpressure
+    // y destruye el resto de la cadena si el cliente corta a mitad de subida.
+    await pipeline(opts.body, contador, createWriteStream(temporal, { flags: "wx" }));
+    if (total === 0) throw badRequest("El archivo está vacío.");
+    // Audio más corto que la firma completa: se juzga con lo que llegó, como antes.
+    if (esAudio && !firmaComprobada && !firmaValida())
+      throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "El contenido no coincide con el formato de audio indicado.");
+    renameSync(temporal, full);
+  } catch (err) {
+    // Cliente que aborta, límite superado o firma falsa: el temporal no sobrevive.
+    // El borrado nunca pisa al error original, que es lo que hay que contar.
+    await rm(temporal, { force: true }).catch(() => {});
+    throw err;
+  }
+
+  return insertarAdjunto({
+    id,
+    ownerId: opts.ownerId,
+    filename: opts.filename,
+    contentType: opts.contentType,
+    size: total,
+    relative,
+  });
 }
 
 /**

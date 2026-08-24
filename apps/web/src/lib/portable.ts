@@ -37,7 +37,7 @@ function randomSecret(): string {
   return btoa(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function portableIdentity(): PortableIdentity | null {
+function portableIdentity(): PortableIdentity | null {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;

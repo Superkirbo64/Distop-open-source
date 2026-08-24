@@ -13,10 +13,11 @@ import { type AppViews, createAppViews } from "./apps";
 import { isTabId } from "./apps-policy";
 import { webDistPath } from "./paths";
 import { hostStatus, onHostStatus, startHost, stopHost } from "./host";
-import { currentGame, lastGameScan, onGameChange, startGameWatch } from "./games";
+import { currentGame, lastGameScan, onGameChange, startGameWatch, stopGameWatch } from "./games";
 import { setupTray } from "./tray";
 import { setupUpdates } from "./updates";
-import { createVoiceOverlay } from "./voice-overlay";
+import { type VoiceOverlayHandle, createVoiceOverlay } from "./voice-overlay";
+import { type DesktopPrefs, loadDesktopPrefs, saveDesktopPrefs } from "./desktop-prefs";
 
 // La presentación completa acompaña el reveal de Universfield sin cortarlo.
 const MIN_SPLASH_MS = 3_050;
@@ -31,6 +32,15 @@ app.setName("Distop");
 // Sin esto las notificaciones en Windows salen como "electron.app.Electron".
 app.setAppUserModelId("com.distop.app");
 
+/* Experimento A/B del plan de RAM (medir con DISTOP_METRICS antes de opinar):
+   funde el proceso GPU en el principal (~30-80 MB menos de working set). NUNCA
+   por defecto: la splash y el overlay usan ventanas transparentes, combinación
+   con historial de fallos de composición con GPU in-process. Si algo se ve
+   mal con la variable puesta, el veredicto es no-go y se borra este bloque. */
+if (process.env["DISTOP_GPU_IN_PROCESS"]) {
+  app.commandLine.appendSwitch("in-process-gpu");
+}
+
 // Dos copias de la app pelearían por la bandeja y por el puerto de la instancia.
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -40,6 +50,7 @@ if (!app.requestSingleInstanceLock()) {
   let splash: BrowserWindow | null = null;
   let splashStartedAt = 0;
   let revealing = false;
+  let prefs: DesktopPrefs = { whatsapp: true, telegram: true, gameWatch: true };
 
   const toggleFullscreen = (): void => {
     if (!win || win.isDestroyed()) return;
@@ -194,6 +205,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(() => {
+    prefs = loadDesktopPrefs();
     createSplash();
     registerAppProtocol(webDistPath());
     hardenSession(() => win);
@@ -204,8 +216,38 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle("games:current", () => currentGame());
     ipcMain.handle("games:scan", () => lastGameScan());
 
+    /* Vigilancia de juegos bajo demanda: el toggle de Ajustes apaga el sondeo
+       local entero (tasklist + registro), no solo el reporte al servidor. */
+    ipcMain.handle("games:watch", () => prefs.gameWatch);
+    ipcMain.handle("games:setWatch", (_event, enabled: unknown) => {
+      if (typeof enabled !== "boolean") return prefs.gameWatch;
+      if (enabled !== prefs.gameWatch) {
+        prefs.gameWatch = enabled;
+        saveDesktopPrefs(prefs);
+        if (enabled) startGameWatch();
+        else stopGameWatch();
+      }
+      return prefs.gameWatch;
+    });
+
+    /* Aplicaciones integradas: apagada = su pestaña desaparece y, si su vista
+       vivía, se destruye entera. La sesión queda en disco (partition persist:). */
+    ipcMain.handle("apps:prefs", () => ({ whatsapp: prefs.whatsapp, telegram: prefs.telegram }));
+    ipcMain.handle("apps:set", (_event, id: unknown, enabled: unknown) => {
+      if ((id !== "whatsapp" && id !== "telegram") || typeof enabled !== "boolean") return null;
+      prefs[id] = enabled;
+      saveDesktopPrefs(prefs);
+      if (!enabled) apps?.disable(id);
+      win?.webContents.send("shell:tabs", { whatsapp: prefs.whatsapp, telegram: prefs.telegram });
+      return { whatsapp: prefs.whatsapp, telegram: prefs.telegram };
+    });
+    ipcMain.handle("shell:tabs", () => ({ whatsapp: prefs.whatsapp, telegram: prefs.telegram }));
+
     ipcMain.on("shell:switch", (_event, id: unknown) => {
-      if (isTabId(id)) apps?.show(id);
+      if (!isTabId(id)) return;
+      // main es la autoridad: un id desactivado se ignora aunque llegue el IPC.
+      if (id !== "distop" && !prefs[id]) return;
+      apps?.show(id);
     });
 
     onHostStatus((status) => apps?.distop.webContents.send("host:status", status));
@@ -214,15 +256,56 @@ if (!app.requestSingleInstanceLock()) {
     createWindow();
     if (win) {
       setupTray(win);
-      const voiceOverlay = createVoiceOverlay(win);
+
+      /* El widget de llamada nace con la primera llamada y muere al colgar: en
+         reposo no existe su renderer. El mismo aviso gobierna el throttling de
+         la vista Distop: solo corre sin freno mientras hay llamada. */
+      let voiceOverlay: VoiceOverlayHandle | null = null;
+      let throttled = true;
       ipcMain.on("voice-overlay:update", (event, payload: unknown) => {
         // Solo el cliente Distop, nunca WhatsApp/Telegram, puede alimentar esta
         // ventana que queda por encima de las demás aplicaciones.
-        if (event.sender === apps?.distop.webContents) voiceOverlay.update(payload);
+        if (event.sender !== apps?.distop.webContents || !win) return;
+        const inCall =
+          typeof payload === "object" &&
+          payload !== null &&
+          typeof (payload as Record<string, unknown>)["channelId"] === "string";
+
+        if (apps && inCall === throttled) {
+          throttled = !inCall;
+          apps.distop.webContents.setBackgroundThrottling(throttled);
+        }
+
+        if (!voiceOverlay) {
+          if (!inCall) return;
+          voiceOverlay = createVoiceOverlay(win);
+        }
+        if (inCall) {
+          voiceOverlay.update(payload);
+        } else {
+          voiceOverlay.destroy();
+          voiceOverlay = null;
+        }
       });
     }
     setupUpdates();
-    startGameWatch();
+    if (prefs.gameWatch) startGameWatch();
+
+    /* Medición A/B del plan de RAM: DISTOP_METRICS=1 vuelca el working set de
+       cada proceso cada 20 s. Cuenta páginas compartidas varias veces: sirve
+       para comparar deltas del mismo escenario, no como cifra absoluta. */
+    if (process.env["DISTOP_METRICS"]) {
+      setInterval(() => {
+        const rows = app.getAppMetrics().map((metric) => ({
+          type: metric.type,
+          pid: metric.pid,
+          svc: metric.serviceName ?? metric.name ?? "",
+          wsMB: Math.round(metric.memory.workingSetSize / 1024),
+        }));
+        const total = rows.reduce((sum, row) => sum + row.wsMB, 0);
+        console.log(`[mem] total=${total}MB`, JSON.stringify(rows));
+      }, 20_000);
+    }
   });
 
   // Con bandeja, cerrar la última ventana no significa salir: en Windows la app

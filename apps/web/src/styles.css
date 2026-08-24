@@ -558,6 +558,18 @@
     /* Sin animación de entrada: ahora la pastilla siempre está ahí y lo que
        cambia es su altura, así que la transición la lleva el propio elemento. */
   }
+
+  /* Fila "virtualizada" por CSS: fuera del viewport el navegador se salta su
+     layout y su pintura, y las animaciones de dentro (aros, efectos fx-* del
+     nombre) se pausan solas — sin observers ni librería de listas virtuales.
+     Solo para la lista de miembros: el chat ancla su scroll al fondo y saltarse
+     alturas ahí movería la posición de lectura, así que no se toca. El 3rem es
+     el alto estimado mientras la fila está fuera; `auto` recuerda el real en
+     cuanto se pinta una vez, y el scroll no salta. */
+  .cv-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 3rem;
+  }
 }
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -567,13 +579,6 @@
    —eso cansa en una aplicación donde se pasan horas— y todo desaparece cuando
    el sistema pide movimiento reducido, gracias al bloque de @layer base.
    ──────────────────────────────────────────────────────────────────────── */
-
-@keyframes marker-in {
-  from {
-    transform: translateY(-50%) scaleY(0.2);
-    opacity: 0;
-  }
-}
 
 @keyframes message-in {
   from {
@@ -593,12 +598,6 @@
   from {
     opacity: 0;
     transform: scale(0.9);
-  }
-}
-
-@keyframes speaking-pulse {
-  50% {
-    opacity: 0.45;
   }
 }
 
@@ -669,11 +668,6 @@ dialog[open] {
   opacity: 0.5;
 }
 
-/* Latido en el punto de conexión mientras se reconecta: dice "sigo intentándolo". */
-.pulse-live {
-  animation: speaking-pulse 1.4s ease-in-out infinite;
-}
-
 /* Los canales se desplazan un pelo al pasar por encima: reaccionan sin saltar. */
 [data-pane="sidebar"] nav button {
   transition:
@@ -688,6 +682,201 @@ dialog[open] {
 /* Las tarjetas de la sala de voz se levantan cuando alguien habla. */
 figure {
   transition: transform 0.18s ease, border-color 0.15s ease, box-shadow 0.18s ease;
+}
+
+/* ── Iconos animados (icons.tsx) ─────────────────────────────────────────
+   Antes esto lo hacía motion/react con cuatro listeners sobre el botón
+   ancestro; era su único importador, así que en CSS la librería sale del
+   bundle. El disparador es el mismo ancestro que buscaba aquel closest()
+   —:focus-within cubre lo que cubría focusin— y cada parte declara SU
+   coreografía en --ai-anim: una sola regla decide CUÁNDO se anima y las de
+   cada icono deciden QUÉ. Las pasadas son finitas y sin fill-mode, como los
+   variants originales: una entrada de hover/foco, una pasada, y cada keyframe
+   termina en el estado de reposo (el engranaje aterriza a 180°, que en su
+   geometría es indistinguible de 0°). No hay reglas propias de quietud: el
+   kill-switch de @layer base acorta estas animaciones como cualquier otra,
+   y de regalo los iconos ahora obedecen también data-motion="off", cosa que
+   los listeners de motion/react no hacían. */
+.ai {
+  /* Sin coreografía asignada, el disparador aplica `animation: none`. */
+  --ai-anim: none;
+}
+
+/* Los transforms de las partes se miden sobre su propia caja: es lo que hace
+   que un `translate: 100%` del avión sea "un avión de largo" y que cada
+   confeti escale sobre su propio centro, igual que medía motion/react. */
+.ai [data-anim] {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* El disparador. Las dos últimas alternativas son el `?? svg` del código
+   viejo: un icono sin ancestro interactivo se anima al señalarlo a él. */
+:is(button, a, label, summary, [role="menuitem"], [role="button"]):is(:hover, :focus-within) :is(.ai [data-anim], .ai[data-anim]),
+.ai:is(:hover, :focus-within) [data-anim],
+.ai[data-anim]:is(:hover, :focus-within) {
+  animation: var(--ai-anim);
+}
+
+/* Trazo que se dibuja al MONTARSE (el tachado de silenciar): no depende del
+   hover sino de que la variante muted entre al DOM. dasharray:1 + pathLength=1
+   en el elemento hacen que un solo guión cubra el trazo entero. */
+.ai-draw {
+  stroke-dasharray: 1;
+  animation: ai-draw-in 0.6s ease-in-out;
+}
+
+/* Upload es el único sin keyframes: en el original era una transición simple
+   hacia el estado hover, así que aquí también. Que la flecha quede desplazada
+   con el movimiento apagado es el mismo trato que ya recibe .btn:hover. */
+.ai-upload [data-anim="arrow"] {
+  transition: translate 0.3s ease-in-out;
+}
+:is(button, a, label, summary, [role="menuitem"], [role="button"]):is(:hover, :focus-within) .ai-upload [data-anim="arrow"],
+.ai-upload:is(:hover, :focus-within) [data-anim="arrow"] {
+  translate: 0 -2px;
+}
+
+/* Qué coreografía corresponde a cada parte. Después de la regla genérica de
+   transform-box a propósito: announce-body la pisa en el empate (0,2,0). */
+.ai-gear [data-anim="gear"] { --ai-anim: ai-gear-turn 1.25s ease-in-out; }
+.ai-people [data-anim="near"] { --ai-anim: ai-people-near 0.6s ease-in-out 0.1s; }
+.ai-people [data-anim="far"] { --ai-anim: ai-people-far 0.6s ease-in-out; }
+.ai-cross [data-anim="glyph"] { --ai-anim: ai-cross-spin 0.45s ease-in-out; }
+.ai-speaker [data-anim="wave-a"] { --ai-anim: ai-wave-blip 0.6s ease-in-out; }
+.ai-speaker [data-anim="wave-b"] { --ai-anim: ai-wave-blip 0.6s ease-in-out 0.2s; }
+.ai-speaker[data-anim="shake"] { --ai-anim: ai-speaker-shake 0.6s ease-in-out; }
+.ai-hash [data-anim="stems"] { --ai-anim: ai-hash-stems 0.55s ease-in-out; }
+.ai-hash [data-anim="bars"] { --ai-anim: ai-hash-bars 0.55s ease-in-out; }
+/* El megáfono pivota cerca de la boca, como el transformOrigin en línea que
+   traía de motion/react; view-box para que 8px 12px se mida en el viewBox. */
+.ai-announce [data-anim="body"] {
+  transform-box: view-box;
+  transform-origin: 8px 12px;
+  --ai-anim: ai-announce-body 0.6s ease-in-out;
+}
+.ai-announce [data-anim="wave-a"],
+.ai-announce [data-anim="wave-b"] { stroke-dasharray: 1; }
+.ai-announce [data-anim="wave-a"] { --ai-anim: ai-announce-wave 0.6s ease-in-out; }
+.ai-announce [data-anim="wave-b"] { --ai-anim: ai-announce-wave 0.6s ease-in-out 0.1s; }
+.ai-send [data-anim="jet"] { --ai-anim: ai-send-fly 1.2s ease-in-out; }
+.ai-voice [data-anim="lift"] { --ai-anim: ai-voice-lift 0.6s ease-in-out; }
+.ai-popper [data-anim="cone"] { --ai-anim: ai-pop-cone 0.7s ease-in-out; }
+.ai-popper [data-anim="dot"] { --ai-anim: ai-pop-dots 0.7s ease-in-out; }
+.ai-popper [data-anim="streamer"] {
+  stroke-dasharray: 1;
+  --ai-anim: ai-pop-streamers 0.7s ease-in-out;
+}
+
+@keyframes ai-draw-in {
+  from { stroke-dashoffset: 1; opacity: 0; }
+}
+
+@keyframes ai-gear-turn {
+  0% { rotate: 0deg; }
+  50% { rotate: 90deg; }
+  100% { rotate: 180deg; }
+}
+
+@keyframes ai-people-near {
+  0%, 100% { translate: 0 0; }
+  33.3% { translate: 0 2px; }
+  66.6% { translate: 0 -2px; }
+}
+
+@keyframes ai-people-far {
+  0%, 100% { translate: 0 0; }
+  33.3% { translate: 0 4px; }
+  66.6% { translate: 0 -2px; }
+}
+
+/* Ver el comentario de Cross en icons.tsx: giro completo + micro-escala en
+   lugar del morph de atributos, con vuelta limpia al + del reposo. */
+@keyframes ai-cross-spin {
+  0% { rotate: 0deg; scale: 1; }
+  50% { rotate: 45deg; scale: 1.12; }
+  100% { rotate: 90deg; scale: 1; }
+}
+
+@keyframes ai-wave-blip {
+  0%, 100% { opacity: 1; scale: 1; }
+  50% { opacity: 0; scale: 0; }
+}
+
+/* El % del vaivén se resuelve contra la caja del propio svg: a 14px tiembla
+   menos que a 18, igual que el "-7%" que interpolaba motion/react. */
+@keyframes ai-speaker-shake {
+  0%, 100% { translate: 0 0; }
+  20%, 60% { translate: -7% 0; }
+  40%, 80% { translate: 7% 0; }
+}
+
+@keyframes ai-hash-stems {
+  0%, 100% { translate: 0 0; }
+  33.3% { translate: 0 1px; }
+  66.6% { translate: 0 -1px; }
+}
+
+@keyframes ai-hash-bars {
+  0%, 100% { translate: 0 0; }
+  33.3% { translate: -1.25px 0; }
+  66.6% { translate: 1.25px 0; }
+}
+
+@keyframes ai-announce-body {
+  0%, 100% { rotate: 0deg; translate: 0 0; }
+  33.3% { rotate: -4deg; translate: -0.5px 0; }
+  66.6% { rotate: 3deg; translate: 0.5px 0; }
+}
+
+/* opacity [0,1,.35,1] + pathLength [0,1,1,1] del original: el dashoffset hace
+   de pathLength (1 = trazo oculto, 0 = dibujado). */
+@keyframes ai-announce-wave {
+  0% { opacity: 0; stroke-dashoffset: 1; }
+  33.3% { opacity: 1; stroke-dashoffset: 0; }
+  66.6% { opacity: 0.35; stroke-dashoffset: 0; }
+  100% { opacity: 1; stroke-dashoffset: 0; }
+}
+
+/* Los times [0,.25,.5,.5,1] del original: el doble 0.5 es el teletransporte
+   —sale volando por arriba y reaparece por abajo— y en CSS se escribe como
+   dos keyframes pegados (49.9% y 50%), porque repetir el mismo % no apila
+   valores, los pisa. */
+@keyframes ai-send-fly {
+  0% { translate: 0 0; scale: 1; }
+  25% { translate: -10% 10%; scale: 0.8; }
+  49.9% { translate: 100% -100%; scale: 1; }
+  50% { translate: -125% 125%; scale: 1; }
+  100% { translate: 0 0; scale: 1; }
+}
+
+@keyframes ai-voice-lift {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 -2px; }
+}
+
+@keyframes ai-pop-cone {
+  0% { translate: -1.5px 1.5px; }
+  100% { translate: 0 0; }
+}
+
+/* En motion/react cada propiedad repartía sus paradas por toda la duración;
+   aquí se funden en una sola lista y lo no declarado en un keyframe interpola
+   de largo (la opacidad solo tiene 0% y 100%, como su [0,1] original). */
+@keyframes ai-pop-dots {
+  0% { opacity: 0; scale: 0.5; translate: -5px 5px; }
+  25% { scale: 0.8; }
+  50% { scale: 1; }
+  75% { scale: 1.1; }
+  100% { opacity: 1; scale: 1; translate: 0 0; }
+}
+
+@keyframes ai-pop-streamers {
+  0% { opacity: 0; scale: 0.3; translate: -5px 5px; stroke-dashoffset: 1; }
+  25% { scale: 0.8; }
+  50% { scale: 1; stroke-dashoffset: 0.5; }
+  75% { scale: 1.1; }
+  100% { opacity: 1; scale: 1; translate: 0 0; stroke-dashoffset: 0; }
 }
 
 /* En @layer components y no suelto: sin capa, estas reglas le ganaban a las
@@ -768,6 +957,7 @@ figure {
    del perfil. Sin ellas todo cae en `currentColor`, que es exactamente como se
    pintaba el nombre antes de que esto existiera. */
 .fx-plain,
+.fx-breathe,
 .fx-gradient,
 .fx-neon,
 .fx-pop,
@@ -776,7 +966,14 @@ figure {
   transform-origin: center;
 }
 
+/* Plano de verdad. "plain" es el efecto POR DEFECTO del protocolo: si llevara
+   animación, cada nombre de la app respiraría para siempre sin que nadie lo
+   hubiera elegido. La respiración sigue en el catálogo como .fx-breathe. */
 .fx-plain {
+  color: var(--name-color, currentColor);
+}
+
+.fx-breathe {
   color: var(--name-color, currentColor);
   animation: name-breathe 2.8s ease-in-out infinite;
 }
@@ -825,9 +1022,11 @@ figure {
   }
 }
 
+/* Solo transform y opacity, sin filter: brightness obliga a repintar el texto
+   en cada fotograma, y este efecto puede estar en muchos nombres a la vez. */
 @keyframes name-breathe {
-  0%, 100% { filter: brightness(1); transform: translateY(0); }
-  50% { filter: brightness(1.28); transform: translateY(-1px); }
+  0%, 100% { transform: translateY(0); opacity: 1; }
+  50% { transform: translateY(-1px); opacity: 0.88; }
 }
 
 @keyframes name-neon {
@@ -1034,6 +1233,21 @@ figure {
   .ring-stack[data-ring="hover"] .ring-base { animation: overlay-hover 4s ease-in-out infinite; }
   .ring-stack[data-ring="hover"] .ring-accents { animation-name: ring-pulse; }
 
+  /* El selector de decoraciones monta el catálogo entero: 40 casillas × 3
+     capas = 120 animaciones infinitas para elegir UNA. En la rejilla los aros
+     esperan en pausa y la casilla señalada o con foco suelta la suya:
+     play-state congela sin reiniciar, así que la vista previa sigue viva.
+     Detrás de la tabla de arriba a propósito — sus filas ponen `animation` en
+     atajo (que resetea play-state a running) con la misma especificidad
+     (0,3,0), y en el empate gana la última. */
+  .deco-picker-grid .ring-stack .ring-layer {
+    animation-play-state: paused;
+  }
+  .deco-picker-grid button:hover .ring-layer,
+  .deco-picker-grid button:focus-visible .ring-layer {
+    animation-play-state: running;
+  }
+
   @keyframes ring-turn {
     from { transform: rotate(0deg) scale(0.99); }
     to { transform: rotate(var(--base-turn)) scale(1.01); }
@@ -1045,9 +1259,14 @@ figure {
     100% { opacity: 0.72; transform: rotate(4deg) scale(1.018); }
   }
 
+  /* Coreografías de aro sin `filter`: brightness re-rasteriza la capa en cada
+     fotograma y puede haber un aro por fila de la lista. Como acentos y
+     partículas se mezclan con `screen` —son luz—, la opacidad hace de brillo:
+     bajarla apaga y 1 es el máximo, así que el rango se ensancha un poco para
+     compensar el brillo >1 que ya no existe. */
   @keyframes ring-flow {
-    0% { opacity: 0.54; transform: rotate(-7deg) scale(0.98); filter: brightness(0.9); }
-    100% { opacity: 0.96; transform: rotate(9deg) scale(1.025); filter: brightness(1.24); }
+    0% { opacity: 0.5; transform: rotate(-7deg) scale(0.98); }
+    100% { opacity: 1; transform: rotate(9deg) scale(1.025); }
   }
 
   @keyframes ring-breathe {
@@ -1056,13 +1275,13 @@ figure {
   }
 
   @keyframes ring-pulse {
-    0%, 100% { opacity: 0.48; transform: scale(0.985); filter: brightness(0.86); }
-    48% { opacity: 1; transform: scale(1.025); filter: brightness(1.38); }
+    0%, 100% { opacity: 0.42; transform: scale(0.985); }
+    48% { opacity: 1; transform: scale(1.025); }
   }
 
   @keyframes ring-twinkle {
-    0%, 100% { opacity: 0.25; transform: rotate(-2deg) scale(0.99); filter: brightness(0.9); }
-    45% { opacity: 0.96; transform: rotate(2deg) scale(1.025); filter: brightness(1.45); }
+    0%, 100% { opacity: 0.22; transform: rotate(-2deg) scale(0.99); }
+    45% { opacity: 1; transform: rotate(2deg) scale(1.025); }
     70% { opacity: 0.52; }
   }
 
@@ -1072,8 +1291,8 @@ figure {
   }
 
   @keyframes overlay-flicker {
-    0%, 18%, 22%, 62%, 68%, 100% { opacity: 0.9; filter: brightness(1.12); }
-    20%, 65% { opacity: 0.38; filter: brightness(0.72); }
+    0%, 18%, 22%, 62%, 68%, 100% { opacity: 1; }
+    20%, 65% { opacity: 0.3; }
   }
 
   @keyframes overlay-impact {

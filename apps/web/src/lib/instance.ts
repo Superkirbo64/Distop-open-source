@@ -34,7 +34,7 @@ export interface PendingCommunity {
 }
 
 /** Estado de la instancia local que hospeda la app de escritorio (§5). */
-export interface HostStatus {
+interface HostStatus {
   state: "off" | "starting" | "on" | "error";
   url: string;
   error: string;
@@ -65,6 +65,19 @@ declare global {
           catalog: number;
           tasklist: boolean;
         } | null>;
+        /** Opcionales: cascarones anteriores no los exponen. Gobiernan el
+            sondeo local entero (tasklist + registro), no solo el reporte. */
+        watch?: () => Promise<boolean>;
+        setWatch?: (enabled: boolean) => Promise<boolean>;
+      };
+      /** Aplicaciones integradas (WhatsApp/Telegram). Opcional: cascarones
+          anteriores no lo exponen. Apagada = pestaña y proceso fuera. */
+      apps?: {
+        prefs: () => Promise<{ whatsapp: boolean; telegram: boolean }>;
+        set: (
+          id: "whatsapp" | "telegram",
+          enabled: boolean,
+        ) => Promise<{ whatsapp: boolean; telegram: boolean } | null>;
       };
       overlay: {
         update: (state: {
@@ -168,7 +181,7 @@ export function clientOrigin(): string {
    aquí y App.tsx la abre en cuanto la aplicación vuelve a estar en pie. */
 const PENDING_INVITE = "distop.pendingInvite";
 
-export function storePendingInvite(code: string): void {
+function storePendingInvite(code: string): void {
   localStorage.setItem(PENDING_INVITE, code);
 }
 
@@ -273,7 +286,7 @@ export function knownInstances(): KnownInstance[] {
   }
 }
 
-export function rememberInstance(url: string, name: string): void {
+function rememberInstance(url: string, name: string): void {
   const list = knownInstances();
   const previous = list.find((known) => known.url === url);
   const rest = list.filter((known) => known.url !== url);

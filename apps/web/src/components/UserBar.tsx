@@ -28,7 +28,7 @@ import { AudioQuickMenu } from "./AudioQuickMenu.tsx";
  * barra siguieras viéndote en verde, sería fácil creer que la gente te ve, que
  * es exactamente lo contrario de lo que pediste.
  */
-export function ringOf(status: UserStatus, connected: boolean): PresenceRing {
+function ringOf(status: UserStatus, connected: boolean): PresenceRing {
   if (!connected || status === "invisible") return "offline";
   return status;
 }

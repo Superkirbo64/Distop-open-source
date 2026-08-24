@@ -117,13 +117,12 @@ export const config = {
   maxLoginAttemptsPerQuarterHour: int("MAX_LOGIN_ATTEMPTS_PER_15MIN", 20),
 
   /* 500 de fábrica: lo pide el disco y el ancho de banda de quien hospeda, no
-     un plan (§28.3). ponytail: el cuerpo entero se guarda en memoria antes de
-     escribirlo (http.ts:readBody, storage.ts:saveUpload) — bien para esto,
-     pero varias subidas grandes a la vez sí pesan en una Raspberry Pi; pasar
-     esa ruta a streaming a disco si algún día hace falta correr ahí con este
-     límite. Y si la instancia se publica por Cloudflare Tunnel, Cloudflare
-     recorta las subidas a ~100 MB en su borde antes de que este límite entre
-     en juego (§29.3): subir el número aquí no cambia eso. */
+     un plan (§28.3). Las subidas van en streaming a disco con este límite
+     vigilado al vuelo (storage.ts:saveUploadStream): ninguna aguanta el cuerpo
+     entero en memoria, también en una Raspberry Pi. Y si la instancia se
+     publica por Cloudflare Tunnel, Cloudflare recorta las subidas a ~100 MB en
+     su borde antes de que este límite entre en juego (§29.3): subir el número
+     aquí no cambia eso. */
   maxUploadMb: int("MAX_UPLOAD_SIZE_MB", 500),
   allowedUploadTypes: list("ALLOWED_UPLOAD_TYPES", [
     "image/png",

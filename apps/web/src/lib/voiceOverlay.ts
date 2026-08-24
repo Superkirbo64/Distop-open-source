@@ -2,6 +2,9 @@ import { onVoice, type VoiceLocalState } from "./voice.ts";
 import { useStore } from "../store.ts";
 
 let local: VoiceLocalState | null = null;
+/** Último payload enviado, serializado. En reposo vale "off" y publish() sale
+    en dos comparaciones: sin walk del estado ni IPC por cada setState. */
+let lastSent = "off";
 
 function publish(): void {
   const bridge = window.distop?.overlay;
@@ -9,6 +12,8 @@ function publish(): void {
 
   const channelId = local?.channelId ?? null;
   if (!channelId) {
+    if (lastSent === "off") return;
+    lastSent = "off";
     bridge.update({ channelId: null, channelName: "", participants: [] });
     return;
   }
@@ -20,7 +25,7 @@ function publish(): void {
   const channel = community?.channels.find((item) => item.id === channelId);
   const states = snapshot.voice[channelId] ?? [];
 
-  bridge.update({
+  const payload = {
     channelId,
     channelName: channel?.name ?? "Sala de voz",
     participants: states.map((state) => {
@@ -33,7 +38,13 @@ function publish(): void {
         muted: state.muted || state.force_muted,
       };
     }),
-  });
+  };
+
+  // Solo cruza el IPC lo que cambió: el resto de setState del store no viaja.
+  const encoded = JSON.stringify(payload);
+  if (encoded === lastSent) return;
+  lastSent = encoded;
+  bridge.update(payload);
 }
 
 /** Mantiene el proceso de escritorio al día sin acoplar el overlay a React. */

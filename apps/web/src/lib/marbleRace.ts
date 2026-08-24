@@ -50,7 +50,7 @@ export type Racer = {
  * rotar ese vector; una barra quieta es simplemente `spin: 0`, y el mismo
  * código sirve para las dos.
  */
-export type Obstacle =
+type Obstacle =
   | { peg: true; x: number; y: number; r: number }
   /**
    * Barra: centro más medio vector, que es lo que la hace girar sin
@@ -79,7 +79,7 @@ export type World = {
   build: (rnd: () => number) => Obstacle[];
 };
 
-export type Marble = {
+type Marble = {
   racer: Racer;
   x: number;
   y: number;
@@ -98,7 +98,7 @@ export type Race = {
 };
 
 /** Semilla reproducible: la misma semilla da exactamente la misma carrera. */
-export function mulberry32(seed: number): () => number {
+function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;

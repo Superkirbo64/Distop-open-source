@@ -9,10 +9,6 @@ import { join } from "node:path";
 let tray: Tray | null = null;
 let quitting = false;
 
-export function isQuitting(): boolean {
-  return quitting;
-}
-
 export function setupTray(win: BrowserWindow): void {
   app.on("before-quit", () => {
     quitting = true;

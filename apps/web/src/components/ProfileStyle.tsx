@@ -219,8 +219,11 @@ export function AvatarDecoPicker({
         {t("profileStyle.deco")}
       </legend>
       {/* Rejilla y no fila con scroll: con 40 casillas y una sola visible a la
-          vez, deslizar seria buscar a ciegas. */}
-      <div className="grid max-h-56 grid-cols-5 gap-2 overflow-y-auto pb-1 sm:grid-cols-6">
+          vez, deslizar seria buscar a ciegas. `deco-picker-grid` la recoge
+          styles.css: aquí dentro los aros esperan quietos y solo se anima el
+          que se señala o enfoca — 40 aros × 3 capas a la vez no es una vista
+          previa, es un enjambre. */}
+      <div className="deco-picker-grid grid max-h-56 grid-cols-5 gap-2 overflow-y-auto pb-1 sm:grid-cols-6">
         <button
           onClick={() => onChange({ avatar_ring: null, avatar_deco_url: null })}
           aria-pressed={!value.avatar_ring && !custom}
