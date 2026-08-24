@@ -1,6 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { LOCALES, UI, type Locale } from "../../i18n/ui";
+import { MARKETING } from "../../i18n/marketing";
 
 export function getStaticPaths() {
   return LOCALES.map((lang) => ({ params: { lang } }));
@@ -8,6 +9,7 @@ export function getStaticPaths() {
 
 const locale = Astro.params.lang as Locale;
 const t = UI[locale];
+const m = MARKETING[locale];
 
 const blocks = [
   { title: t.hosting.tunnelTitle, body: t.hosting.tunnelBody },
@@ -35,6 +37,29 @@ const blocks = [
         ))
       }
     </div>
+  </section>
+
+  <section style="padding-block-start:0">
+    <div class="stack">
+      <p class="eyebrow reveal">{m.hostingModes.eyebrow}</p>
+      <h2 class="reveal">{m.hostingModes.title}</h2>
+      <p class="lead reveal">{m.hostingModes.sub}</p>
+    </div>
+    <div class="route-grid">
+      {
+        m.hostingModes.items.map((mode) => (
+          <article class="route-card reveal">
+            <span class="card__tag">{mode.badge}</span>
+            <h3>{mode.title}</h3>
+            <p>{mode.body}</p>
+            <ol>{mode.steps.map((step) => <li>{step}</li>)}</ol>
+          </article>
+        ))
+      }
+    </div>
+    <p class="reveal" style="margin-block-start:1.75rem">
+      <a class="btn" href={`/${locale}/tutorials/#cloudflare`}>{m.hostingModes.cta}</a>
+    </p>
   </section>
 
   <section style="padding-block-start:0">

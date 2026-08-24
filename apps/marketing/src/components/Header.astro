@@ -1,6 +1,7 @@
 ---
 import Mark from "./Mark.astro";
 import { LOCALES, LOCALE_NAMES, HTML_LANG, UI, type Locale } from "../i18n/ui";
+import { MARKETING } from "../i18n/marketing";
 
 /** `path` es la ruta sin idioma ("" para la portada, "install/" …). Sirve a la vez
  *  para marcar el enlace activo y para que el selector de idioma lleve a la misma
@@ -8,9 +9,11 @@ import { LOCALES, LOCALE_NAMES, HTML_LANG, UI, type Locale } from "../i18n/ui";
 type Props = { locale: Locale; path: string };
 const { locale, path } = Astro.props;
 const t = UI[locale];
+const m = MARKETING[locale];
 
 const links = [
   { path: "", hash: "#features", label: t.nav.features },
+  { path: "tutorials/", hash: "", label: m.navTutorials },
   { path: "install/", hash: "", label: t.nav.install },
   { path: "hosting/", hash: "", label: t.nav.hosting },
 ];

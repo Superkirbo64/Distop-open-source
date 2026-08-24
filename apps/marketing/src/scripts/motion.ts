@@ -12,6 +12,16 @@ import "lenis/dist/lenis.css";
 
 const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/* Los vídeos son demostraciones decorativas: con movimiento reducido se quedan
+   en el póster y no arrancan un bucle que la persona no ha pedido. */
+if (reduced) {
+  for (const video of document.querySelectorAll<HTMLVideoElement>(".motion-preview video")) {
+    video.pause();
+    video.removeAttribute("autoplay");
+    video.currentTime = 0;
+  }
+}
+
 /* ── Campo de puntos ──────────────────────────────────────────────────────
  * La idea es de DotGrid (ReactBits): una malla que se aparta del cursor y
  * vuelve con rebote. Allí el rebote lo pone InertiaPlugin de GSAP; aquí es un

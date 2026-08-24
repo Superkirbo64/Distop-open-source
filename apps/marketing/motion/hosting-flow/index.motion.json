@@ -1,0 +1,10 @@
+{
+  "duration": 8,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#host-node", "bySec": 0.8 },
+    { "kind": "before", "a": "#host-node", "b": "#friends-node" },
+    { "kind": "staysInFrame", "selector": "#cloudflare-node" },
+    { "kind": "staysInFrame", "selector": "#tailscale-node" },
+    { "kind": "keepsMoving", "withinSelector": "#hosting-frame", "maxStaticSec": 2 }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "distop-product-tour",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "npx --yes hyperframes@0.8.11 check",
+    "render": "npx --yes hyperframes@0.8.11 render"
+  }
+}
+

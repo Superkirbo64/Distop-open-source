@@ -1,0 +1,35 @@
+---
+type Props = {
+  src: string;
+  poster: string;
+  title: string;
+  body: string;
+  fallback: string;
+};
+
+const { src, poster, title, body, fallback } = Astro.props;
+const descriptionId = `motion-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+---
+
+<figure class="motion-preview reveal" aria-labelledby={descriptionId}>
+  <div class="motion-preview__screen">
+    <video
+      autoplay
+      loop
+      muted
+      playsinline
+      preload="metadata"
+      poster={poster}
+      aria-hidden="true"
+      tabindex="-1"
+    >
+      <source src={src} type="video/webm" />
+      {fallback}
+    </video>
+  </div>
+  <figcaption id={descriptionId}>
+    <h3>{title}</h3>
+    <p>{body}</p>
+  </figcaption>
+</figure>
+

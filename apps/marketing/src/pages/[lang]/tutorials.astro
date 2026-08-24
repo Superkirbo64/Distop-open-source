@@ -1,0 +1,74 @@
+---
+import Base from "../../layouts/Base.astro";
+import { LOCALES, type Locale } from "../../i18n/ui";
+import { MARKETING } from "../../i18n/marketing";
+
+export function getStaticPaths() {
+  return LOCALES.map((lang) => ({ params: { lang } }));
+}
+
+const locale = Astro.params.lang as Locale;
+const t = MARKETING[locale].tutorials;
+---
+
+<Base locale={locale} path="tutorials/" title={t.title} description={t.sub}>
+  <section id="tutorial-index">
+    <div class="stack tutorial-hero">
+      <p class="eyebrow">{t.eyebrow}</p>
+      <h1>{t.title}</h1>
+      <p class="lead">{t.sub}</p>
+    </div>
+
+    <h2 class="reveal" style="margin-block-start:2.75rem">{t.indexTitle}</h2>
+    <nav class="tutorial-grid" aria-label={t.indexTitle}>
+      {
+        t.items.map((item, index) => (
+          <a class="mission reveal" href={`#${item.id}`}>
+            <span class="mission__number">{String(index + 1).padStart(2, "0")}</span>
+            <span class="card__tag">{item.tag}</span>
+            <strong>{item.title}</strong>
+            <span>{item.summary}</span>
+            <small>{t.timeLabel}: {item.time}</small>
+          </a>
+        ))
+      }
+    </nav>
+  </section>
+
+  <div class="tutorial-list">
+    {
+      t.items.map((item, tutorialIndex) => (
+        <section class="tutorial" id={item.id}>
+          <div class="tutorial__heading reveal">
+            <span class="mission__number">{String(tutorialIndex + 1).padStart(2, "0")}</span>
+            <div class="stack">
+              <p class="eyebrow">{item.tag} · {item.time}</p>
+              <h2>{item.title}</h2>
+              <p class="lead">{item.summary}</p>
+            </div>
+          </div>
+
+          <ol class="tutorial-steps reveal">
+            {item.steps.map((step, stepIndex) => (
+              <li>
+                <span>{t.stepLabel} {stepIndex + 1}</span>
+                <p>{step}</p>
+              </li>
+            ))}
+          </ol>
+
+          <div class="tutorial__result reveal">
+            <strong>{t.resultLabel}</strong>
+            <p>{item.result}</p>
+          </div>
+
+          <div class="tutorial__links reveal">
+            {item.link && <a class="btn" href={item.link} target="_blank" rel="noopener noreferrer">{t.officialGuide}</a>}
+            <a href="#tutorial-index">↑ {t.backTop}</a>
+          </div>
+        </section>
+      ))
+    }
+  </div>
+</Base>
+

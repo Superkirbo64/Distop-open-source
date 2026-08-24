@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1280, height=720" />
+    <title>Distop Hosting Flow</title>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 1280px; height: 720px; overflow: hidden; background: #050410; }
+      body { color: #f3f1ff; font-family: Inter, "Segoe UI", sans-serif; }
+      #root { position: relative; width: 1280px; height: 720px; overflow: hidden; }
+      .clip { position: absolute; inset: 0; }
+      .frame { position: absolute; inset: 0; overflow: hidden; background: radial-gradient(circle at 50% 45%, #201d48 0, #0b0a18 46%, #050410 100%); }
+      .grid { position: absolute; inset: 0; opacity: .18; background-image: linear-gradient(#4a4490 1px, transparent 1px), linear-gradient(90deg, #4a4490 1px, transparent 1px); background-size: 40px 40px; }
+      .eyebrow { position: absolute; left: 70px; top: 48px; color: #2ce3d8; font-size: 18px; font-weight: 900; letter-spacing: .18em; text-transform: uppercase; }
+      h1 { position: absolute; left: 70px; top: 80px; width: 850px; margin: 0; font-size: 48px; line-height: 1.05; letter-spacing: -.04em; }
+      h1 span { color: #9aa6ff; }
+      .node { position: absolute; display: grid; align-content: center; gap: 9px; padding: 20px; background: #15132b; border: 3px solid #4a4490; box-shadow: 8px 8px 0 #302c5c; }
+      .node strong { font-size: 22px; }
+      .node small { color: #aaa5ce; font-size: 14px; }
+      .node .tag { justify-self: start; padding: 4px 8px; color: #050410; background: #2ce3d8; font-size: 11px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; }
+      #host-node { left: 80px; top: 282px; width: 250px; height: 168px; border-color: #5b6cff; }
+      #cloudflare-node { left: 490px; top: 216px; width: 292px; height: 150px; border-color: #ff45a8; }
+      #tailscale-node { left: 490px; top: 414px; width: 292px; height: 150px; border-color: #2ce3d8; }
+      #friends-node { right: 74px; top: 310px; width: 244px; height: 180px; border-color: #8dff62; }
+      .pc { width: 56px; height: 42px; border: 4px solid #9aa6ff; border-bottom-width: 8px; margin-bottom: 3px; }
+      .faces { display: flex; gap: 9px; margin-top: 7px; }
+      .face { width: 38px; height: 38px; display: grid; place-items: center; color: #050410; border-radius: 50%; background: #8dff62; font-weight: 950; }
+      .face:nth-child(2) { background: #ff45a8; }.face:nth-child(3) { background: #2ce3d8; }
+      .connector { position: absolute; height: 5px; background: #5b6cff; transform-origin: left center; }
+      .connector::after { content: ""; position: absolute; right: -4px; top: -5px; width: 14px; height: 14px; background: inherit; transform: rotate(45deg); }
+      .c1 { left: 330px; top: 334px; width: 160px; background: #ff45a8; }
+      .c2 { left: 330px; top: 400px; width: 160px; background: #2ce3d8; }
+      .c3 { left: 782px; top: 290px; width: 176px; background: #ff45a8; }
+      .c4 { left: 782px; top: 488px; width: 176px; background: #2ce3d8; }
+      .check { position: absolute; width: 30px; height: 30px; display: grid; place-items: center; color: #050410; background: #8dff62; font-size: 20px; font-weight: 950; }
+      .check.one { left: 860px; top: 269px; }.check.two { left: 860px; top: 467px; }
+      .labels { position: absolute; left: 80px; bottom: 42px; display: flex; gap: 14px; }
+      .pill { padding: 10px 13px; color: #f3f1ff; border: 2px solid #302c5c; background: #14122a; font-size: 13px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+      .final { position: absolute; right: 74px; bottom: 42px; padding: 12px 15px; color: #050410; background: #ffd24a; font-size: 14px; font-weight: 950; letter-spacing: .12em; text-transform: uppercase; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-width="1280" data-height="720" data-duration="8">
+      <section id="hosting-scene" class="clip" data-start="0" data-duration="8" data-track-index="0">
+        <div id="hosting-frame" class="frame" data-layout-allow-overlap>
+          <div class="grid" data-layout-ignore></div>
+          <div class="eyebrow">DISTOP · SHARE YOUR COMMUNITY</div>
+          <h1>One PC. <span>Two safe routes.</span></h1>
+          <div id="host-node" class="node"><div class="pc"></div><strong>Your PC</strong><small>Community stays here</small></div>
+          <div class="connector c1" data-layout-ignore></div><div class="connector c2" data-layout-ignore></div>
+          <div id="cloudflare-node" class="node route-node"><span class="tag">Automatic</span><strong>Cloudflare</strong><small>Fast start · link may change</small></div>
+          <div id="tailscale-node" class="node route-node"><span class="tag">Fixed URL</span><strong>Tailscale Funnel</strong><small>Enable once · keep the address</small></div>
+          <div class="connector c3" data-layout-ignore></div><div class="connector c4" data-layout-ignore></div>
+          <div class="check one">✓</div><div class="check two">✓</div>
+          <div id="friends-node" class="node"><span class="tag">Connected</span><strong>Your friends</strong><div class="faces"><i class="face">K</i><i class="face">N</i><i class="face">M</i></div></div>
+          <div class="labels"><span class="pill">HTTPS</span><span class="pill">NO PORT FORWARDING</span><span class="pill">YOUR DATA</span></div>
+          <div class="final">PC ON = COMMUNITY ONLINE</div>
+        </div>
+      </section>
+    </div>
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo(".eyebrow", { opacity: 0, y: -12 }, { opacity: 1, y: 0, duration: .45, ease: "power2.out" }, 0)
+        .fromTo("h1", { opacity: 0, y: 18 }, { opacity: 1, y: 0, duration: .65, ease: "power3.out" }, .12)
+        .fromTo("#host-node", { opacity: 0, scale: .88 }, { opacity: 1, scale: 1, duration: .65, ease: "back.out(1.5)" }, .55)
+        .fromTo(".c1", { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: .55, ease: "power2.out" }, 1.3)
+        .fromTo("#cloudflare-node", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: .55, ease: "power3.out" }, 1.75)
+        .fromTo(".c2", { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: .55, ease: "power2.out" }, 2.35)
+        .fromTo("#tailscale-node", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: .55, ease: "power3.out" }, 2.8)
+        .fromTo(".c3", { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: .5, ease: "power2.out" }, 3.5)
+        .fromTo(".check.one", { opacity: 0, scale: .4 }, { opacity: 1, scale: 1, duration: .4, ease: "back.out(2)" }, 3.9)
+        .fromTo(".c4", { opacity: 0, scaleX: 0 }, { opacity: 1, scaleX: 1, duration: .5, ease: "power2.out" }, 4.25)
+        .fromTo(".check.two", { opacity: 0, scale: .4 }, { opacity: 1, scale: 1, duration: .4, ease: "back.out(2)" }, 4.65)
+        .fromTo("#friends-node", { opacity: 0, x: 34 }, { opacity: 1, x: 0, duration: .65, ease: "back.out(1.4)" }, 5.0)
+        .fromTo(".face", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: .28, stagger: .12, ease: "power2.out" }, 5.45)
+        .fromTo(".pill", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: .3, stagger: .12, ease: "power2.out" }, 6.05)
+        .fromTo(".final", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: .5, ease: "back.out(1.5)" }, 6.7)
+        .to(".grid", { opacity: .32, duration: 1.1, ease: "sine.inOut" }, 6.85);
+      window.__timelines.main = tl;
+    </script>
+  </body>
+</html>

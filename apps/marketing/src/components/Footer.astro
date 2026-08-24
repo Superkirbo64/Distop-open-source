@@ -1,10 +1,12 @@
 ---
 import Mark from "./Mark.astro";
 import { UI, type Locale } from "../i18n/ui";
+import { MARKETING } from "../i18n/marketing";
 
 type Props = { locale: Locale };
 const { locale } = Astro.props;
 const t = UI[locale];
+const m = MARKETING[locale];
 const L = t.footer.links;
 
 const REPO = "https://github.com/Superkirbo64/Distop-open-source";
@@ -16,6 +18,7 @@ const columns: { heading: string; items: Item[] }[] = [
     heading: t.footer.product,
     items: [
       { label: L.features, href: `/${locale}/#features` },
+      { label: m.navTutorials, href: `/${locale}/tutorials/` },
       { label: L.install, href: `/${locale}/install/` },
       { label: L.hosting, href: `/${locale}/hosting/` },
     ],

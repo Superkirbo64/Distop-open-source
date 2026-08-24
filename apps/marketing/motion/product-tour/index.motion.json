@@ -1,0 +1,10 @@
+{
+  "duration": 8,
+  "assertions": [
+    { "kind": "appearsBy", "selector": "#product-window", "bySec": 0.8 },
+    { "kind": "before", "a": "#product-window", "b": "#overlay-card" },
+    { "kind": "staysInFrame", "selector": "#product-window" },
+    { "kind": "keepsMoving", "withinSelector": "#product-frame", "maxStaticSec": 2 }
+  ]
+}
+

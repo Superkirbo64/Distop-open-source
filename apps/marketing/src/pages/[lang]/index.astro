@@ -1,6 +1,8 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { LOCALES, UI, type Locale } from "../../i18n/ui";
+import { MARKETING } from "../../i18n/marketing";
+import MotionPreview from "../../components/MotionPreview.astro";
 
 export function getStaticPaths() {
   return LOCALES.map((lang) => ({ params: { lang } }));
@@ -8,6 +10,7 @@ export function getStaticPaths() {
 
 const locale = Astro.params.lang as Locale;
 const t = UI[locale];
+const m = MARKETING[locale];
 ---
 
 <Base locale={locale} path="" intro>
@@ -48,6 +51,36 @@ const t = UI[locale];
     </div>
   </section>
 
+  <!-- Vistas previas ---------------------------------------------------- -->
+  <section id="previews">
+    <div class="stack">
+      <p class="eyebrow reveal">{m.preview.eyebrow}</p>
+      <h2 class="reveal">{m.preview.title}</h2>
+      <p class="lead reveal">{m.preview.sub}</p>
+    </div>
+
+    <div class="motion-grid">
+      <MotionPreview
+        src="/motion/product-tour.webm"
+        poster="/shots/chat.png"
+        title={m.preview.productTitle}
+        body={m.preview.productBody}
+        fallback={m.preview.videoFallback}
+      />
+      <MotionPreview
+        src="/motion/hosting-flow.webm"
+        poster="/shots/hosting-flow.webp"
+        title={m.preview.hostingTitle}
+        body={m.preview.hostingBody}
+        fallback={m.preview.videoFallback}
+      />
+    </div>
+
+    <p class="reveal" style="margin-block-start:1.75rem">
+      <a class="btn" href={`/${locale}/tutorials/`}>{m.preview.openTutorials}</a>
+    </p>
+  </section>
+
   <!-- Nada de esto se paga ---------------------------------------------- -->
   <section id="free">
     <div class="stack">
@@ -70,6 +103,30 @@ const t = UI[locale];
     <p class="lead reveal" style="margin-block-start:1.5rem">{t.free.footnote}</p>
   </section>
 
+  <!-- Inventario completo ---------------------------------------------- -->
+  <section id="capabilities">
+    <div class="stack">
+      <p class="eyebrow reveal">{m.capabilities.eyebrow}</p>
+      <h2 class="reveal">{m.capabilities.title}</h2>
+      <p class="lead reveal">{m.capabilities.sub}</p>
+    </div>
+
+    <div class="capability-grid">
+      {
+        m.capabilities.groups.map((group) => (
+          <article class="capability reveal">
+            <span class="card__tag">{group.tag}</span>
+            <h3>{group.title}</h3>
+            <p>{group.body}</p>
+            <ul>
+              {group.items.map((item) => <li>{item}</li>)}
+            </ul>
+          </article>
+        ))
+      }
+    </div>
+  </section>
+
   <!-- Funciones ---------------------------------------------------------- -->
   <section id="features">
     <div class="stack">
@@ -89,6 +146,33 @@ const t = UI[locale];
         ))
       }
     </div>
+  </section>
+
+  <!-- Dos rutas de publicación ----------------------------------------- -->
+  <section id="routes">
+    <div class="stack">
+      <p class="eyebrow reveal">{m.hostingModes.eyebrow}</p>
+      <h2 class="reveal">{m.hostingModes.title}</h2>
+      <p class="lead reveal">{m.hostingModes.sub}</p>
+    </div>
+
+    <div class="route-grid">
+      {
+        m.hostingModes.items.map((mode) => (
+          <article class="route-card reveal">
+            <span class="card__tag">{mode.badge}</span>
+            <h3>{mode.title}</h3>
+            <p>{mode.body}</p>
+            <ol>
+              {mode.steps.map((step) => <li>{step}</li>)}
+            </ol>
+          </article>
+        ))
+      }
+    </div>
+    <p class="reveal" style="margin-block-start:1.75rem">
+      <a class="btn btn--primary" href={`/${locale}/tutorials/#cloudflare`}>{m.hostingModes.cta}</a>
+    </p>
   </section>
 
   <!-- Hospedar ----------------------------------------------------------- -->
