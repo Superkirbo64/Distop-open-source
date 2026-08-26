@@ -1066,8 +1066,27 @@ export const CAPABILITIES = [
   "community_migration_v1",
   /** Web Push propio de la instancia (RFC 8291/8292), opcional y sin terceros. */
   "web_push_v1",
-  /** Reuniones: sala de espera, roles efímeros, manos y asistencia. */
+  /**
+   * Reuniones: sala de espera, roles efímeros, manos y asistencia.
+   *
+   * Es el núcleo, y por eso las piezas que se construyeron encima se declaran
+   * aparte, abajo. Agruparlas todas aquí funcionaba solo mientras cliente y
+   * servidor viajaban en el mismo instalador: en cuanto una instancia se
+   * actualiza antes que otra (§28.6), un cliente que preguntase por
+   * `meetings_v1` daría por hecho que hay grabación y calendario donde puede no
+   * haberlos. Se declara lo que se sabe hacer, pieza a pieza.
+   */
   "meetings_v1",
+  /** Invitados por enlace, con la sesión acotada a una sola reunión. */
+  "meeting_guests_v1",
+  /** Grabación local avisada, con su máquina de estados y consentimiento previo. */
+  "meeting_recording_v1",
+  /** Reparto de vídeo con techo real de subida y cola de espera. */
+  "video_budget_v1",
+  /** Agenda `.ics` por token revocable, sin OAuth ni terceros. */
+  "meeting_calendar_v1",
+  /** Turno de palabra arbitrado por el servidor (push-to-talk de reunión). */
+  "push_to_talk_v1",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];

@@ -1,6 +1,7 @@
 ---
 import Base from "../../layouts/Base.astro";
 import { LOCALES, UI, type Locale } from "../../i18n/ui";
+import { DOWNLOAD_URL } from "../../release.ts";
 
 export function getStaticPaths() {
   return LOCALES.map((lang) => ({ params: { lang } }));
@@ -10,8 +11,9 @@ const locale = Astro.params.lang as Locale;
 const t = UI[locale];
 const d = t.install.download;
 
-/** El instalador publicado. Se sube a mano en cada versión: la URL cambia. */
-const DOWNLOAD_URL = "https://www.mediafire.com/file/hqp1ergzrdpb2q1/Distop_Setup_0.1.0.exe/file";
+/* La descarga sale de `src/release.ts`: es el artefacto que publica el tag de
+   esta versión, no un archivo subido a mano que nadie puede contrastar con
+   ningún commit. */
 ---
 
 <Base locale={locale} path="install/" title={t.install.title} description={t.install.sub}>

@@ -11,6 +11,7 @@ import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
 import { Button, ErrorNote, Field, Menu, MenuItem, Modal, Select, useConfirm, useT, useErrorText } from "./ui.tsx";
 import { VoiceParticipants } from "./Voice.tsx";
+import { CreateMeeting } from "./Meeting.tsx";
 import { joinVoice } from "../lib/voice.ts";
 
 /* Una reunión lleva reloj y no altavoz: el altavoz ya significa "sala de voz
@@ -46,6 +47,7 @@ export function Sidebar({
   const unread = useStore((s) => s.unread);
 
   const [creating, setCreating] = useState(false);
+  const [convocando, setConvocando] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   if (!communityId || !data) {
@@ -56,6 +58,10 @@ export function Sidebar({
 
   const permissions = toBits(data.permissions);
   const canManageChannels = has(permissions, PERMISSIONS.MANAGE_CHANNELS);
+  /* Permiso propio y no MANAGE_CHANNELS: convocar una reunión no es crear un
+     canal, y quien organiza la agenda no tiene por qué poder rehacer el
+     servidor entero. */
+  const canCallMeetings = has(permissions, PERMISSIONS.MANAGE_MEETINGS);
   const canInvite = has(permissions, PERMISSIONS.CREATE_INVITE);
   const canManage = has(permissions, PERMISSIONS.MANAGE_COMMUNITY) || has(permissions, PERMISSIONS.MANAGE_ROLES);
 
@@ -241,13 +247,21 @@ export function Sidebar({
           </section>
         ))}
 
-        {reuniones.length > 0 ? (
+        {reuniones.length > 0 || canCallMeetings ? (
           <section className="mb-2">
             <p className="flex items-center gap-1 px-2 py-1 text-[0.72rem] font-semibold tracking-wide text-muted">
               <CalendarClock size={12} className="shrink-0" />
               <span className="truncate">{t("meeting.section")}</span>
             </p>
             <ul className="flex flex-col gap-0.5">{reuniones.map(renderChannel)}</ul>
+            {canCallMeetings ? (
+              <button
+                onClick={() => setConvocando(true)}
+                className="mt-1 flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-sm text-muted transition-colors hover:bg-raise hover:text-ink"
+              >
+                <Cross size={15} /> {t("meeting.create")}
+              </button>
+            ) : null}
           </section>
         ) : null}
 
@@ -262,6 +276,7 @@ export function Sidebar({
       </nav>
 
       <CreateChannel communityId={communityId} open={creating} onClose={() => setCreating(false)} />
+      <CreateMeeting communityId={communityId} open={convocando} onClose={() => setConvocando(false)} />
       {confirmElement}
     </div>
   );

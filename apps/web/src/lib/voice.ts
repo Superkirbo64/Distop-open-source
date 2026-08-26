@@ -59,6 +59,16 @@ export interface VoiceLocalState {
   videoError: string | null;
   /** Fallo visible de la última acción de la tabla de sonidos. */
   soundError: VoiceSoundIssue | null;
+  /**
+   * La sala en la que estoy es una reunión con turno de palabra.
+   *
+   * Va aquí y no en el store porque el gate del micrófono se decide en este
+   * módulo: si viviera solo en React, un repintado tardío dejaría el micrófono
+   * abierto un rato después de que la reunión pasara a modo turno.
+   */
+  pushToTalk: boolean;
+  /** Estoy pulsando para hablar ahora mismo. */
+  holdingFloor: boolean;
 }
 
 export type VoiceSoundIssue = VoiceSoundRejectReason | Exclude<relay.ClipPlaybackIssue, "deafened">;
@@ -84,6 +94,8 @@ const state: VoiceLocalState = {
   error: null,
   videoError: null,
   soundError: null,
+  pushToTalk: false,
+  holdingFloor: false,
 };
 const listeners = new Set<Listener>();
 
@@ -250,7 +262,7 @@ function pollLevels(): void {
        propio se pesa con el volumen del micrófono: con el mando a cero se envía
        silencio, así que enseñar el aro de "hablando" sería mentir. */
     const level = (sum / buffer.length) * (id === selfId ? relay.micVolume() : 1);
-    mark(id, level > SPEAKING_THRESHOLD && !(id === selfId && effectiveMuted()));
+    mark(id, level > SPEAKING_THRESHOLD && !(id === selfId && !sendingNow()));
   }
 
   /* El de los demás sale de lo que ya se decodificó para reproducirlo: no hay
@@ -713,6 +725,10 @@ function disconnectVoice(announce: boolean): void {
   state.video = null;
   state.videoError = null;
   state.soundError = null;
+  /* El modo turno es de la sala que se deja, no de la persona: quedárselo
+     puesto cerraría el micrófono en la siguiente sala, que puede no tenerlo. */
+  state.pushToTalk = false;
+  state.holdingFloor = false;
 
   if (meterTimer) {
     clearInterval(meterTimer);
@@ -777,10 +793,64 @@ function pushVoiceState(): void {
   });
 }
 
+/**
+ * ¿Está saliendo mi voz de verdad, ahora mismo?
+ *
+ * Tres cosas la cierran y ninguna sustituye a las otras: el botón de silencio,
+ * lo que impuso la instancia, y —en una reunión con turno— no tener la palabra.
+ */
+function sendingNow(): boolean {
+  return !effectiveMuted() && (!state.pushToTalk || state.holdingFloor);
+}
+
 /** Micrófono y altavoces siguen al estado real, no solo a la propia intención. */
 function applyOutput(): void {
-  relay.setSending(!effectiveMuted());
+  relay.setSending(sendingNow());
   relay.setDeafened(effectiveDeafened());
+}
+
+/**
+ * Entrar o salir del modo turno de palabra.
+ *
+ * Lo llama la interfaz de la reunión al recibir la reunión y en cada
+ * `MEETING_UPDATE`: `push_to_talk` puede encenderse a mitad de reunión, y en
+ * ese instante el micrófono tiene que cerrarse sin esperar a nada más.
+ */
+export function setPushToTalkMode(on: boolean): void {
+  if (state.pushToTalk === on) return;
+  state.pushToTalk = on;
+  /* Al entrar en modo turno no se conserva la palabra: si la tuviera guardada
+     de antes, encender el modo dejaría a esa persona hablando sola por defecto. */
+  if (on) state.holdingFloor = false;
+  applyOutput();
+  if (!sendingNow()) state.speaking.delete(selfId);
+  emit();
+}
+
+/**
+ * Pedir o soltar la palabra.
+ *
+ * El corte de verdad lo hace la instancia en `relayMedia`: aquí solo se cierra
+ * el envío para no gastar subida en algo que va a descartarse, y para que el
+ * aro de "hablando" no se encienda cuando no me oye nadie. Quién tiene la
+ * palabra lo dice el servidor por `MEETING_FLOOR`, no esta bandera.
+ *
+ * No pasa por `setMuted`: ese camino desensordece, manda un `VOICE_MUTE` por el
+ * socket y suena un pitido — tres cosas insoportables al ritmo de una tecla.
+ */
+export function holdFloor(hold: boolean): void {
+  if (!state.channelId || state.holdingFloor === hold) return;
+  state.holdingFloor = hold;
+  applyOutput();
+  if (!sendingNow()) state.speaking.delete(selfId);
+  sendCommand({ t: "MEETING_FLOOR", d: { channel_id: state.channelId, hold } });
+  emit();
+}
+
+/** Levantar o bajar la mano. La cola la ordena la instancia por hora de llegada. */
+export function raiseHand(raised: boolean): void {
+  if (!state.channelId) return;
+  sendCommand({ t: "MEETING_HAND", d: { channel_id: state.channelId, raised } });
 }
 
 function updateMuted(muted: boolean, announce: boolean): void {

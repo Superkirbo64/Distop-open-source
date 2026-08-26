@@ -3,6 +3,7 @@ import Base from "../../layouts/Base.astro";
 import { LOCALES, UI, type Locale } from "../../i18n/ui";
 import { MARKETING } from "../../i18n/marketing";
 import MotionPreview from "../../components/MotionPreview.astro";
+import { REPO_URL } from "../../release.ts";
 
 export function getStaticPaths() {
   return LOCALES.map((lang) => ({ params: { lang } }));
@@ -229,7 +230,7 @@ const m = MARKETING[locale];
         <p class="lead reveal">{t.cta.sub}</p>
         <div class="hero__actions reveal" style="justify-content:center">
           <a class="btn btn--primary" href={`/${locale}/install/`}>{t.cta.b1}</a>
-          <a class="btn" href="https://github.com/Superkirbo64/Distop-open-source">{t.cta.b2}</a>
+          <a class="btn" href={REPO_URL}>{t.cta.b2}</a>
         </div>
       </div>
     </div>

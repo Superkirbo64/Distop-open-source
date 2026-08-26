@@ -15,6 +15,7 @@ import { Auth } from "./views/Auth.tsx";
 import { Connect } from "./views/Connect.tsx";
 import { Setup } from "./views/Setup.tsx";
 import { Invite } from "./views/Invite.tsx";
+import { GuestMeeting, Meet } from "./views/Meet.tsx";
 import type { SettingsTab } from "./views/Settings.tsx";
 import { WallpaperTuner } from "./components/Wallpaper.tsx";
 
@@ -122,6 +123,7 @@ export function App() {
   const ready = useStore((s) => s.ready);
   const user = useStore((s) => s.user);
   const setup = useStore((s) => s.setup);
+  const guestMeeting = useStore((s) => s.guestMeeting);
   const instance = useStore((s) => s.instance);
   const boot = useStore((s) => s.boot);
   const communities = useStore((s) => s.communities);
@@ -292,6 +294,18 @@ export function App() {
           }}
         />
       );
+  }
+
+  /* Enlace de reunión. Va antes que todo lo demás —incluso que el arranque— por
+     lo mismo que /invite: es la única ruta profunda que alguien puede recibir
+     sin tener nada abierto. La sesión que produce solo sirve para esa reunión,
+     así que en cuanto existe, la aplicación entera se sustituye por ella. */
+  const meetToken = path.startsWith("/meet/") ? path.slice("/meet/".length) : null;
+
+  if (guestMeeting) return <GuestMeeting meeting={guestMeeting} />;
+
+  if (meetToken) {
+    return <Meet token={meetToken} onEnter={() => navigate("/")} />;
   }
 
   const inviteCode = path.startsWith("/invite/") ? path.slice("/invite/".length) : null;

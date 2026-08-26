@@ -7,6 +7,8 @@
  * Node, SQLite ni «instancia» en el texto visible. Los términos técnicos que
  * quedan viven plegados en la sección para quien monta el servidor a mano.
  */
+import { INSTALLER_NAME } from "../release.ts";
+
 export const LOCALES = ["es", "en", "pt-br"] as const;
 export type Locale = (typeof LOCALES)[number];
 
@@ -186,17 +188,17 @@ const es = {
       title: "Descargar Distop",
       sub: "El instalador de Windows. Doble clic y se instala solo.",
       cta: "Descargar para Windows",
-      host: "Se descarga desde MediaFire",
-      meta: ".exe · 101 MB · Windows 10 y 11 (64 bits)",
+      host: "Se descarga desde GitHub",
+      meta: ".exe · 98 MB · Windows 10 y 11 (64 bits)",
       stepsTitle: "Dos pasos",
       steps: [
         {
           title: "Descarga el archivo",
-          body: "El botón abre la página de MediaFire. Ahí pulsa «Download» y espera a que termine.",
+          body: "El botón descarga el instalador directamente desde GitHub, donde se publica junto al código con el que está hecho.",
         },
         {
           title: "Ábrelo",
-          body: "Doble clic en «Distop Setup 0.1.1.exe», donde se te haya descargado. Se instala solo y te deja el acceso directo.",
+          body: `Doble clic en «${INSTALLER_NAME}», donde se te haya descargado. Se instala solo y te deja el acceso directo.`,
         },
       ],
       warnTitle: "Windows va a avisarte",
@@ -425,17 +427,17 @@ const en: Dict = {
       title: "Download Distop",
       sub: "The Windows installer. Double-click and it installs itself.",
       cta: "Download for Windows",
-      host: "Hosted on MediaFire",
-      meta: ".exe · 101 MB · Windows 10 and 11 (64-bit)",
+      host: "Hosted on GitHub",
+      meta: ".exe · 98 MB · Windows 10 and 11 (64-bit)",
       stepsTitle: "Two steps",
       steps: [
         {
           title: "Download the file",
-          body: "The button opens the MediaFire page. Hit «Download» there and wait for it to finish.",
+          body: "The button downloads the installer straight from GitHub, where it is published alongside the code it was built from.",
         },
         {
           title: "Open it",
-          body: "Double-click «Distop Setup 0.1.1.exe» wherever it landed. It installs itself and leaves you the shortcut.",
+          body: `Double-click «${INSTALLER_NAME}» wherever it landed. It installs itself and leaves you the shortcut.`,
         },
       ],
       warnTitle: "Windows will warn you",
@@ -659,17 +661,17 @@ const ptBR: Dict = {
       title: "Baixar o Distop",
       sub: "O instalador do Windows. Clique duas vezes e ele se instala sozinho.",
       cta: "Baixar para Windows",
-      host: "Baixa pelo MediaFire",
-      meta: ".exe · 101 MB · Windows 10 e 11 (64 bits)",
+      host: "Baixa pelo GitHub",
+      meta: ".exe · 98 MB · Windows 10 e 11 (64 bits)",
       stepsTitle: "Dois passos",
       steps: [
         {
           title: "Baixe o arquivo",
-          body: "O botão abre a página do MediaFire. Clique em «Download» e espere terminar.",
+          body: "O botão baixa o instalador direto do GitHub, onde ele é publicado junto com o código que o gerou.",
         },
         {
           title: "Abra",
-          body: "Clique duas vezes em «Distop Setup 0.1.1.exe», onde ele tiver baixado. Ele se instala sozinho e deixa o atalho.",
+          body: `Clique duas vezes em «${INSTALLER_NAME}», onde ele tiver baixado. Ele se instala sozinho e deixa o atalho.`,
         },
       ],
       warnTitle: "O Windows vai avisar",

@@ -25,6 +25,7 @@ import {
   Toggle,
   useT,
   useErrorText,
+  useLocale,
 } from "../components/ui.tsx";
 import { WallpaperField, WallpaperPicker } from "../components/Wallpaper.tsx";
 import { Gallery } from "../components/Gallery.tsx";
@@ -601,7 +602,118 @@ function AlertsTab() {
       ) : null}
 
       <PushToggle />
+      <CalendarTokens />
     </div>
+  );
+}
+
+/**
+ * Agenda por suscripción `.ics` (V4).
+ *
+ * Sin OAuth y sin integración con nadie: un fichero que entienden Google
+ * Calendar, Outlook, Apple, Thunderbird y cualquier otra cosa que respete el
+ * RFC 5545, sin que este proyecto pida permisos a la agenda de nadie ni guarde
+ * credenciales de terceros.
+ *
+ * Aquí el secreto SÍ va en la dirección, y es la única concesión de todo el
+ * proyecto: un cliente de calendario solo sabe pedir una URL, no mandar
+ * cabeceras. Se compensa con lo que sí está en nuestra mano — la dirección solo
+ * lee reuniones, no abre sesión, se guarda en la instancia como hash, y se
+ * anula en un clic.
+ */
+function CalendarTokens() {
+  const t = useT();
+  const locale = useLocale();
+  const errorText = useErrorText();
+  const [tokens, setTokens] = useState<Array<{ id: string; label: string | null; created_at: number; last_used: number | null; revoked_at: number | null }>>([]);
+  const [reciente, setReciente] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+
+  useEffect(() => {
+    api<{ tokens: typeof tokens }>("GET", "/api/v1/calendars")
+      .then((respuesta) => setTokens(respuesta.tokens))
+      .catch(() => undefined);
+  }, []);
+
+  const crear = async () => {
+    setOcupado(true);
+    setError(null);
+    try {
+      const respuesta = await api<{ token: (typeof tokens)[number]; url: string }>("POST", "/api/v1/calendars", {});
+      setTokens((previos) => [respuesta.token, ...previos]);
+      setReciente(respuesta.url);
+    } catch (fallo) {
+      setError(errorText(fallo));
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const anular = async (id: string) => {
+    setError(null);
+    try {
+      const respuesta = await api<{ tokens: typeof tokens }>("DELETE", `/api/v1/calendars/${id}`);
+      setTokens(respuesta.tokens);
+      setReciente(null);
+    } catch (fallo) {
+      setError(errorText(fallo));
+    }
+  };
+
+  const vivos = tokens.filter((token) => token.revoked_at === null);
+
+  return (
+    <fieldset className="mt-4">
+      <legend className="mb-1 text-sm font-medium">{t("meeting.calendar")}</legend>
+      <p className="mb-2 text-xs text-muted">{t("meeting.calendarHint")}</p>
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+
+      {reciente ? (
+        <div className="mb-2 rounded-[10px] border border-ok/40 p-2">
+          <p className="mb-1 text-xs text-ok">{t("meeting.calendarOnce")}</p>
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={reciente}
+              className="field min-w-0 flex-1 text-xs"
+              onFocus={(event) => event.target.select()}
+            />
+            <Button variant="ghost" onClick={() => void navigator.clipboard?.writeText(reciente)}>
+              {t("common.copy")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {vivos.length === 0 ? (
+        <p className="mb-2 text-xs text-muted">{t("meeting.calendarEmpty")}</p>
+      ) : (
+        <ul className="mb-2 flex flex-col gap-1">
+          {vivos.map((token) => (
+            <li key={token.id} className="flex items-center gap-2 rounded-[10px] border border-line px-2 py-1">
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {token.label ?? new Date(token.created_at).toLocaleDateString(locale, { dateStyle: "medium" })}
+              </span>
+              <span className="shrink-0 text-xs text-muted">
+                {token.last_used === null
+                  ? t("meeting.calendarNever")
+                  : t("meeting.calendarUsed", {
+                      when: new Date(token.last_used).toLocaleDateString(locale, { dateStyle: "short" }),
+                    })}
+              </span>
+              <Button variant="ghost" className="h-7 px-2 text-xs" onClick={() => void anular(token.id)}>
+                {t("meeting.inviteRevoke")}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Button variant="ghost" disabled={ocupado} onClick={() => void crear()}>
+        {t("meeting.calendarCreate")}
+      </Button>
+    </fieldset>
   );
 }
 

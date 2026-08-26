@@ -11,7 +11,8 @@ import { useStore } from "../store.ts";
 import { api, upload } from "../lib/api.ts";
 import { Picker } from "./Picker.tsx";
 import { renderContent, type RenderContext } from "../lib/markdown.tsx";
-import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLocal } from "./Voice.tsx";
+import { StageLayoutPicker, VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLocal } from "./Voice.tsx";
+import { MeetingPanel } from "./Meeting.tsx";
 import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
 import { formatBytes, formatDayHeading, formatTime } from "../i18n.ts";
 import { Avatar, Button, EmptyState, ErrorNote, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, Spinner, useConfirm, useLocale, useT, useErrorText } from "./ui.tsx";
@@ -169,6 +170,47 @@ export function Chat({
         </header>
 
         <VoiceStage channelId={channel.id} />
+
+        <ChatVoiceHeader
+          channel={channel}
+          communityId={communityId}
+          communityName={data.community.name}
+          canConnect={has(permissions, PERMISSIONS.CONNECT_VOICE)}
+        />
+        {confirmElement}
+      </main>
+    );
+  }
+
+  /* Una reunión es la misma sala de voz con reglas encima, así que el escenario
+     de vídeo es literalmente el mismo componente: lo que cambia es todo lo que
+     lo rodea —sala de espera, papeles, manos, grabación, turno—, y eso vive en
+     su propio panel. En pantalla ancha van uno al lado del otro; en estrecha, el
+     panel primero, porque quien espera fuera solo tiene eso que mirar. */
+  if (channel.kind === "meeting") {
+    return (
+      <main data-pane="main" className="flex min-w-0 flex-1 flex-col bg-bg">
+        <header className="flex h-[var(--header-h)] shrink-0 items-center gap-2 border-b border-line bg-surface px-3">
+          <button onClick={onOpenSidebar} className="wide:hidden" aria-label={t("common.back")}>
+            <CornerUpLeft size={18} />
+          </button>
+          <Icon size={18} className="shrink-0 text-muted" />
+          <h1 className="display truncate text-[0.95rem] font-bold">{channel.name}</h1>
+          <span className="flex-1" />
+          <StageLayoutPicker />
+          <IconButton label={t("voice.chatTitle")} onClick={onToggleMembers} pressed={membersOpen}>
+            <MessageSquareText size={17} />
+          </IconButton>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col wide:flex-row">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            <VoiceStage channelId={channel.id} mode="meeting" />
+          </div>
+          <div className="flex min-h-0 shrink-0 flex-col border-line wide:w-[22rem] wide:border-l">
+            <MeetingPanel channelId={channel.id} communityId={communityId} />
+          </div>
+        </div>
 
         <ChatVoiceHeader
           channel={channel}

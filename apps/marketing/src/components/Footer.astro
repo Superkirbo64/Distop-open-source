@@ -1,6 +1,7 @@
 ---
 import Mark from "./Mark.astro";
 import { UI, type Locale } from "../i18n/ui";
+import { REPO_URL } from "../release.ts";
 import { MARKETING } from "../i18n/marketing";
 
 type Props = { locale: Locale };
@@ -9,7 +10,7 @@ const t = UI[locale];
 const m = MARKETING[locale];
 const L = t.footer.links;
 
-const REPO = "https://github.com/Superkirbo64/Distop-open-source";
+const REPO = REPO_URL;
 
 type Item = { label: string; href: string; icon?: "github" };
 

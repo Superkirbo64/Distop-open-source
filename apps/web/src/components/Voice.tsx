@@ -17,6 +17,8 @@ import {
   MonitorUp,
   Orbit,
   PhoneOff,
+  Pin,
+  Presentation,
   Search,
   Signal,
   Trophy,
@@ -218,6 +220,11 @@ export function VoiceSoundboard({
  * bucle (React #185). Devolviendo siempre el mismo array, no.
  */
 const EMPTY: never[] = [];
+
+/** Una sala de voz corriente o una reunión: cambia la disposición, no el motor. */
+export type StageMode = "room" | "meeting";
+/** `auto` = la presentación se elige sola al compartir pantalla. */
+type StageLayout_ = "gallery" | "speaker" | "presentation";
 const SOUND_ERROR_KEYS: Record<NonNullable<VoiceLocalState["soundError"]>, MessageKey> = {
   not_in_voice: "voice.soundError.not_in_voice",
   muted: "voice.soundError.muted",
@@ -1370,7 +1377,14 @@ export function VoiceFunMenu({ channelId }: { channelId: string }) {
 }
 
 /** Vista principal cuando el canal abierto es de voz: cuadrícula de participantes. */
-export function VoiceStage({ channelId }: { channelId: string }) {
+/**
+ * El escenario de una llamada.
+ *
+ * No se bifurca en dos componentes para las reuniones: recibe el modo y
+ * cambia lo que hace falta. Dos escenarios separados serían dos bases que se
+ * van separando con cada corrección que solo se aplica a una.
+ */
+export function VoiceStage({ channelId, mode = "room" }: { channelId: string; mode?: StageMode }) {
   const t = useT();
   const local = useVoiceLocal();
   const selfId = useStore((s) => s.user?.id);
@@ -1450,7 +1464,7 @@ export function VoiceStage({ channelId }: { channelId: string }) {
           />
         </Suspense>
       ) : null}
-      {gravity ? (
+      {gravity && mode === "room" ? (
         <GravityStage
           states={states}
           members={data?.members ?? EMPTY}
@@ -1458,104 +1472,270 @@ export function VoiceStage({ channelId }: { channelId: string }) {
           video={sharedVideo}
         />
       ) : (
-        <div className="grid flex-1 content-center gap-4 overflow-y-auto p-6 sm:grid-cols-2 lg:grid-cols-3">
-          {states.map((state) => {
-            const member = data?.members.find(
-              (m) => m.user.id === state.user_id,
-            );
-            const name = member?.nickname ?? member?.user.display_name ?? "…";
-            const speaking = local.speaking.has(state.user_id);
-            const self = state.user_id === selfId;
-            // La pista existe desde que se conecta el par, pero solo se pinta si el
-            // servidor dice que esa persona está emitiendo: es lo que convierte el
-            // permiso de cámara en algo visible, y evita mostrar un cuadro negro.
-            const stream = self
-              ? local.localVideo
-              : local.videos.get(state.user_id);
-            const video = state.video && stream ? stream : null;
-            const link = local.peerStates.get(state.user_id);
-
-            return (
-              <figure
-                key={state.user_id}
-                /* El estado va también en atributos y no solo en el color del borde:
-               "¿me está llegando su voz?" se responde mirando esto, sin tener que
-               adivinar por una sombra. */
-                data-user={state.user_id}
-                data-speaking={speaking}
-                data-link={link ?? "none"}
-                className="group relative grid aspect-video place-items-center overflow-hidden rounded-card border bg-surface transition-colors duration-150"
-                style={{ borderColor: speaking ? "var(--ok)" : "var(--line)" }}
-              >
-                {/* Arriba a la izquierda: la derecha ya la ocupa el botón de pantalla
-                completa cuando hay vídeo. */}
-                <div className="absolute top-2 left-2 z-10 hidden group-hover:block group-focus-within:block">
-                  <ModerateMenu channelId={channelId} state={state} />
-                </div>
-
-                {video ? (
-                  <>
-                    <VideoTile
-                      stream={video}
-                      self={self && state.video === "camera"}
-                    />
-                    <FullscreenButton />
-                  </>
-                ) : (
-                  <SpeakingRing
-                    speaking={speaking}
-                    profile={member?.user.profile_style}
-                    size={72}
-                  >
-                    <Avatar
-                      name={name}
-                      url={member?.user.avatar_url}
-                      id={state.user_id}
-                      size={72}
-                      profile={member?.user.profile_style}
-                    />
-                  </SpeakingRing>
-                )}
-                <figcaption className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg bg-bg/80 px-2 py-1 text-xs">
-                  {/* Callado por decisión propia y callado por moderación se ven
-                  distinto: quien lo mira necesita saber si esa persona puede
-                  volver a hablar sola o no. */}
-                  {state.force_deafened || state.force_muted ? (
-                    <Lock
-                      size={12}
-                      className="text-danger"
-                      aria-label={t(
-                        state.force_deafened
-                          ? "voice.forcedDeafened"
-                          : "voice.forcedMuted",
-                      )}
-                    />
-                  ) : state.deafened ? (
-                    <VolumeX size={12} className="text-danger" />
-                  ) : state.muted ? (
-                    <MicOff size={12} className="text-danger" />
-                  ) : null}
-                  {state.video === "screen" ? (
-                    <MonitorUp size={12} className="text-accent" />
-                  ) : null}
-                  <span className="max-w-40 truncate font-medium">{name}</span>
-                  {/* Sin conexión con esa persona no hay vídeo que valga, y conviene
-                  distinguirlo de "tiene la cámara apagada". */}
-                  {!self && link && link !== "connected" ? (
-                    <span
-                      className={
-                        link === "failed" ? "text-danger" : "text-warn"
-                      }
-                    >
-                      {t(`voice.link.${link}`)}
-                    </span>
-                  ) : null}
-                </figcaption>
-              </figure>
-            );
-          })}
-        </div>
+        <StageLayout
+          channelId={channelId}
+          mode={mode}
+          states={states}
+          members={data?.members ?? EMPTY}
+          local={local}
+          selfId={selfId}
+        />
       )}
     </div>
   );
+}
+
+/**
+ * Las tres disposiciones del §8.8, más el fijado.
+ *
+ * - **Galería**: todo el mundo igual. Es la de siempre y sigue siendo la de una
+ *   sala de voz normal.
+ * - **Presentación**: lo que se comparte, grande. Se elige sola en cuanto
+ *   alguien comparte pantalla, porque es lo que la reunión está mirando.
+ * - **Orador**: quien habla, grande. Con la misma histéresis que el resto del
+ *   proyecto — se aguanta un momento al que acaba de callar, o la pantalla
+ *   parpadearía en cada pausa.
+ * - **Fijar**: local y solo local. Fijar a alguien no le cambia la vista a
+ *   nadie más ni le da permiso para transmitir: es cómo miro yo.
+ */
+function StageLayout({
+  channelId,
+  mode,
+  states,
+  members,
+  local,
+  selfId,
+}: {
+  channelId: string;
+  mode: StageMode;
+  states: VoiceState[];
+  members: Member[];
+  local: VoiceLocalState;
+  selfId: string | undefined;
+}) {
+  const layout = useStore((s) => s.stageLayout);
+  const [pinned, setPinned] = useState<string | null>(null);
+
+  /* Quien habla, con memoria: sin esto la vista de orador salta en cada sílaba
+     y marea más que ayudar. Se guarda el último que sonó y solo se cambia
+     cuando otro lleva hablando de verdad. */
+  const [speaker, setSpeaker] = useState<string | null>(null);
+  useEffect(() => {
+    const hablando = states.find((state) => local.speaking.has(state.user_id));
+    if (hablando) setSpeaker(hablando.user_id);
+  }, [states, local.speaking]);
+
+  const compartiendo = states.find((state) => state.video === "screen");
+
+  /* La presentación se elige sola al compartir, pero solo si nadie eligió otra
+     cosa: una elección explícita manda sobre la automática. */
+  const efectiva: StageLayout_ =
+    mode === "room" ? "gallery" : layout === "auto" ? (compartiendo ? "presentation" : "gallery") : layout;
+
+  const tile = (state: VoiceState) => {
+    const member = members.find((m) => m.user.id === state.user_id);
+    const self = state.user_id === selfId;
+    return (
+      <StageTile
+        key={state.user_id}
+        channelId={channelId}
+        state={state}
+        member={member}
+        speaking={local.speaking.has(state.user_id)}
+        self={self}
+        stream={self ? local.localVideo : local.videos.get(state.user_id)}
+        link={local.peerStates.get(state.user_id)}
+        onPin={mode === "meeting" ? (id) => setPinned((actual) => (actual === id ? null : id)) : undefined}
+        pinned={pinned === state.user_id}
+      />
+    );
+  };
+
+  if (efectiva === "gallery") {
+    return (
+      <div className="grid flex-1 content-center gap-4 overflow-y-auto p-6 sm:grid-cols-2 lg:grid-cols-3">
+        {states.map(tile)}
+      </div>
+    );
+  }
+
+  /* Fijar manda sobre todo lo demás: es una decisión explícita de quien mira. */
+  const protagonistaId =
+    pinned ?? (efectiva === "presentation" ? compartiendo?.user_id : null) ?? speaker ?? states[0]?.user_id ?? null;
+  const protagonista = states.find((state) => state.user_id === protagonistaId);
+  const resto = states.filter((state) => state.user_id !== protagonistaId);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-4">
+      {protagonista ? <div className="flex min-h-0 flex-1 [&>figure]:h-full [&>figure]:w-full [&>figure]:aspect-auto">{tile(protagonista)}</div> : null}
+      {resto.length > 0 ? (
+        <div className="flex shrink-0 gap-2 overflow-x-auto pb-1 [&>figure]:aspect-video [&>figure]:h-24 [&>figure]:shrink-0">
+          {resto.map(tile)}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Elegir cómo se ve la reunión.
+ *
+ * Tres opciones y ni una más. `auto` no aparece como botón: es el estado de
+ * partida, y se sale de él eligiendo. Se enseña solo en reuniones — en una sala
+ * de voz la disposición es la de siempre y no hay nada que elegir.
+ */
+export function StageLayoutPicker() {
+  const t = useT();
+  const layout = useStore((s) => s.stageLayout);
+  const setLayout = useStore((s) => s.setStageLayout);
+
+  const opciones = [
+    { value: "gallery", icon: <Orbit size={15} />, key: "voice.layoutGallery" },
+    { value: "speaker", icon: <Volume2 size={15} />, key: "voice.layoutSpeaker" },
+    { value: "presentation", icon: <Presentation size={15} />, key: "voice.layoutPresentation" },
+  ] as const;
+
+  return (
+    <div role="group" aria-label={t("voice.layout")} className="flex items-center gap-0.5">
+      {opciones.map((opcion) => (
+        <IconButton
+          key={opcion.value}
+          label={t(opcion.key)}
+          pressed={layout === opcion.value}
+          onClick={() => setLayout(layout === opcion.value ? "auto" : opcion.value)}
+        >
+          {opcion.icon}
+        </IconButton>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Una persona en el escenario.
+ *
+ * Vive fuera de VoiceStage porque las tres disposiciones del §8.8 la colocan en
+ * sitios distintos —grande, en tira, o en rejilla— y duplicarla habría dejado
+ * tres copias que se separan a la primera corrección.
+ */
+function StageTile({
+  channelId,
+  state,
+  member,
+  speaking,
+  self,
+  stream,
+  link,
+  onPin,
+  pinned,
+}: {
+  channelId: string;
+  state: VoiceState;
+  member: Member | undefined;
+  speaking: boolean;
+  self: boolean;
+  stream: MediaStream | null | undefined;
+  link: RTCPeerConnectionState | undefined;
+  onPin?: ((userId: string) => void) | undefined;
+  pinned?: boolean | undefined;
+}) {
+  const t = useT();
+  const name = member?.nickname ?? member?.user.display_name ?? "…";
+  const video = state.video && stream ? stream : null;
+
+  return (
+            <figure
+              key={state.user_id}
+              /* El estado va también en atributos y no solo en el color del borde:
+             "¿me está llegando su voz?" se responde mirando esto, sin tener que
+             adivinar por una sombra. */
+              data-user={state.user_id}
+              data-speaking={speaking}
+              data-link={link ?? "none"}
+              className="group relative grid aspect-video place-items-center overflow-hidden rounded-card border bg-surface transition-colors duration-150"
+              style={{ borderColor: speaking ? "var(--ok)" : "var(--line)" }}
+            >
+              {/* Arriba a la izquierda: la derecha ya la ocupa el botón de pantalla
+              completa cuando hay vídeo. */}
+              <div className="absolute top-2 left-2 z-10 hidden group-hover:block group-focus-within:block">
+                <ModerateMenu channelId={channelId} state={state} />
+              </div>
+
+              {/* Fijar es de quien mira y de nadie más: no cambia la vista del
+                  resto ni da permiso para transmitir. Por eso queda fuera del
+                  menú de moderación, que sí manda sobre los demás. */}
+              {onPin ? (
+                <button
+                  type="button"
+                  onClick={() => onPin(state.user_id)}
+                  aria-pressed={pinned ?? false}
+                  aria-label={t(pinned ? "voice.unpin" : "voice.pin")}
+                  title={t(pinned ? "voice.unpin" : "voice.pin")}
+                  className={`icon-btn absolute top-2 right-2 z-10 flex h-8 w-8 items-center justify-center rounded-[10px] ${
+                    pinned ? "text-accent" : "hidden group-hover:flex group-focus-within:flex"
+                  }`}
+                >
+                  <Pin size={15} />
+                </button>
+              ) : null}
+
+              {video ? (
+                <>
+                  <VideoTile
+                    stream={video}
+                    self={self && state.video === "camera"}
+                  />
+                  <FullscreenButton />
+                </>
+              ) : (
+                <SpeakingRing
+                  speaking={speaking}
+                  profile={member?.user.profile_style}
+                  size={72}
+                >
+                  <Avatar
+                    name={name}
+                    url={member?.user.avatar_url}
+                    id={state.user_id}
+                    size={72}
+                    profile={member?.user.profile_style}
+                  />
+                </SpeakingRing>
+              )}
+              <figcaption className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg bg-bg/80 px-2 py-1 text-xs">
+                {/* Callado por decisión propia y callado por moderación se ven
+                distinto: quien lo mira necesita saber si esa persona puede
+                volver a hablar sola o no. */}
+                {state.force_deafened || state.force_muted ? (
+                  <Lock
+                    size={12}
+                    className="text-danger"
+                    aria-label={t(
+                      state.force_deafened
+                        ? "voice.forcedDeafened"
+                        : "voice.forcedMuted",
+                    )}
+                  />
+                ) : state.deafened ? (
+                  <VolumeX size={12} className="text-danger" />
+                ) : state.muted ? (
+                  <MicOff size={12} className="text-danger" />
+                ) : null}
+                {state.video === "screen" ? (
+                  <MonitorUp size={12} className="text-accent" />
+                ) : null}
+                <span className="max-w-40 truncate font-medium">{name}</span>
+                {/* Sin conexión con esa persona no hay vídeo que valga, y conviene
+                distinguirlo de "tiene la cámara apagada". */}
+                {!self && link && link !== "connected" ? (
+                  <span
+                    className={
+                      link === "failed" ? "text-danger" : "text-warn"
+                    }
+                  >
+                    {t(`voice.link.${link}`)}
+                  </span>
+                ) : null}
+              </figcaption>
+            </figure>);
 }

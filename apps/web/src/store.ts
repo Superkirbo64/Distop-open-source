@@ -14,6 +14,10 @@ import type {
   CustomEmoji,
   GamePresence,
   InstanceHealth,
+  Meeting,
+  MeetingRecording,
+  MeetingRole,
+  MeetingWaiting,
   Member,
   Message,
   RaceLobby,
@@ -21,6 +25,7 @@ import type {
   SelfUser,
   ServerEvent,
   Unread,
+  VideoBudget,
   VoiceState,
 } from "@distop/protocol";
 import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
@@ -112,6 +117,37 @@ interface State {
   voice: Record<string, VoiceState[]>;
   /** canal → sala de la carrera de canicas, o ausente si no hay ninguna (§9.4). */
   races: Record<string, RaceLobby | null>;
+
+  /* ── reuniones (V1–V4) ────────────────────────────────────────────────
+     Todo va por canal y no por reunión: la interfaz siempre parte del canal
+     abierto, y un canal tiene como mucho una reunión. Cinco mapas separados y
+     no un objeto por canal porque cada uno llega en su propio evento y
+     mezclarlos obligaría a rehacer el objeto entero por cada cambio suelto. */
+
+  /** canal → la reunión, tal como la manda `MEETING_UPDATE`. */
+  meetings: Record<string, Meeting>;
+  /** canal → quién espera fuera. Solo lo recibe quien modera. */
+  lobby: Record<string, MeetingWaiting[]>;
+  /** canal → grabación viva, o null si no hay ninguna. */
+  recording: Record<string, MeetingRecording | null>;
+  /** canal → quién tiene el turno de palabra ahora mismo. */
+  floor: Record<string, string | null>;
+  /** canal → reparto de vídeo. Llega solo cuando alguien enciende o apaga. */
+  budget: Record<string, VideoBudget | null>;
+  /** reunión → mi papel en ella. Lo fija `GET /meetings/:id` y lo corrige `MEETING_ROLE`. */
+  meetingRole: Record<string, MeetingRole>;
+  /** canal → estoy en la sala de espera de esta reunión, todavía sin admitir. */
+  meetingWaiting: Record<string, boolean>;
+  /** Carga (o recarga) la reunión de un canal desde la API. */
+  loadMeeting: (channelId: string) => Promise<void>;
+  /**
+   * Entré por un enlace de reunión y mi sesión solo sirve para ella.
+   *
+   * No es "soy invitado": es "esta sesión está acotada". La instancia rechaza
+   * cualquier otra ruta, así que la aplicación entera —barra de comunidades,
+   * canales, ajustes— no tiene nada que enseñar y se sustituye por la reunión.
+   */
+  guestMeeting: Meeting | null;
   /** Dirección pública de la instancia, para que los enlaces sirvan fuera de casa. */
   publicUrl: string;
   /** El anfitrión configuró clave de Giphy. Sin esto la pestaña de GIF no se enseña. */
@@ -126,6 +162,16 @@ interface State {
       vive en la cabecera del canal y el lienzo dentro de la sala. */
   gravity: boolean;
   setGravity: (on: boolean) => void;
+  /**
+   * Cómo se colocan las caras en una reunión (§8.8).
+   *
+   * `auto` no es una cuarta disposición: es "todavía no he elegido", y mientras
+   * nadie elija, compartir pantalla pone la presentación sola. En cuanto
+   * alguien elige, su elección manda — una vista que se cambia sola después de
+   * que la hayas puesto a mano es de las cosas más molestas que existen.
+   */
+  stageLayout: "auto" | "gallery" | "speaker" | "presentation";
+  setStageLayout: (layout: State["stageLayout"]) => void;
 
   communities: Community[];
   data: Record<string, CommunityData>;
@@ -292,6 +338,14 @@ export const useStore = create<State>()((set, get) => ({
   setup: null,
   voice: {},
   races: {},
+  meetings: {},
+  lobby: {},
+  recording: {},
+  floor: {},
+  budget: {},
+  meetingRole: {},
+  meetingWaiting: {},
+  guestMeeting: null,
   publicUrl: "",
   gifEnabled: false,
   stickerGalleryEnabled: false,
@@ -299,6 +353,8 @@ export const useStore = create<State>()((set, get) => ({
   setManageOpen: (manageOpen) => set({ manageOpen }),
   gravity: false,
   setGravity: (gravity) => set({ gravity }),
+  stageLayout: "auto",
+  setStageLayout: (stageLayout) => set({ stageLayout }),
   tuner: false,
 
   communities: [],
@@ -420,7 +476,18 @@ export const useStore = create<State>()((set, get) => ({
     }
     disconnect();
     setTokens(null);
-    set({ user: null, communities: [], data: {}, messages: {}, activeCommunityId: null, activeChannelId: null });
+    set({
+      user: null,
+      communities: [],
+      data: {},
+      messages: {},
+      activeCommunityId: null,
+      activeChannelId: null,
+      /* Sin esto, cerrar la sesión de invitado dejaba la pantalla de la reunión
+         puesta encima de la de entrar: la sesión ya no valía y la reunión
+         seguía dibujada. */
+      guestMeeting: null,
+    });
   },
 
   refreshUser(user) {
@@ -485,6 +552,46 @@ export const useStore = create<State>()((set, get) => ({
        así que se guarda primero y se marca leído después. */
     set((state) => ({ divider: { ...state.divider, [channelId]: state.lastRead[channelId] ?? null } }));
     get().markRead(channelId);
+  },
+
+  /**
+   * La reunión de un canal, con su detalle.
+   *
+   * No hay ruta "dame la reunión de este canal": la API indexa por reunión, no
+   * por canal. Así que primero se pide la lista de la comunidad —son pocas y la
+   * sección de la barra lateral la quiere igualmente— y se indexa por canal;
+   * después se pide el detalle, que es lo único que trae mi papel, la sala de
+   * espera y la grabación viva.
+   */
+  async loadMeeting(channelId) {
+    const communityId = get().channelOwner[channelId] ?? get().activeCommunityId;
+    if (!communityId) return;
+
+    let reunion = get().meetings[channelId];
+    if (!reunion) {
+      const lista = await api<Meeting[]>("GET", `/api/v1/communities/${communityId}/meetings`);
+      const porCanal: Record<string, Meeting> = {};
+      for (const item of lista) porCanal[item.channel_id] = item;
+      set((state) => ({ meetings: { ...state.meetings, ...porCanal } }));
+      reunion = porCanal[channelId];
+      if (!reunion) return;
+    }
+
+    const detalle = await api<{
+      meeting: Meeting;
+      my_role: MeetingRole;
+      roles: Array<{ user_id: string; role: MeetingRole }>;
+      waiting: MeetingWaiting[];
+      moderator_present: boolean;
+      recording: MeetingRecording | null;
+    }>("GET", `/api/v1/meetings/${reunion.id}`);
+
+    set((state) => ({
+      meetings: { ...state.meetings, [detalle.meeting.channel_id]: detalle.meeting },
+      meetingRole: { ...state.meetingRole, [detalle.meeting.id]: detalle.my_role },
+      lobby: { ...state.lobby, [detalle.meeting.channel_id]: detalle.waiting },
+      recording: { ...state.recording, [detalle.meeting.channel_id]: detalle.recording },
+    }));
   },
 
   async loadOlder(channelId) {
@@ -697,6 +804,62 @@ onEvent((event: ServerEvent) => {
       // Va la hora de entrada, no solo el id: al recargar una pestaña el id sigue
       // siendo el mismo y sin esa fecha nadie sabría que hay que reconectar.
       void syncPeers(event.d.channel_id, event.d.states);
+      return;
+    }
+
+    /* ── reuniones ─────────────────────────────────────────────────────
+       Los seis eventos son de reemplazo, no de delta: cada uno trae el valor
+       completo de lo suyo. Es a propósito — una reunión donde la sala de espera
+       se reconstruye a base de altas y bajas queda desincronizada para siempre
+       en cuanto se pierde un mensaje, y quien se quedó fuera no aparece. */
+
+    case "MEETING_UPDATE": {
+      useStore.setState({ meetings: { ...state.meetings, [event.d.channel_id]: event.d } });
+      /* Terminada o cancelada no hay a quién admitir ni turno que repartir: se
+         limpia para que la interfaz no enseñe una cola de una reunión cerrada. */
+      if (event.d.state === "ENDED" || event.d.state === "CANCELLED") {
+        useStore.setState({
+          lobby: { ...state.lobby, [event.d.channel_id]: [] },
+          floor: { ...state.floor, [event.d.channel_id]: null },
+          meetingWaiting: { ...state.meetingWaiting, [event.d.channel_id]: false },
+        });
+      }
+      return;
+    }
+
+    /* Solo lo recibo yo, y solo sobre mí. `admitted:false` llega tanto al
+       ponerse a esperar como al ser rechazado: el servidor no los distingue a
+       propósito, para no publicar a quién culpar. Aquí tampoco se inventa la
+       diferencia — se dice "estás fuera", que es lo cierto en ambos casos. */
+    case "MEETING_WAITING": {
+      useStore.setState({
+        meetingWaiting: { ...state.meetingWaiting, [event.d.channel_id]: !event.d.admitted },
+      });
+      return;
+    }
+
+    case "MEETING_LOBBY": {
+      useStore.setState({ lobby: { ...state.lobby, [event.d.channel_id]: event.d.waiting } });
+      return;
+    }
+
+    case "MEETING_ROLE": {
+      useStore.setState({ meetingRole: { ...state.meetingRole, [event.d.meeting_id]: event.d.role } });
+      return;
+    }
+
+    case "RECORDING_UPDATE": {
+      useStore.setState({ recording: { ...state.recording, [event.d.channel_id]: event.d.recording } });
+      return;
+    }
+
+    case "MEETING_FLOOR": {
+      useStore.setState({ floor: { ...state.floor, [event.d.channel_id]: event.d.user_id } });
+      return;
+    }
+
+    case "VIDEO_BUDGET": {
+      useStore.setState({ budget: { ...state.budget, [event.d.channel_id]: event.d } });
       return;
     }
 
