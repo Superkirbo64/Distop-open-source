@@ -620,9 +620,20 @@ export interface Meeting {
   /** Sala de espera: sin ella, entrar es entrar. */
   lobby: boolean;
   mute_on_entry: boolean;
-  /** Invitados de fuera de la comunidad. Se implementa en V2. */
   guests_allowed: boolean;
   created_at: number;
+  /** Sube en cada reprogramación, con el mismo id. Lo lee el `.ics`. */
+  sequence: number;
+  /**
+   * Zona en la que se convocó, **solo para enseñarla**.
+   *
+   * El instante vive en UTC porque una zona cambia de reglas —un país mueve su
+   * horario de verano— y una hora guardada como "18:00 en Madrid" se desplaza
+   * sola cuando eso pasa.
+   */
+  timezone: string | null;
+  /** Solo suena quien tiene el turno, y el turno lo da el servidor. */
+  push_to_talk: boolean;
 }
 
 /**
@@ -1189,6 +1200,8 @@ export type ServerEvent =
      excepciones: una grabación que no se anuncia no es una grabación, es otra
      cosa. */
   | { t: "RECORDING_UPDATE"; d: { channel_id: Snowflake; recording: MeetingRecording | null } }
+  /* Quién tiene el turno de palabra ahora mismo, o nadie. */
+  | { t: "MEETING_FLOOR"; d: { channel_id: Snowflake; user_id: Snowflake | null } }
   | { t: "ERROR"; d: ApiError }
   | { t: "PONG"; d: { at: number } };
 
@@ -1250,6 +1263,11 @@ export type ClientCommand =
   /* Empezar o terminar una grabación LOCAL. El servidor no recibe ni un byte
      de vídeo por aquí: solo el estado, para poder avisar a la sala. */
   | { t: "MEETING_RECORD"; d: { channel_id: Snowflake; state: RecordingState } }
+  /* Turno de palabra con la aplicación enfocada (V4). El turno lo arbitra el
+     servidor: si lo decidiera el cliente, "tengo el turno" sería una frase que
+     cualquiera escribe. El PTT global queda fuera — necesita un hook nativo de
+     teclado y su propia revisión de permisos. */
+  | { t: "MEETING_FLOOR"; d: { channel_id: Snowflake; hold: boolean } }
   | { t: "PING"; d?: undefined };
 
 /* ─────────────────────────── Errores tipados (§30) ─────────────────────────── */

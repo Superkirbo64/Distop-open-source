@@ -69,6 +69,9 @@ interface FilaReunion {
   mute_on_entry: number;
   guests_allowed: number;
   created_at: number;
+  sequence: number;
+  timezone: string | null;
+  push_to_talk: number;
 }
 
 function comoReunion(fila: FilaReunion): Meeting {
@@ -77,6 +80,7 @@ function comoReunion(fila: FilaReunion): Meeting {
     lobby: fila.lobby === 1,
     mute_on_entry: fila.mute_on_entry === 1,
     guests_allowed: fila.guests_allowed === 1,
+    push_to_talk: fila.push_to_talk === 1,
   };
 }
 
@@ -785,6 +789,198 @@ export function closeRecordings(meetingId: Snowflake, now = Date.now()): void {
   db.prepare(
     "UPDATE meeting_recordings SET state = 'FAILED', ended_at = COALESCE(ended_at, ?) WHERE meeting_id = ? AND state IN ('REQUESTED','CONSENTING','RECORDING','FINALIZING')",
   ).run(now, meetingId);
+}
+
+/* ── calendario (V4 §8.11) ─────────────────────────────────────────────
+ *
+ * Sin OAuth y sin integración con nadie: un `.ics` lo entiende cualquier
+ * agenda que respete el RFC 5545, y así este proyecto no tiene que pedir
+ * permisos sobre el calendario de otra persona ni guardar credenciales ajenas.
+ */
+
+const hashCalendario = (token: string): string => createHash("sha256").update(token).digest("base64url");
+
+export interface CalendarToken {
+  id: string;
+  label: string | null;
+  created_at: number;
+  last_used: number | null;
+  revoked_at: number | null;
+}
+
+/**
+ * Crea una dirección de suscripción. El token se enseña una vez.
+ *
+ * Va en la URL, y eso es una concesión consciente: un cliente de calendario
+ * solo sabe pedir una dirección — no puede mandar una cabecera ni un cuerpo—.
+ * Por eso es de un solo propósito (solo lee reuniones), no da sesión, y se
+ * revoca en un clic.
+ */
+export function createCalendarToken(userId: Snowflake, label?: string | null, now = Date.now()): {
+  token: CalendarToken;
+  secret: string;
+} {
+  const secret = randomBytes(24).toString("base64url");
+  const id = uuidv7();
+  db.prepare("INSERT INTO calendar_tokens (id, user_id, token_hash, label, created_at) VALUES (?, ?, ?, ?, ?)").run(
+    id,
+    userId,
+    hashCalendario(secret),
+    label ?? null,
+    now,
+  );
+  return { token: calendarTokensOf(userId).find((t) => t.id === id)!, secret };
+}
+
+export function calendarTokensOf(userId: Snowflake): CalendarToken[] {
+  return db
+    .prepare("SELECT id, label, created_at, last_used, revoked_at FROM calendar_tokens WHERE user_id = ? ORDER BY created_at DESC")
+    .all(userId) as CalendarToken[];
+}
+
+export function revokeCalendarToken(userId: Snowflake, id: string, now = Date.now()): boolean {
+  return (
+    db
+      .prepare("UPDATE calendar_tokens SET revoked_at = ? WHERE id = ? AND user_id = ? AND revoked_at IS NULL")
+      .run(now, id, userId).changes > 0
+  );
+}
+
+/** De quién es esta dirección, o null. Marca el último uso, para poder podarlas. */
+export function calendarOwner(secret: string, now = Date.now()): Snowflake | null {
+  const fila = db
+    .prepare("SELECT id, user_id FROM calendar_tokens WHERE token_hash = ? AND revoked_at IS NULL")
+    .get(hashCalendario(secret)) as { id: string; user_id: string } | undefined;
+  if (!fila) return null;
+  db.prepare("UPDATE calendar_tokens SET last_used = ? WHERE id = ?").run(now, fila.id);
+  return fila.user_id;
+}
+
+/**
+ * Las reuniones de alguien, para su agenda.
+ *
+ * Solo las de comunidades donde es miembro y solo los canales que ve: una
+ * dirección de calendario no es una puerta trasera al listado de reuniones de
+ * la instancia.
+ */
+export function agendaFor(userId: Snowflake): Meeting[] {
+  const filas = db
+    .prepare(
+      `SELECT m.* FROM meetings m
+       JOIN members mb ON mb.community_id = m.community_id AND mb.user_id = ?
+       WHERE mb.banned = 0 AND m.starts_at IS NOT NULL AND m.state <> 'DRAFT'
+       ORDER BY m.starts_at`,
+    )
+    .all(userId) as FilaReunion[];
+  return filas
+    .map(comoReunion)
+    .filter((reunion) => has(channelPermissions(reunion.channel_id, userId), PERMISSIONS.VIEW_CHANNEL));
+}
+
+/**
+ * Reprograma una reunión. Sube `sequence` con el **mismo** id.
+ *
+ * Ese es todo el motivo de que exista esta función en vez de un UPDATE suelto:
+ * cambiar la hora sin subir la secuencia deja el evento viejo en la agenda de
+ * todo el mundo y añade uno nuevo al lado.
+ */
+export function rescheduleMeeting(
+  meetingId: Snowflake,
+  actorId: Snowflake,
+  cambios: { startsAt?: number | null; endsAt?: number | null; timezone?: string | null },
+): Meeting {
+  const reunion = meetingById(meetingId);
+  if (!reunion) throw new MeetingError("MEETING_NOT_FOUND", "Reunión no encontrada.");
+  const inicio = cambios.startsAt ?? reunion.starts_at;
+  const fin = cambios.endsAt ?? reunion.ends_at;
+  if (inicio !== null && fin !== null && fin <= inicio) {
+    throw new MeetingError("MEETING_BAD_WINDOW", "La reunión no puede acabar antes de empezar.");
+  }
+
+  db.prepare("UPDATE meetings SET starts_at = ?, ends_at = ?, timezone = ?, sequence = sequence + 1 WHERE id = ?").run(
+    inicio,
+    fin,
+    cambios.timezone ?? reunion.timezone,
+    meetingId,
+  );
+  audit(reunion.community_id, actorId, "MEETING_RESCHEDULE", meetingId, { starts_at: inicio, ends_at: fin });
+  return meetingById(meetingId)!;
+}
+
+/* ── turno de palabra (V4 §8.10) ───────────────────────────────────────
+ *
+ * Con `push_to_talk` puesto, solo suena quien tiene el turno, y **el turno lo
+ * da el servidor**. Si lo decidiera cada cliente, "tengo el turno" sería una
+ * afirmación que cualquiera escribe, y en una reunión de treinta personas eso
+ * es exactamente el problema que el modo venía a resolver.
+ *
+ * Vive en memoria, como las salas: un turno de palabra no sobrevive a que se
+ * apague el equipo, y guardarlo solo dejaría turnos fantasma.
+ */
+const turnos = new Map<Snowflake, { userId: Snowflake; since: number }>();
+
+/** Nadie retiene el micrófono para siempre por soltar la tecla mal. */
+export const TURNO_MAXIMO_MS = 120_000;
+
+export function floorOf(channelId: Snowflake, now = Date.now()): Snowflake | null {
+  const turno = turnos.get(channelId);
+  if (!turno) return null;
+  if (now - turno.since >= TURNO_MAXIMO_MS) {
+    turnos.delete(channelId);
+    return null;
+  }
+  return turno.userId;
+}
+
+/**
+ * Pide el turno. Devuelve `true` si lo consigue.
+ *
+ * No hay cola: pedir la palabra ordenadamente es levantar la mano (V1), que sí
+ * la tiene. Esto es para hablar por encima del ruido en una reunión grande, y
+ * ahí el primero que llega habla — encolar turnos de dos segundos convertiría
+ * una conversación en un walkie-talkie con retardo.
+ */
+export function takeFloor(channelId: Snowflake, userId: Snowflake, now = Date.now()): boolean {
+  const actual = floorOf(channelId, now);
+  if (actual !== null && actual !== userId) return false;
+  turnos.set(channelId, { userId, since: actual === userId ? turnos.get(channelId)!.since : now });
+  return true;
+}
+
+export function releaseFloor(channelId: Snowflake, userId: Snowflake): boolean {
+  if (turnos.get(channelId)?.userId !== userId) return false;
+  turnos.delete(channelId);
+  return true;
+}
+
+/** Al salir de la sala se suelta el turno: si no, se lo lleva puesto. */
+export function dropFloorOf(userId: Snowflake): Snowflake[] {
+  const soltados: Snowflake[] = [];
+  for (const [channelId, turno] of turnos) {
+    if (turno.userId === userId) {
+      turnos.delete(channelId);
+      soltados.push(channelId);
+    }
+  }
+  return soltados;
+}
+
+/**
+ * ¿Puede sonar esta persona ahora mismo?
+ *
+ * Fuera del modo turno, siempre. Dentro, solo quien lo tiene — y si no lo tiene
+ * nadie, nadie suena: un modo turno en el que el silencio deja hablar a todos
+ * no es un modo turno.
+ */
+export function maySpeakNow(channelId: Snowflake, userId: Snowflake, now = Date.now()): boolean {
+  const reunion = meetingOf(channelId);
+  if (!reunion?.push_to_talk) return true;
+  return floorOf(channelId, now) === userId;
+}
+
+/** Solo para las pruebas: olvida los turnos en curso. */
+export function resetFloors(): void {
+  turnos.clear();
 }
 
 /** Solo para las pruebas: vacía las salas de espera en memoria. */

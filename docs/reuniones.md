@@ -305,9 +305,81 @@ Lo que **no** se afirma: que el aviso equivalga legalmente a consentimiento. Eso
 depende de dónde estéis y de quién sea la reunión, y este documento no da
 consejo legal.
 
+## En tu agenda
+
+Sin OAuth y sin integración con nadie. Un `.ics` lo entienden Google Calendar,
+Outlook, Apple, Thunderbird y cualquier otra cosa que respete el RFC 5545, y así
+este proyecto no tiene que pedir permisos sobre el calendario de otra persona ni
+guardar credenciales ajenas.
+
+```bash
+POST /api/v1/calendars        # devuelve la dirección para pegar en tu agenda
+```
+
+Cuatro detalles del formato que casi todo el mundo se salta, y que hacen que un
+`.ics` se importe **mal en silencio**:
+
+- **Las líneas terminan en CRLF**, incluida la última. No es cosmético: hay
+  clientes que rechazan el fichero entero con LF.
+- **Se pliegan a 75 octetos**, contando bytes y no caracteres — una tilde ocupa
+  dos— y sin partir nunca un carácter por la mitad.
+- **Coma, punto y coma, barra invertida y salto de línea se escapan.** Un título
+  con una coma parte el campo en dos sin avisar.
+- **El UID es estable y `SEQUENCE` sube al modificar.** Sin eso, cambiar la hora
+  de una reunión crea un evento nuevo y deja el viejo en la agenda de todo el
+  mundo. Es el fallo más caro de todos, porque nadie lo ve hasta que ya pasó.
+
+Cancelar **no borra** el evento del fichero: lo marca `STATUS:CANCELLED`.
+Quitarlo dejaría la reunión en la agenda de quien no vuelva a sincronizar.
+
+La hora se guarda en **UTC**, y la zona en la que se convocó viaja aparte, solo
+para poder enseñarla. Una zona cambia de reglas —un país mueve su horario de
+verano— y una hora guardada como "18:00 en Madrid" se desplaza sola cuando eso
+pasa.
+
+### La concesión del token en la URL
+
+El token va en la dirección, y es la única concesión de este tipo en todo el
+proyecto. Es inherente al formato: **un cliente de calendario solo sabe pedir
+una dirección** — no puede mandar una cabecera ni un cuerpo.
+
+Se compensa con lo que sí está en nuestra mano: la dirección solo sirve para
+leer reuniones, no da sesión, no vale para nada más, se guarda hasheada y se
+revoca en un clic. Y solo trae reuniones de comunidades donde eres miembro y
+canales que ves: no es una puerta trasera al listado de la instancia.
+
+## Pulsar para hablar
+
+En una reunión grande, con el modo turno puesto **solo suena quien tiene el
+turno** — y el turno lo da el servidor.
+
+Si lo decidiera cada cliente, "tengo el turno" sería una frase que cualquiera
+escribe, y en una reunión de treinta personas eso es exactamente el problema que
+el modo venía a resolver. Se comprueba donde pasa el audio, no donde se pide el
+turno: si solo estuviera allí, un cliente que no pidiera nada seguiría sonando.
+
+No hay cola. Pedir la palabra ordenadamente es **levantar la mano**, que sí la
+tiene; esto es para hablar por encima del ruido, y ahí el primero que llega
+habla. Encolar turnos de dos segundos convertiría una conversación en un
+walkie-talkie con retardo.
+
+El turno se suelta al salir de la sala y al cerrar la pestaña, y caduca solo a
+los dos minutos: nadie retiene el micrófono para siempre por soltar la tecla
+mal.
+
+**Con Distop en segundo plano no funciona, y no se promete.** `globalShortcut`
+de Electron sirve para acciones sueltas como F11, no para mantener una tecla
+pulsada: no da ciclo de pulsación y liberación. Hacerlo de verdad exige un hook
+nativo de teclado, que es leer todo lo que escribes en cualquier programa — y
+eso necesita su propia revisión de permisos y seguridad, no un rincón de esta
+fase.
+
 ## Lo que todavía no hay
 
 - **La escritura progresiva de la grabación en el cliente** —puente del cliente
   de escritorio, File System Access API, fragmentos con límite— está diseñada y
   no implementada. El servidor ya lleva el estado, el aviso y la auditoría.
-- **Calendario `.ics` y push-to-talk** (V4).
+- **La interfaz de la reunión** (sala de espera, manos, papeles, presupuesto)
+  más allá de la sección en la barra lateral. El protocolo, las rutas y los
+  eventos están completos y probados.
+- **Push-to-talk global**, con otro programa en primer plano.

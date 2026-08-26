@@ -533,6 +533,37 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_grabaciones_reunion ON meeting_recordings(meeting_id, created_at DESC);
   `,
+
+  /* Calendario y turno de palabra (V4).
+
+     `sequence` sube en cada modificacion, con el MISMO uid: sin eso, cambiar la
+     hora de una reunion crea un evento nuevo y deja el viejo en la agenda de
+     todo el mundo.
+
+     `timezone` se guarda aparte y NO se usa para calcular. El instante vive en
+     UTC porque una zona cambia de reglas —un pais mueve su horario de verano— y
+     una hora guardada como "18:00 en Madrid" se desplaza sola cuando eso pasa.
+     La zona solo sirve para poder ensenarla.
+
+     Del token de calendario solo se guarda el hash. Va en la URL porque un
+     cliente de calendario solo sabe pedir una direccion: no puede mandar una
+     cabecera ni un cuerpo. Es la unica concesion, y por eso es revocable. */
+  `
+  ALTER TABLE meetings ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE meetings ADD COLUMN timezone TEXT;
+  ALTER TABLE meetings ADD COLUMN push_to_talk INTEGER NOT NULL CHECK (push_to_talk IN (0,1)) DEFAULT 0;
+
+  CREATE TABLE calendar_tokens (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    label      TEXT,
+    created_at INTEGER NOT NULL,
+    last_used  INTEGER,
+    revoked_at INTEGER
+  );
+  CREATE INDEX idx_calendario_usuario ON calendar_tokens(user_id);
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

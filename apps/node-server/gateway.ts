@@ -36,6 +36,8 @@ interface Client {
    * para ese canal.
    */
   guestChannel: Snowflake | null;
+  /** Cubos de un segundo por tipo de comando. Ver `dentroDeLimite`. */
+  cmdRate: Record<string, { n: number; since: number }>;
   alive: boolean;
   /** Cuota de paquetes multimedia del segundo en curso. */
   media: { frames: number; bytes: number; since: number };
@@ -242,6 +244,9 @@ function handleCommand(client: Client, raw: string): void {
       const channelId = cmd.d?.channel_id;
       if (typeof channelId !== "string") return;
       const salido = voice.leave(channelId, client.userId);
+      /* El turno de palabra se suelta al salir: si no, quien se va con la tecla
+         pulsada deja a la sala muda hasta que salte el tiempo máximo. */
+      for (const suelto of meetings.dropFloorOf(client.userId)) announceFloor(suelto);
       if (salido) announceVoice(channelId);
       if (race.leave(channelId, client.userId)) announceRace(channelId);
       if (meetings.meetingOf(channelId)) {
@@ -324,6 +329,19 @@ function handleCommand(client: Client, raw: string): void {
       if (!viva) return;
       if (!meetings.advanceRecording(viva.id, state as RecordingState, client.userId)) return;
       announceRecording(channelId);
+      return;
+    }
+
+    case "MEETING_FLOOR": {
+      const { channel_id: channelId, hold } = cmd.d ?? {};
+      if (typeof channelId !== "string" || typeof hold !== "boolean") return;
+      /* Un límite alto: pulsar para hablar produce muchos mensajes cortos y
+         legítimos. Lo que corta es el abuso, no el uso. */
+      if (!dentroDeLimite(client, "floor", 120)) return;
+      const cambio = hold
+        ? meetings.takeFloor(channelId, client.userId)
+        : meetings.releaseFloor(channelId, client.userId);
+      if (cambio) announceFloor(channelId);
       return;
     }
 
@@ -559,6 +577,10 @@ function relayMedia(client: Client | VideoClient, packet: Buffer): void {
   // Silenciado o sin vídeo anunciado, el servidor no lo reenvía. No basta con que
   // el cliente deje de mandarlo: el cliente lo escribe cualquiera.
   if (kind === KIND_AUDIO ? sender.muted : !sender.video) return;
+  /* Modo turno de palabra (V4): solo suena quien lo tiene. Se comprueba aquí,
+     donde pasa el audio, y no donde se pide el turno: si estuviera solo allí,
+     un cliente que no pidiera nada seguiría sonando. */
+  if (kind === KIND_AUDIO && !meetings.maySpeakNow(channelId, client.userId)) return;
 
   const out = Buffer.allocUnsafe(17 + packet.length - 1);
   out[0] = kind;
@@ -705,6 +727,37 @@ export function announceRecording(channelId: Snowflake): void {
   }
 }
 
+/** Quién tiene el turno de palabra, a la sala. */
+export function announceFloor(channelId: Snowflake): void {
+  const reunion = meetings.meetingOf(channelId);
+  if (!reunion) return;
+  const evento: ServerEvent = {
+    t: "MEETING_FLOOR",
+    d: { channel_id: channelId, user_id: meetings.floorOf(channelId) },
+  };
+  for (const client of clients) {
+    if (client.subs.has(reunion.community_id) || client.guestChannel === channelId) send(client, evento);
+  }
+}
+
+/**
+ * Límite por socket y por tipo de comando, en una ventana de un segundo.
+ *
+ * `rateLimit` va por IP y por hora, que es la escala equivocada aquí: pulsar
+ * para hablar produce decenas de mensajes por minuto de forma completamente
+ * legítima, y una casa entera comparte IP.
+ */
+function dentroDeLimite(client: Client, clave: string, porSegundo: number): boolean {
+  const ahora = Date.now();
+  const cubo = client.cmdRate[clave];
+  if (!cubo || ahora - cubo.since >= 1000) {
+    client.cmdRate[clave] = { n: 1, since: ahora };
+    return true;
+  }
+  cubo.n += 1;
+  return cubo.n <= porSegundo;
+}
+
 export function announceVoice(channelId: Snowflake): void {
   const states = voice.statesOf(channelId);
   const communityId = states[0]?.community_id ?? getChannel(channelId)?.community_id;
@@ -772,6 +825,7 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
       /* Solo si la sesión viene acotada a una reunión. Se resuelve una vez, al
          conectar: preguntarlo en cada evento sería una consulta por mensaje. */
       guestChannel: auth.meetingId ? meetings.guestChannelOf(auth.user.id) : null,
+      cmdRate: {},
       alive: true,
       media: { frames: 0, bytes: 0, since: 0 },
     };
@@ -802,6 +856,8 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
       // Si era su última pestaña, sale de la llamada; con otra abierta sigue dentro.
       const stillHere = [...clients].some((other) => other.userId === client.userId);
       if (!stillHere) {
+        /* Cerrar la pestaña también suelta el turno de palabra. */
+        for (const suelto of meetings.dropFloorOf(client.userId)) announceFloor(suelto);
         for (const channelId of voice.leaveAll(client.userId)) announceVoice(channelId);
         for (const channelId of race.leaveAll(client.userId)) announceRace(channelId);
       }

@@ -85,6 +85,7 @@ import { BackupError } from "./backup-format.ts";
 import { inspectBackup } from "./restore.ts";
 import { successionRecord } from "./succession.ts";
 import { normalizeProofOrigin } from "./identity.ts";
+import { buildIcs } from "./ics.ts";
 import {
   PushError,
   dropSubscription,
@@ -99,8 +100,14 @@ import {
   attendanceSummary,
   canModerate,
   createMeeting,
+  agendaFor,
+  calendarOwner,
+  calendarTokensOf,
+  createCalendarToken,
   hasModeratorPresent,
   liveRecording,
+  rescheduleMeeting,
+  revokeCalendarToken,
   meetingById,
   meetingsOf,
   bindGuest,
@@ -973,6 +980,96 @@ route("GET", "/api/v1/meetings/:id/attendance", (ctx) => {
      personas. Lo ve quien modera la reunión o quien administra la comunidad. */
   if (!canModerate(reunion, auth.user.id)) throw forbidden("La asistencia la ve quien organiza la reunión.");
   return { sessions: attendanceOf(reunion.id), totals: attendanceSummary(reunion.id) };
+});
+
+/* ── calendario (V4 §8.11) ─────────────────────────────────────────────
+ *
+ * Sin OAuth y sin integración con nadie: un `.ics` lo entiende cualquier agenda
+ * que respete el RFC 5545, así que este proyecto no tiene que pedir permisos
+ * sobre el calendario de otra persona ni guardar credenciales ajenas.
+ */
+
+route("PATCH", "/api/v1/meetings/:id/schedule", async (ctx) => {
+  const { auth, reunion } = requireMeeting(ctx, ctx.params.id!);
+  if (!canModerate(reunion, auth.user.id)) throw forbidden("Reprogramar es de quien organiza.");
+  const body = await readJson(ctx);
+  try {
+    /* Sube `sequence` con el MISMO id: cambiar la hora sin subirla dejaría el
+       evento viejo en la agenda de todo el mundo y añadiría uno nuevo al lado. */
+    const actualizada = rescheduleMeeting(reunion.id, auth.user.id, {
+      /* Solo se manda lo que de verdad viene: con `exactOptionalPropertyTypes`,
+         un `undefined` explícito no es lo mismo que no decir nada, y aquí "no
+         lo digas" significa "deja lo que había". */
+      ...(typeof body.starts_at === "number" ? { startsAt: body.starts_at } : {}),
+      ...(typeof body.ends_at === "number" ? { endsAt: body.ends_at } : {}),
+      ...(typeof body.timezone === "string" ? { timezone: body.timezone.slice(0, 60) } : {}),
+    });
+    publish(actualizada.community_id, { t: "MEETING_UPDATE", d: actualizada });
+    return actualizada;
+  } catch (error) {
+    meetingHttp(error);
+  }
+});
+
+route("GET", "/api/v1/calendars", (ctx) => {
+  const { user } = requireAuth(ctx);
+  /* Nunca el secreto: solo existe su hash. Se enseña una vez, al crearlo. */
+  return { tokens: calendarTokensOf(user.id) };
+});
+
+route("POST", "/api/v1/calendars", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  rateLimit(`calendar:${user.id}`, 10, 60_000);
+  const body = await readJson(ctx);
+  const creado = createCalendarToken(user.id, typeof body.label === "string" ? body.label.slice(0, 60) : null);
+  return {
+    token: creado.token,
+    /* La dirección completa, porque es lo que hay que pegar en la agenda. */
+    url: `${publicUrl() || ctx.url.origin}/api/v1/calendars/${creado.secret}/events.ics`,
+  };
+});
+
+route("DELETE", "/api/v1/calendars/:id", (ctx) => {
+  const { user } = requireAuth(ctx);
+  if (!revokeCalendarToken(user.id, ctx.params.id!)) throw notFound("Esa dirección no existe o ya estaba revocada.");
+  return { tokens: calendarTokensOf(user.id) };
+});
+
+/**
+ * La agenda, para pegar en cualquier calendario.
+ *
+ * El token va en la URL, y es la única concesión de todo el proyecto: un
+ * cliente de calendario solo sabe pedir una dirección — no puede mandar una
+ * cabecera ni un cuerpo—. Se compensa con lo que sí está en nuestra mano: es de
+ * un solo propósito (solo lee reuniones), no da sesión, no sirve para nada más,
+ * se guarda hasheado y se revoca en un clic.
+ */
+route("GET", "/api/v1/calendars/:token/events.ics", (ctx) => {
+  rateLimit(`ics:${ctx.ip}`, 60, 60_000);
+  const userId = calendarOwner(ctx.params.token!);
+  if (!userId) throw notFound("Esa dirección de calendario no vale.");
+
+  const eventos = agendaFor(userId).map((reunion) => ({
+    uid: `${reunion.id}@distop`,
+    summary: reunion.title,
+    description: reunion.agenda,
+    startsAt: reunion.starts_at!,
+    /* Sin final declarado, una hora: un evento sin duración se pinta como un
+       punto y desaparece de la vista de semana en la mitad de las agendas. */
+    endsAt: reunion.ends_at ?? reunion.starts_at! + 3600_000,
+    sequence: reunion.sequence,
+    status: reunion.state === "CANCELLED" ? ("CANCELLED" as const) : ("CONFIRMED" as const),
+    timezone: reunion.timezone,
+  }));
+
+  const cuerpo = buildIcs(eventos);
+  ctx.res.writeHead(200, {
+    "content-type": "text/calendar; charset=utf-8",
+    "content-length": String(Buffer.byteLength(cuerpo)),
+    "cache-control": "no-store",
+  });
+  ctx.res.end(cuerpo);
+  return HANDLED;
 });
 
 /* ── invitados de reunión (V2 §8.6) ────────────────────────────────────

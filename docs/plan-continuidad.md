@@ -19,7 +19,7 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 6 | V1 — reuniones, lobby y estados | Reunión funcional | ✅ |
 | 7 | V2 — invitados, admisión y asistencia | Reunión con gente de fuera | ✅ |
 | 8 | V3 — presupuesto de vídeo y grabación | Reunión dentro de límites reales | ✅ |
-| 9 | V4 — calendario, ICS y push-to-talk | Agenda y pulido de voz | ⬜ |
+| 9 | V4 — calendario, ICS y push-to-talk | Agenda y pulido de voz | ✅ |
 
 **Fuera de alcance, explícitamente:** Android, Capacitor, Java, servidor
 embebido móvil · promoción automática de sucesores · sincronización continua
@@ -317,14 +317,37 @@ no implementada; el servidor ya lleva el estado, el aviso y la auditoría.
 
 ---
 
-## Fase V4 — calendario, ICS y push-to-talk ⬜
+## Fase V4 — calendario, ICS y push-to-talk ✅
 
-- [ ] ICS con UID estable, DTSTAMP, DTSTART/DTEND, SEQUENCE, STATUS, escapado y CRLF
-- [ ] UTC almacenado, zona original conservada para presentación
-- [ ] Modificar sube SEQUENCE con el mismo UID; cancelar pone `STATUS:CANCELLED`
-- [ ] `GET /api/v1/calendars/:token/events.ics` con token revocable guardado como hash
-- [ ] PTT con foco: estados por participante, servidor arbitra el turno, timeout, rate limit
-- [ ] PTT global queda fuera (requiere hook nativo)
+Documentado en [reuniones.md](reuniones.md).
+
+- [x] ICS con UID estable, `DTSTAMP`, `DTSTART`/`DTEND`, `SEQUENCE`, `STATUS`,
+      escapado (`\` primero, luego `;` `,` y salto) y **CRLF, incluido el final**
+- [x] Plegado a 75 **octetos**, contando bytes y sin partir un carácter multibyte
+- [x] UTC almacenado; la zona original se guarda aparte y **no se usa para
+      calcular** — una zona cambia de reglas y "18:00 en Madrid" se desplaza sola
+- [x] Reprogramar sube `SEQUENCE` con el mismo UID; cancelar pone
+      `STATUS:CANCELLED` en vez de quitar el evento del fichero
+- [x] `GET /api/v1/calendars/:token/events.ics`, token revocable y guardado como
+      hash; la agenda solo trae reuniones de comunidades donde eres miembro y
+      canales que ves
+- [x] Una agenda vacía sigue siendo un calendario válido
+- [x] PTT con foco: el turno lo **arbitra el servidor** y se comprueba en
+      `relayMedia`, donde pasa el audio — si solo se comprobara al pedirlo, quien
+      no pidiera nada seguiría sonando
+- [x] Tiempo máximo de turno (2 min) y límite por socket y por segundo, no por
+      IP y por hora: pulsar para hablar produce decenas de mensajes legítimos
+- [x] El turno se suelta al salir de la sala y al cerrar la pestaña
+- [x] PTT global **fuera**, como dice el plan: `globalShortcut` de Electron no da
+      ciclo de pulsación y liberación, y hacerlo bien exige un hook nativo con su
+      propia revisión de permisos
+- [x] 12 pruebas propias
+
+**Concesión consciente:** el token del calendario va en la **URL**. Es la única
+de todo el proyecto, y es inherente al formato: un cliente de calendario solo
+sabe pedir una dirección — no puede mandar una cabecera ni un cuerpo. Se
+compensa con lo que sí está en nuestra mano: es de un solo propósito, no da
+sesión, se guarda hasheado y se revoca en un clic.
 
 ---
 
