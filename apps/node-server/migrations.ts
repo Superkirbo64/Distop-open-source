@@ -510,6 +510,29 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_invitados_reunion ON meeting_guests(meeting_id);
   `,
+
+  /* Grabacion de reuniones (V3).
+
+     El FICHERO no esta aqui: vive en el ordenador de quien graba. Mezclar en el
+     servidor exigiria decodificar, componer y recodificar cada fotograma de
+     cada persona en el PC de quien hospeda, que es justo el trabajo que este
+     proyecto no le puede pedir a un ordenador domestico.
+
+     Lo que si vive aqui es quien grabo, cuando y en que estado acabo: sin eso,
+     "hubo una grabacion" seria una afirmacion sin respaldo. */
+  `
+  CREATE TABLE meeting_recordings (
+    id          TEXT PRIMARY KEY,
+    meeting_id  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    recorder_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    state       TEXT NOT NULL CHECK (state IN
+                  ('REQUESTED','CONSENTING','RECORDING','FINALIZING','AVAILABLE','FAILED','DELETED')),
+    started_at  INTEGER,
+    ended_at    INTEGER,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX idx_grabaciones_reunion ON meeting_recordings(meeting_id, created_at DESC);
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

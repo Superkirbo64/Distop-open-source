@@ -100,6 +100,7 @@ import {
   canModerate,
   createMeeting,
   hasModeratorPresent,
+  liveRecording,
   meetingById,
   meetingsOf,
   bindGuest,
@@ -921,6 +922,9 @@ route("GET", "/api/v1/meetings/:id", (ctx) => {
     /* La sala de espera solo la ve quien puede abrirla. */
     waiting: canModerate(reunion, auth.user.id) ? waitingOf(reunion.channel_id) : [],
     moderator_present: hasModeratorPresent(reunion.channel_id),
+    /* Si se está grabando, lo sabe todo el mundo que abra la reunión: es lo
+       primero que hace falta para decidir si te quedas. */
+    recording: liveRecording(reunion.id),
   };
 });
 

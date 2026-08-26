@@ -25,14 +25,17 @@
 import {
   MEETING_RANK,
   PERMISSIONS,
+  canRecordingTransition,
   canTransition,
   has,
   meetingCanModerate,
   uuidv7,
   type Meeting,
+  type MeetingRecording,
   type MeetingRole,
   type MeetingState,
   type MeetingWaiting,
+  type RecordingState,
   type Snowflake,
 } from "@distop/protocol";
 import { createHash, randomBytes } from "node:crypto";
@@ -207,6 +210,7 @@ export function transitionMeeting(
     db.prepare("UPDATE meeting_attendance SET left_at = ? WHERE meeting_id = ? AND left_at IS NULL").run(now, meetingId);
     for (const userId of voice.peersOf(reunion.channel_id)) voice.leave(reunion.channel_id, userId);
     salasDeEspera.delete(reunion.channel_id);
+    closeRecordings(meetingId, now);
   }
 
   audit(reunion.community_id, actorId, `MEETING_${to}`, meetingId, { from: reunion.state });
@@ -657,6 +661,130 @@ export function sweepGuests(maxAgeMs = 24 * 3600_000, now = Date.now()): number 
     }
   }
   return borrados;
+}
+
+/* ── grabación (V3 §8.9) ───────────────────────────────────────────────
+ *
+ * **El fichero vive en el ordenador de quien graba.** El servidor no recibe ni
+ * un byte de vídeo por aquí y no mezcla nada: mezclar exigiría decodificar,
+ * componer y recodificar cada fotograma de cada persona en el PC de quien
+ * hospeda, que es justo el trabajo que este proyecto no le puede pedir a un
+ * ordenador doméstico.
+ *
+ * La línea honesta frente a las alternativas: **tu grabación es un fichero en
+ * tu ordenador, no una nube que se alquila.**
+ *
+ * Lo que sí hace el servidor es lo único que un cliente no puede hacer solo:
+ * que la sala entera se entere, y que quede escrito.
+ */
+
+interface FilaGrabacion {
+  id: string;
+  meeting_id: string;
+  recorder_id: string;
+  state: RecordingState;
+  started_at: number | null;
+  ended_at: number | null;
+  created_at: number;
+}
+
+/** La grabación viva de una reunión, si la hay. */
+export function liveRecording(meetingId: Snowflake): MeetingRecording | null {
+  const fila = db
+    .prepare(
+      "SELECT * FROM meeting_recordings WHERE meeting_id = ? AND state IN ('REQUESTED','CONSENTING','RECORDING','FINALIZING') ORDER BY created_at DESC LIMIT 1",
+    )
+    .get(meetingId) as FilaGrabacion | undefined;
+  return fila ?? null;
+}
+
+export function recordingsOf(meetingId: Snowflake): MeetingRecording[] {
+  return db
+    .prepare("SELECT * FROM meeting_recordings WHERE meeting_id = ? ORDER BY created_at DESC")
+    .all(meetingId) as MeetingRecording[];
+}
+
+/**
+ * Empieza el trámite de grabar. Todavía no graba nada: pasa por `CONSENTING`.
+ *
+ * Avisar después no es avisar. El estado intermedio existe para que el aviso
+ * llegue a la sala **antes** de que se grabe el primer fotograma, y para que a
+ * quien llegue más tarde se le pueda decir antes de admitirle.
+ */
+export function requestRecording(channelId: Snowflake, userId: Snowflake, now = Date.now()): MeetingRecording | null {
+  const reunion = meetingOf(channelId);
+  if (!reunion || reunion.state !== "LIVE") return null;
+  /* Grabar una reunión ajena no lo decide cualquiera que esté dentro. */
+  if (!canModerate(reunion, userId) && roleOf(reunion.id, userId) !== "presenter") return null;
+  /* Una sola grabación viva: dos a la vez producen dos ficheros distintos que
+     dicen ser la misma reunión, y nadie sabría cuál es "la" grabación. */
+  if (liveRecording(reunion.id)) return null;
+
+  const id = uuidv7();
+  db.prepare(
+    "INSERT INTO meeting_recordings (id, meeting_id, recorder_id, state, created_at) VALUES (?, ?, ?, 'CONSENTING', ?)",
+  ).run(id, reunion.id, userId, now);
+  audit(reunion.community_id, userId, "MEETING_RECORDING_START", reunion.id, { recording_id: id });
+  return recordingById(id);
+}
+
+export function recordingById(id: string): MeetingRecording | null {
+  return (db.prepare("SELECT * FROM meeting_recordings WHERE id = ?").get(id) as FilaGrabacion | undefined) ?? null;
+}
+
+/**
+ * Avanza el estado de una grabación, o dice que no.
+ *
+ * Solo quien graba puede moverla: es su fichero y su disco, y nadie más sabe si
+ * se cerró bien. La excepción es quien administra la comunidad, que puede
+ * marcarla como fallida para cortar el aviso de una grabación abandonada.
+ */
+export function advanceRecording(
+  recordingId: string,
+  to: RecordingState,
+  actorId: Snowflake,
+  now = Date.now(),
+): MeetingRecording | null {
+  const actual = recordingById(recordingId);
+  if (!actual) return null;
+  const reunion = meetingById(actual.meeting_id);
+  if (!reunion) return null;
+
+  const suya = actual.recorder_id === actorId;
+  const rescate = to === "FAILED" && securityOverride(reunion.community_id, actorId);
+  if (!suya && !rescate) return null;
+  if (!canRecordingTransition(actual.state, to)) return null;
+
+  const campos: string[] = ["state = ?"];
+  const valores: Array<string | number> = [to];
+  if (to === "RECORDING" && actual.started_at === null) {
+    campos.push("started_at = ?");
+    valores.push(now);
+  }
+  if (to === "FINALIZING" || to === "FAILED") {
+    campos.push("ended_at = COALESCE(ended_at, ?)");
+    valores.push(now);
+  }
+  valores.push(recordingId);
+  db.prepare(`UPDATE meeting_recordings SET ${campos.join(", ")} WHERE id = ?`).run(...valores);
+
+  if (to === "AVAILABLE" || to === "FAILED" || to === "DELETED") {
+    audit(reunion.community_id, actorId, `MEETING_RECORDING_${to}`, reunion.id, { recording_id: recordingId });
+  }
+  return recordingById(recordingId);
+}
+
+/**
+ * Al cerrar la reunión, una grabación viva no se queda viva.
+ *
+ * Se marca como fallida y no como disponible: nadie ha confirmado que el
+ * fichero se cerrara bien, y decir "disponible" sobre algo que quizá está
+ * truncado es exactamente el tipo de mentira que este proyecto no cuenta.
+ */
+export function closeRecordings(meetingId: Snowflake, now = Date.now()): void {
+  db.prepare(
+    "UPDATE meeting_recordings SET state = 'FAILED', ended_at = COALESCE(ended_at, ?) WHERE meeting_id = ? AND state IN ('REQUESTED','CONSENTING','RECORDING','FINALIZING')",
+  ).run(now, meetingId);
 }
 
 /** Solo para las pruebas: vacía las salas de espera en memoria. */

@@ -515,6 +515,25 @@ export interface VoiceState {
   hand_raised_at: number | null;
 }
 
+/**
+ * Lo que la sala necesita saber del presupuesto de vídeo (V3).
+ *
+ * `queued` son quienes querían transmitir y no caben. No es una lista de
+ * culpables: el techo lo pone la subida de quien hospeda, y `mode` dice si ese
+ * techo lo mide el servidor (`host`) o lo aplican los clientes (`direct`),
+ * porque no son la misma medida y mezclarlas daría un número falso.
+ */
+export interface VideoBudget {
+  channel_id: Snowflake;
+  mode: "host" | "direct";
+  /** Fuentes simultáneas que caben ahora mismo. */
+  slots: number;
+  /** Coste estimado de lo aceptado y techo aplicado, en kbps de subida. */
+  cost_kbps: number;
+  ceiling_kbps: number;
+  queued: Snowflake[];
+}
+
 /* ─────────────────────────── Reuniones (V1, §8) ───────────────────────────
  *
  * Una reunión NO es un tipo de sala de voz nuevo: es un canal con
@@ -603,6 +622,63 @@ export interface Meeting {
   mute_on_entry: boolean;
   /** Invitados de fuera de la comunidad. Se implementa en V2. */
   guests_allowed: boolean;
+  created_at: number;
+}
+
+/**
+ * Grabación de una reunión (V3, §8.9).
+ *
+ * **El fichero vive en el ordenador de quien graba**, no aquí. El servidor no
+ * mezcla nada: mezclar exigiría decodificar, componer y recodificar cada
+ * fotograma de cada persona en el PC de quien hospeda, que es exactamente el
+ * trabajo que este proyecto no le puede pedir a un ordenador doméstico.
+ *
+ * Lo que sí lleva el servidor es el **estado y el aviso**: quién graba, desde
+ * cuándo, y que todo el mundo lo sepa mientras dura.
+ *
+ * `CONSENTING` existe porque avisar después no es avisar. Si la grabación ya
+ * empezó, a quien llega se le dice **antes** de admitirle.
+ */
+export const RECORDING_STATES = [
+  "REQUESTED",
+  "CONSENTING",
+  "RECORDING",
+  "FINALIZING",
+  "AVAILABLE",
+  "FAILED",
+  "DELETED",
+] as const;
+export type RecordingState = (typeof RECORDING_STATES)[number];
+
+export const RECORDING_TRANSITIONS: Record<RecordingState, readonly RecordingState[]> = {
+  REQUESTED: ["CONSENTING", "FAILED"],
+  CONSENTING: ["RECORDING", "FAILED"],
+  RECORDING: ["FINALIZING", "FAILED"],
+  /* Cerrar un fichero de vídeo puede fallar, y decir que está disponible cuando
+     no lo está es peor que decir que falló. */
+  FINALIZING: ["AVAILABLE", "FAILED"],
+  AVAILABLE: ["DELETED"],
+  FAILED: ["DELETED"],
+  DELETED: [],
+};
+
+export function canRecordingTransition(from: RecordingState, to: RecordingState): boolean {
+  return RECORDING_TRANSITIONS[from].includes(to);
+}
+
+/** Mientras esté en uno de estos, hay un aviso permanente en pantalla. */
+export function recordingIsLive(state: RecordingState): boolean {
+  return state === "CONSENTING" || state === "RECORDING";
+}
+
+export interface MeetingRecording {
+  id: Snowflake;
+  meeting_id: Snowflake;
+  /** Quién graba. Se enseña: una grabación anónima no es un aviso. */
+  recorder_id: Snowflake;
+  state: RecordingState;
+  started_at: number | null;
+  ended_at: number | null;
   created_at: number;
 }
 
@@ -1105,6 +1181,14 @@ export type ServerEvent =
   | { t: "MEETING_LOBBY"; d: { meeting_id: Snowflake; channel_id: Snowflake; waiting: MeetingWaiting[] } }
   /* Tu papel cambió: te hicieron presentador, o te lo quitaron. */
   | { t: "MEETING_ROLE"; d: { meeting_id: Snowflake; channel_id: Snowflake; user_id: Snowflake; role: MeetingRole } }
+  /* Presupuesto de vídeo (V3): cuántas fuentes caben y quién espera turno.
+     Va a la sala entera y no solo a quien se quedó fuera, porque el motivo es
+     compartido —la conexión del anfitrión— y no un problema de esa persona. */
+  | { t: "VIDEO_BUDGET"; d: VideoBudget }
+  /* Alguien está grabando, o dejó de hacerlo. A la sala entera y sin
+     excepciones: una grabación que no se anuncia no es una grabación, es otra
+     cosa. */
+  | { t: "RECORDING_UPDATE"; d: { channel_id: Snowflake; recording: MeetingRecording | null } }
   | { t: "ERROR"; d: ApiError }
   | { t: "PONG"; d: { at: number } };
 
@@ -1163,6 +1247,9 @@ export type ClientCommand =
   | { t: "MEETING_DENY"; d: { channel_id: Snowflake; user_id: Snowflake } }
   | { t: "MEETING_ADMIT_ALL"; d: { channel_id: Snowflake } }
   | { t: "MEETING_HAND"; d: { channel_id: Snowflake; raised: boolean } }
+  /* Empezar o terminar una grabación LOCAL. El servidor no recibe ni un byte
+     de vídeo por aquí: solo el estado, para poder avisar a la sala. */
+  | { t: "MEETING_RECORD"; d: { channel_id: Snowflake; state: RecordingState } }
   | { t: "PING"; d?: undefined };
 
 /* ─────────────────────────── Errores tipados (§30) ─────────────────────────── */

@@ -18,7 +18,7 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 5 | A2 — Web Push opcional | Aviso con la aplicación cerrada | ✅ |
 | 6 | V1 — reuniones, lobby y estados | Reunión funcional | ✅ |
 | 7 | V2 — invitados, admisión y asistencia | Reunión con gente de fuera | ✅ |
-| 8 | V3 — presupuesto de vídeo y grabación | Reunión dentro de límites reales | ⬜ |
+| 8 | V3 — presupuesto de vídeo y grabación | Reunión dentro de límites reales | ✅ |
 | 9 | V4 — calendario, ICS y push-to-talk | Agenda y pulido de voz | ⬜ |
 
 **Fuera de alcance, explícitamente:** Android, Capacitor, Java, servidor
@@ -279,18 +279,41 @@ proyecto dice que los tokens no se registran en logs.
 
 ---
 
-## Fase V3 — presupuesto de vídeo y grabación ⬜
+## Fase V3 — presupuesto de vídeo y grabación ✅
 
-- [ ] Cálculo antes de aceptar fuente: participantes, fuentes, bitrate, capacidad, modo, presión
-- [ ] Limitar vídeo antes que audio; bajar calidad antes de desconectar
-- [ ] Prioridad: pantalla > cámara del presentador > organizador hablando > dinámicos > cola
-- [ ] Ninguna reserva rompe el techo físico
-- [ ] El cliente no declara su propia prioridad
-- [ ] Modos `host` y `direct` medidos y probados por separado
-- [ ] Grabación local del cliente autorizado, sin acumular horas en RAM
-- [ ] Consentimiento visible, indicador permanente, evento de auditoría
-- [ ] Estados `REQUESTED · CONSENTING · RECORDING · FINALIZING · AVAILABLE · FAILED · DELETED`
-- [ ] Sin mezcla en servidor
+Documentado en [reuniones.md](reuniones.md).
+
+- [x] Cálculo **antes** de aceptar la fuente, con participantes, fuentes en curso,
+      coste por receptor, techo del anfitrión, modo y presión de la instancia
+- [x] El vídeo se limita antes que el audio: bajo presión (copia, relevo) el techo
+      se recorta al 60 % — una voz entrecortada es un fallo visible y una cámara
+      de menos, una molestia
+- [x] Prioridad: pantalla > cámara del presentador > moderador hablando > dinámicos > cola
+- [x] **Ninguna reserva rompe el techo físico**: la sexta pantalla compartida
+      espera igual que todo lo demás
+- [x] El cliente **no declara su prioridad**: sale de su papel en la reunión y del
+      tipo de fuente, los dos resueltos en el servidor
+- [x] Se decide con el candidato dentro, no contra un hueco libre: una pantalla
+      compartida desplaza a una cámara en vez de ponerse a la cola
+- [x] Siempre cabe una fuente: una conexión mala no convierte la reunión en un teléfono
+- [x] `host` y `direct` medidos y probados **por separado** — en `direct` el
+      servidor no ve el bitrate real y no finge un número; solo conserva el orden
+- [x] Rechazar no pone la fuente, así que `relayMedia` la descarta por
+      construcción — la misma propiedad estructural que la sala de espera
+- [x] Grabación **local**: el fichero vive en el equipo de quien graba. Sin mezcla
+      en servidor y sin un solo byte de vídeo por esa ruta
+- [x] Estados `REQUESTED · CONSENTING · RECORDING · FINALIZING · AVAILABLE · FAILED · DELETED`
+      con transiciones explícitas: no se graba sin pasar por el aviso, y nada se
+      marca disponible sin que alguien cierre el fichero
+- [x] El aviso llega **antes**: a quien espera en la puerta se le dice que se está
+      grabando antes de admitirle
+- [x] Auditoría de inicio, disponible, fallo y borrado; una grabación viva al
+      cerrar la reunión queda `FAILED`, nunca `AVAILABLE`
+- [x] 15 pruebas propias
+
+**Deuda consciente:** la escritura progresiva en el cliente (puente de escritorio,
+File System Access API, fragmentos en IndexedDB) está diseñada en el documento y
+no implementada; el servidor ya lleva el estado, el aviso y la auditoría.
 
 ---
 

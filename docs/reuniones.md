@@ -212,7 +212,102 @@ volver. Se limpian cada hora. Quien sí estuvo se queda —su asistencia es un
 registro real— y quien convirtió su paso en una cuenta de la comunidad no la
 pierde por una limpieza.
 
+## Cuántas cámaras caben
+
+No hay servidor de medios, y no se va a construir ahora. Con el vídeo pasando
+por la instancia, cada fotograma se copia y se reenvía **una vez por cada
+persona menos quien lo manda**: cuatro cámaras entre ocho personas son más de
+100 Mbps de subida en el PC de quien hospeda. Eso no cabe en una conexión
+doméstica, y fingir que sí produce una llamada en la que **todos** se ven mal.
+
+Así que se decide antes de aceptar la fuente, no después de que se caiga.
+
+```text
+pantalla compartida  >  cámara del presentador  >  moderador hablando  >  el resto
+```
+
+Dos cosas que sostienen el diseño:
+
+**Prioridad no es inmunidad.** Una pantalla compartida entra la primera, pero la
+sexta pantalla compartida espera igual que todo lo demás. Seis presentadores
+saturan exactamente igual que seis asistentes, y ninguna reserva rompe el techo
+físico.
+
+**El cliente no declara su prioridad.** Sale de su papel en la reunión y del
+tipo de fuente, los dos resueltos en el servidor. Si la declarase él,
+"prioridad" sería una palabra que cualquiera escribe en un JSON.
+
+Y se calcula **con el candidato dentro**, no comparando contra un hueco libre:
+si quien llega es más prioritario, la respuesta correcta no es "no cabes" sino
+"cabes tú y sale el otro". Al revés, el contenido de la reunión esperaría detrás
+de tres caras.
+
+Rechazar una fuente no la pone, así que el reenvío la descarta por construcción
+— la misma propiedad que hace segura la sala de espera.
+
+Siempre cabe una fuente. Una reunión en la que nadie puede enseñar nada no es
+una reunión, y una conexión mala no debe convertirla en un teléfono.
+
+Si la instancia va apretada por otra cosa —una copia, una verificación de
+integridad— el techo se recorta antes de que la voz empiece a entrecortarse. Una
+voz rota es un fallo visible; una cámara de menos, una molestia.
+
+### Los dos modos no se miden igual
+
+Por la instancia (`host`), el servidor sabe lo que cuesta cada fuente y lo
+limita. Directo entre navegadores (`direct`), **no ve el bitrate real**: cada
+cliente sostiene conexiones múltiples y el coste crece entre participantes. Ahí
+el presupuesto lo aplican los clientes, y el servidor solo conserva el orden de
+prioridad para que las dos vistas coincidan en qué importa. Medir los dos modos
+con la misma vara daría un número falso en uno de los dos.
+
+Cuando algo no cabe, se dice sin culpar a nadie:
+
+```text
+La conexión del anfitrión no puede mantener todas las cámaras.
+La pantalla compartida tiene prioridad.
+```
+
+## Grabar
+
+**El fichero vive en el ordenador de quien graba.** El servidor no mezcla nada:
+mezclar exigiría decodificar, componer y recodificar cada fotograma de cada
+persona en el PC de quien hospeda, que es justo el trabajo que este proyecto no
+le puede pedir a un ordenador doméstico.
+
+La línea honesta frente a las alternativas: **tu grabación es un fichero en tu
+ordenador, no una nube que se alquila.**
+
+Lo que sí hace el servidor es lo único que un cliente no puede hacer solo: que
+la sala entera se entere, y que quede escrito.
+
+```text
+REQUESTED → CONSENTING → RECORDING → FINALIZING → AVAILABLE
+                    ↘         ↘           ↘
+                      FAILED  ────────────────────→ DELETED
+```
+
+`CONSENTING` existe porque **avisar después no es avisar**. El aviso sale a la
+sala antes del primer fotograma, y a quien llega a la puerta se le dice que se
+está grabando **antes** de admitirle — enterarse después de haber entrado y
+hablado no es consentir nada.
+
+`FINALIZING` existe porque cerrar un fichero de vídeo puede fallar, y decir que
+está disponible cuando no lo está es peor que decir que falló. Por eso una
+grabación viva cuando se cierra la reunión queda **`FAILED`**, nunca
+`AVAILABLE`: nadie ha confirmado que el fichero se cerrara bien.
+
+El aviso lleva el nombre de quien graba. Un aviso anónimo no deja a nadie
+decidir si se queda. Y el inicio, el resultado y el borrado quedan en la
+auditoría de la comunidad.
+
+Lo que **no** se afirma: que el aviso equivalga legalmente a consentimiento. Eso
+depende de dónde estéis y de quién sea la reunión, y este documento no da
+consejo legal.
+
 ## Lo que todavía no hay
 
-- **Presupuesto de vídeo y grabación** (V3).
+- **La escritura progresiva de la grabación en el cliente** —puente del cliente
+  de escritorio, File System Access API, fragmentos con límite— está diseñada y
+  no implementada. El servidor ya lleva el estado, el aviso y la auditoría.
 - **Calendario `.ics` y push-to-talk** (V4).

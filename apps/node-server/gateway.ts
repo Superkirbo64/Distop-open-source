@@ -8,7 +8,7 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { PERMISSIONS, has } from "@distop/protocol";
-import type { ClientCommand, ServerEvent, Snowflake, VoiceAction, VoiceSoundRejectReason } from "@distop/protocol";
+import type { ClientCommand, RecordingState, ServerEvent, Snowflake, VideoSource, VoiceAction, VoiceSoundRejectReason } from "@distop/protocol";
 import { authenticate, findUserById } from "./auth.ts";
 import { communitiesForUser, getChannel } from "./entities.ts";
 import { channelPermissions, memberState } from "./permissions.ts";
@@ -16,9 +16,11 @@ import { instanceHealth } from "./instance.ts";
 import { rateLimit } from "./http.ts";
 import * as voice from "./voice.ts";
 import * as meetings from "./meetings.ts";
+import * as presupuesto from "./video-budget.ts";
+import { videoMode } from "./ice.ts";
 import * as race from "./race.ts";
 import { getEmoji } from "./expressions.ts";
-import { writesAccepted } from "./lifecycle.ts";
+import { freezeReason, writesAccepted } from "./lifecycle.ts";
 
 interface Client {
   ws: WebSocket;
@@ -203,9 +205,16 @@ function handleCommand(client: Client, raw: string): void {
       if (meetings.meetingOf(channelId)) {
         const salida = meetings.joinMeeting(channelId, client.userId);
         if (salida === "waiting") {
+          const enEspera = meetings.meetingOf(channelId)!;
           send(client, {
             t: "MEETING_WAITING",
-            d: { meeting_id: meetings.meetingOf(channelId)!.id, channel_id: channelId, admitted: false },
+            d: { meeting_id: enEspera.id, channel_id: channelId, admitted: false },
+          });
+          /* Si ya se está grabando, se dice AHORA, desde la puerta: enterarse
+             después de haber entrado y hablado no es consentir nada. */
+          send(client, {
+            t: "RECORDING_UPDATE",
+            d: { channel_id: channelId, recording: meetings.liveRecording(enEspera.id) },
           });
           announceLobby(channelId);
           return;
@@ -293,6 +302,31 @@ function handleCommand(client: Client, raw: string): void {
       return;
     }
 
+    /* Grabación LOCAL (V3). Por aquí no viaja un solo byte de vídeo: el
+       fichero está en el ordenador de quien graba. Lo único que hace el
+       servidor es lo que un cliente no puede hacer solo — que la sala entera
+       se entere, y que quede escrito. */
+    case "MEETING_RECORD": {
+      const { channel_id: channelId, state } = cmd.d ?? {};
+      if (typeof channelId !== "string" || typeof state !== "string") return;
+      const reunion = meetings.meetingOf(channelId);
+      if (!reunion) return;
+
+      if (state === "CONSENTING") {
+        /* Empezar es pedirlo: el aviso sale a la sala ANTES de que se grabe el
+           primer fotograma. Avisar después no es avisar. */
+        if (!meetings.requestRecording(channelId, client.userId)) return;
+        announceRecording(channelId);
+        return;
+      }
+
+      const viva = meetings.liveRecording(reunion.id);
+      if (!viva) return;
+      if (!meetings.advanceRecording(viva.id, state as RecordingState, client.userId)) return;
+      announceRecording(channelId);
+      return;
+    }
+
     case "MEETING_HAND": {
       const { channel_id: channelId, raised } = cmd.d ?? {};
       if (typeof channelId !== "string" || typeof raised !== "boolean") return;
@@ -312,7 +346,37 @@ function handleCommand(client: Client, raw: string): void {
       const { channel_id: channelId, source } = cmd.d ?? {};
       if (typeof channelId !== "string") return;
       if (source !== null && source !== "camera" && source !== "screen") return;
-      if (voice.setVideo(channelId, client.userId, source)) announceVoice(channelId);
+
+      /* Apagar la cámara nunca se rechaza: dejar de ocupar sitio no necesita
+         permiso de nadie, y negarlo sería absurdo. */
+      if (source === null) {
+        if (voice.setVideo(channelId, client.userId, null)) {
+          announceVoice(channelId);
+          announceBudget(channelId);
+        }
+        return;
+      }
+
+      /* Encenderla sí pasa por el presupuesto (V3). El permiso se comprueba
+         primero —dentro de setVideo— y el ancho de banda después: sin permiso
+         no hay presupuesto que discutir. */
+      if (!voice.setVideo(channelId, client.userId, source)) return;
+
+      const veredicto = presupuestoCon(channelId, client.userId, source);
+      if (!veredicto.admitido) {
+        /* No cabe: se deshace. La fuente nunca llega a estar puesta, así que
+           `relayMedia` la descarta por construcción — igual que la sala de
+           espera, sin una condición que alguien pueda olvidarse de escribir. */
+        voice.setVideo(channelId, client.userId, null);
+        announceBudget(channelId);
+        return;
+      }
+      /* Cabe, pero a costa de alguien menos prioritario. Ninguna reserva rompe
+         el techo físico: el desplazado pierde la fuente de verdad. */
+      for (const desplazado of veredicto.desplazados) voice.setVideo(channelId, desplazado, null);
+
+      announceVoice(channelId);
+      announceBudget(channelId);
       return;
     }
 
@@ -552,6 +616,93 @@ export function announceLobby(channelId: Snowflake): void {
 export function announceMeeting(channelId: Snowflake): void {
   const reunion = meetings.meetingOf(channelId);
   if (reunion) publish(reunion.community_id, { t: "MEETING_UPDATE", d: reunion });
+}
+
+/**
+ * Convierte la sala en la entrada que entiende el presupuesto.
+ *
+ * El papel de cada persona lo resuelve el servidor a partir de la reunión, y
+ * "está hablando" sale de si tiene el micrófono abierto. Ninguna de las dos
+ * cosas la declara el cliente: si lo hiciera, la prioridad sería una palabra
+ * que cualquiera escribe en un JSON.
+ */
+function entradaDePresupuesto(channelId: Snowflake): presupuesto.Entrada {
+  const reunion = meetings.meetingOf(channelId);
+  const estados = voice.statesOf(channelId);
+  const emisores: presupuesto.Emisor[] = estados
+    .filter((estado) => estado.video !== null)
+    .map((estado) => ({
+      userId: estado.user_id,
+      source: estado.video!,
+      role: reunion ? meetings.roleOf(reunion.id, estado.user_id) : null,
+      speaking: !estado.muted && !estado.force_muted,
+      since: estado.joined_at,
+    }));
+
+  return {
+    emisores,
+    participantes: estados.length,
+    modo: videoMode().mode === "direct" ? "direct" : "host",
+    /* Apretada por otra cosa: la voz se protege antes que la imagen. Una voz
+       entrecortada es un fallo visible; una cámara menos, una molestia. */
+    presion: freezeReason() !== null,
+  };
+}
+
+/** El veredicto para una fuente que alguien acaba de encender. */
+function presupuestoCon(channelId: Snowflake, userId: Snowflake, source: VideoSource): presupuesto.Veredicto {
+  const entrada = entradaDePresupuesto(channelId);
+  const candidato = entrada.emisores.find((e) => e.userId === userId) ?? {
+    userId,
+    source,
+    role: null,
+    speaking: false,
+    since: Date.now(),
+  };
+  return presupuesto.admitir(
+    { ...entrada, emisores: entrada.emisores.filter((e) => e.userId !== userId) },
+    { ...candidato, source },
+  );
+}
+
+/** Cuántas fuentes caben y quién espera turno, a toda la sala. */
+export function announceBudget(channelId: Snowflake): void {
+  const reparto = presupuesto.repartir(entradaDePresupuesto(channelId));
+  const communityId = getChannel(channelId)?.community_id;
+  if (!communityId) return;
+  const evento: ServerEvent = {
+    t: "VIDEO_BUDGET",
+    d: {
+      channel_id: channelId,
+      mode: reparto.modo,
+      slots: reparto.cabidas,
+      cost_kbps: reparto.coste_kbps,
+      ceiling_kbps: reparto.techo_kbps,
+      queued: reparto.cola.map((e) => e.userId),
+    },
+  };
+  for (const client of clients) {
+    if (client.subs.has(communityId) || client.guestChannel === channelId) send(client, evento);
+  }
+}
+
+/**
+ * Quién graba, a la sala entera y sin excepciones.
+ *
+ * Una grabación que no se anuncia no es una grabación, es otra cosa. Y va con
+ * el nombre de quien graba: un aviso anónimo no deja a nadie decidir si se
+ * queda.
+ */
+export function announceRecording(channelId: Snowflake): void {
+  const reunion = meetings.meetingOf(channelId);
+  if (!reunion) return;
+  const evento: ServerEvent = {
+    t: "RECORDING_UPDATE",
+    d: { channel_id: channelId, recording: meetings.liveRecording(reunion.id) },
+  };
+  for (const client of clients) {
+    if (client.subs.has(reunion.community_id) || client.guestChannel === channelId) send(client, evento);
+  }
 }
 
 export function announceVoice(channelId: Snowflake): void {
