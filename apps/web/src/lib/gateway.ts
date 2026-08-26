@@ -89,7 +89,7 @@ export function connect(): void {
   socket = new WebSocket(wsUrl(`/realtime?token=${encodeURIComponent(tokens.access_token)}`));
 
   socket.onopen = () => {
-    /* La conexi¢n TCP sola no demuestra sesi¢n ni membres°a. READY decide. */
+    /* La conexi√≥n TCP sola no demuestra sesi√≥n ni membres√≠a. READY decide. */
   };
 
   // Los paquetes de voz llegan en binario por este mismo socket; no hay que

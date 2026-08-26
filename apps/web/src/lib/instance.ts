@@ -11,7 +11,8 @@
  * sesión que ya tenías en el tuyo. La clave histórica `distop.session` se
  * conserva tal cual para same-origin, así nadie pierde su sesión al actualizar.
  */
-import type { Community } from "@distop/protocol";
+import { SUCCESSION_CHAIN_MAX, canonicalJson, checkSuccessionStep, compareIdentities } from "@distop/protocol";
+import type { Community, InstanceIdentityRef, SuccessionCert } from "@distop/protocol";
 
 const ACTIVE_KEY = "distop.activeInstance";
 const LIST_KEY = "distop.instances";
@@ -30,6 +31,16 @@ export interface KnownInstance {
   watch_url?: string;
   watch_enabled?: boolean;
   communities?: CachedCommunity[];
+  /** Cómo llegó esta instancia a ser la que es, desde la que fijamos primero. */
+  chain?: SuccessionCert[];
+  /** Última generación de direcciones aceptada. Nunca se acepta una menor. */
+  origin_generation?: number;
+  /**
+   * Dos respuestas dicen ser la misma comunidad y no pueden serlo las dos.
+   * Mientras esto exista no se manda el token a ninguna: elegir mal es
+   * entregarle la sesión a quien no es.
+   */
+  conflict?: { seen_fingerprint: string; seen_at: number; reason: string };
 }
 
 
@@ -354,12 +365,6 @@ export function forgetInstance(url: string): void {
 
 let availabilityConnected = false;
 
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const object = value as Record<string, unknown>;
-  return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(",")}}`;
-}
 
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
@@ -381,7 +386,7 @@ function stableWatchUrl(raw: string): string | null {
   return parsed.origin;
 }
 
-/** Ning�n origen nuevo puede obligar al cliente a reservar memoria sin l�mite. */
+/** Ningún origen nuevo puede obligar al cliente a reservar memoria sin límite. */
 async function smallJson(response: Response, limit = 32 * 1024): Promise<unknown> {
   const announced = Number(response.headers.get("content-length") ?? "0");
   if (announced > limit || !response.body) throw new Error("INVALID_RESPONSE");
@@ -408,6 +413,100 @@ async function smallJson(response: Response, limit = 32 * 1024): Promise<unknown
 }
 
 /** Verifica una prueba fresca y aplica TOFU: una clave fijada nunca cambia sola. */
+/**
+ * Verifica un eslabón de la cadena con WebCrypto.
+ *
+ * Las reglas —época siguiente, mismo linaje, ventana de validez— son las mismas
+ * que aplica el servidor, porque viven en el paquete compartido. Lo único que
+ * cambia aquí es la primitiva de firma.
+ */
+async function verifyCertInBrowser(cert: SuccessionCert, from: InstanceIdentityRef, now: number): Promise<string | null> {
+  if (!cert?.payload || typeof cert.signature !== "string") return "MALFORMED";
+  const encodedKey = new TextEncoder().encode(canonicalJson(cert.signer_public_key));
+  const fingerprint = base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", encodedKey)));
+  /* La huella se recalcula sobre la clave que llega: fiarse de la declarada
+     dejaría a cualquiera decir que es el predecesor y firmar con otra cosa. */
+  if (fingerprint !== cert.signer_fingerprint) return "SIGNER_KEY_MISMATCH";
+  if (fingerprint !== from.fingerprint) return "SIGNER_NOT_PREDECESSOR";
+
+  const reglas = checkSuccessionStep(from, cert.payload, now);
+  if (reglas) return reglas;
+
+  try {
+    const key = await crypto.subtle.importKey(
+      "jwk", cert.signer_public_key as JsonWebKey, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"],
+    );
+    const valid = await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" }, key,
+      fromBase64Url(cert.signature), new TextEncoder().encode(canonicalJson(cert.payload)),
+    );
+    return valid ? null : "BAD_SIGNATURE";
+  } catch { return "BAD_SIGNATURE"; }
+}
+
+/** Sigue la cadena entera desde lo que teníamos fijado hasta donde acabe. */
+export async function followSuccessionChain(
+  pinned: InstanceIdentityRef, chain: SuccessionCert[], now = Date.now(),
+): Promise<{ final: InstanceIdentityRef; chain: SuccessionCert[]; origins: string[] } | null> {
+  if (!Array.isArray(chain) || chain.length === 0 || chain.length > SUCCESSION_CHAIN_MAX) return null;
+  let actual = pinned;
+  let origins: string[] = [];
+  for (const cert of chain) {
+    if (await verifyCertInBrowser(cert, actual, now)) return null;
+    actual = {
+      instance_id: cert.payload.to_instance_id, lineage_id: cert.payload.lineage_id,
+      epoch: cert.payload.to_epoch, fingerprint: cert.payload.to_fingerprint,
+    };
+    origins = cert.payload.allowed_origins;
+  }
+  return { final: actual, chain, origins };
+}
+
+async function fetchAndFollowChain(
+  origin: string, pinned: InstanceIdentityRef, now: number,
+): Promise<{ final: InstanceIdentityRef; chain: SuccessionCert[]; origins: string[] } | null> {
+  try {
+    const response = await fetch(`${origin}/api/v1/succession/chain`, {
+      redirect: "manual", signal: AbortSignal.timeout(6_000),
+    });
+    if (!response.ok) return null;
+    const cuerpo = await smallJson(response) as { inbound_chain?: SuccessionCert[] };
+    return await followSuccessionChain(pinned, cuerpo.inbound_chain ?? [], now);
+  } catch { return null; }
+}
+
+/**
+ * Deja constancia de que dos cosas distintas dicen ser la misma comunidad.
+ *
+ * No se resuelve solo y no debe intentarlo: se guarda para que la interfaz
+ * pueda enseñar las dos huellas y que decida una persona, que es quien puede
+ * llamar por teléfono y preguntar.
+ */
+function recordContinuityConflict(url: string, seenFingerprint: string, reason: string): void {
+  const next = knownInstances().map((known) =>
+    known.url === url ? { ...known, conflict: { seen_fingerprint: seenFingerprint, seen_at: Date.now(), reason } } : known,
+  );
+  localStorage.setItem(LIST_KEY, JSON.stringify(next));
+}
+
+/** El conflicto de continuidad de una dirección, si lo hay. */
+export function continuityConflict(url = instanceBase): KnownInstance["conflict"] {
+  return knownInstances().find((known) => known.url === url)?.conflict;
+}
+
+export function clearContinuityConflict(url = instanceBase): void {
+  localStorage.setItem(
+    LIST_KEY,
+    JSON.stringify(
+      knownInstances().map((known) => {
+        if (known.url !== url) return known;
+        const { conflict: _descartado, ...resto } = known;
+        return resto;
+      }),
+    ),
+  );
+}
+
 export async function trustInstanceIdentity(info: InstanceIdentityInfo, connectedUrl = instanceBase): Promise<boolean> {
   const watchUrl = stableWatchUrl(info.public_url) ?? stableWatchUrl(connectedUrl);
   if (!watchUrl || info.identity?.algorithm !== "ES256") return false;
@@ -438,11 +537,52 @@ export async function trustInstanceIdentity(info: InstanceIdentityInfo, connecte
 
     const list = knownInstances();
     const previous = list.find((known) => known.url === connectedUrl);
-    if (previous?.identity_fingerprint && previous.identity_fingerprint !== fingerprint) return false;
+    let cadena = previous?.chain;
+
+    /* Ya habíamos fijado una identidad en esta dirección. Antes, cualquier
+       diferencia se trataba igual: "no me fío". Pero "cambió de manos con un
+       certificado que lo demuestra" y "alguien distinto responde aquí" son
+       cosas opuestas, y tratarlas igual dejaba a la gente fuera de su propia
+       comunidad después de un relevo legítimo. */
+    if (previous?.identity_fingerprint && previous.lineage_id && previous.instance_id && previous.epoch !== undefined) {
+      const fijada: InstanceIdentityRef = {
+        instance_id: previous.instance_id, lineage_id: previous.lineage_id,
+        epoch: previous.epoch, fingerprint: previous.identity_fingerprint,
+      };
+      const vista: InstanceIdentityRef = {
+        instance_id: info.instance_id, lineage_id: info.lineage_id, epoch: info.epoch, fingerprint,
+      };
+      const veredicto = compareIdentities(fijada, vista);
+
+      if (veredicto === "fork") {
+        /* Misma línea, misma época, otra clave. Alguien restauró una copia o
+           alguien miente, y desde fuera las dos parecen legítimas. No se elige:
+           se anota y se para, porque elegir mal es entregar la sesión. */
+        recordContinuityConflict(connectedUrl, fingerprint, "SAME_EPOCH_DIFFERENT_KEY");
+        return false;
+      }
+      if (veredicto === "stale" || veredicto === "unrelated") return false;
+
+      if (veredicto === "successor") {
+        const seguida = await fetchAndFollowChain(watchUrl, fijada, now);
+        if (!seguida || seguida.final.fingerprint !== fingerprint || seguida.final.instance_id !== info.instance_id) {
+          recordContinuityConflict(connectedUrl, fingerprint, "UNPROVEN_SUCCESSOR");
+          return false;
+        }
+        cadena = seguida.chain;
+      }
+    }
+
+    /* El conflicto se quita QUITANDO la clave, no poniéndola a undefined: con
+       `exactOptionalPropertyTypes` no es lo mismo, y además una clave presente
+       con valor undefined sobrevive a JSON.stringify como ausencia silenciosa
+       en unos sitios y como ruido en otros. */
+    const { conflict: _resuelto, ...anterior } = previous ?? ({} as KnownInstance);
     const entry: KnownInstance = {
-      ...previous, url: connectedUrl, name: info.name, last_seen: Date.now(),
+      ...anterior, url: connectedUrl, name: info.name, last_seen: Date.now(),
       instance_id: info.instance_id, lineage_id: info.lineage_id, epoch: info.epoch, role: info.role,
       identity_fingerprint: fingerprint, identity_public_key: proof.public_key, watch_url: watchUrl,
+      ...(cadena ? { chain: cadena } : {}),
     };
     localStorage.setItem(LIST_KEY, JSON.stringify([entry, ...list.filter((known) => known.url !== connectedUrl)].slice(0, 20)));
     syncDesktopAvailability();

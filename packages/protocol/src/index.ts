@@ -623,6 +623,102 @@ export function checkSuccessionStep(
   return null;
 }
 
+export const ORIGIN_SET_TYPE = "DISTOP_ORIGIN_SET";
+
+/** Cómo se llega a una instancia. La etiqueta la escribe quien hospeda. */
+export interface SignedOrigin {
+  url: string;
+  /** Menor es antes. Sirve para probar la buena primero, no para nada más. */
+  priority: number;
+  kind: "tunnel" | "tailscale" | "custom" | "lan";
+  label: string;
+}
+
+/**
+ * Las direcciones por las que una instancia acepta que se la busque, firmadas.
+ *
+ * Existe porque una dirección puede cambiar sin que cambie la instancia: un
+ * túnel rápido estrena URL en cada arranque, un dominio se muda, una tailnet se
+ * renombra. Sin esto, la única forma de reencontrar una comunidad sería que
+ * alguien reparta el enlace nuevo a mano.
+ *
+ * Va firmado y con `generation` porque una lista de direcciones es exactamente
+ * lo que un atacante querría envenenar: "tu comunidad ahora está aquí". Sin
+ * firma no es una pista, es una redirección gratis.
+ */
+export interface OriginSetPayload {
+  t: typeof ORIGIN_SET_TYPE;
+  version: 1;
+  lineage_id: Snowflake;
+  instance_id: Snowflake;
+  epoch: number;
+  /** Sube en cada cambio. Nunca se acepta uno menor que el ya conocido. */
+  generation: number;
+  origins: SignedOrigin[];
+  issued_at: number;
+  expires_at: number;
+}
+
+export interface SignedOriginSet {
+  payload: OriginSetPayload;
+  signature: string;
+  signer_public_key: JsonWebKeyLike;
+  signer_fingerprint: string;
+}
+
+/** Tres pistas y no más: la lista es para reencontrar una instancia, no un
+    directorio. Cada una de más es una dirección más que alguien puede mirar. */
+export const MAX_SIGNED_ORIGINS = 3;
+
+/**
+ * Las reglas de un conjunto de orígenes, sin criptografía.
+ *
+ * `conocida` es lo que el cliente tenía fijado. `generationConocida` es la
+ * última generación que aceptó: volver atrás es el ataque obvio —reponer una
+ * lista vieja que apuntaba a una dirección que el atacante ya controla— y por
+ * eso se rechaza aunque la firma sea perfecta.
+ */
+export function checkOriginSet(
+  conocida: InstanceIdentityRef,
+  generationConocida: number,
+  payload: OriginSetPayload,
+  now: number,
+): string | null {
+  if (payload?.t !== ORIGIN_SET_TYPE || payload.version !== 1) return "NOT_AN_ORIGIN_SET";
+  if (payload.lineage_id !== conocida.lineage_id) return "LINEAGE_MISMATCH";
+  if (payload.instance_id !== conocida.instance_id) return "INSTANCE_MISMATCH";
+  if (payload.epoch !== conocida.epoch) return "EPOCH_MISMATCH";
+  if (!Number.isSafeInteger(payload.generation) || payload.generation < generationConocida) return "STALE_GENERATION";
+  if (!Number.isSafeInteger(payload.expires_at) || now >= payload.expires_at) return "EXPIRED";
+  if (!Array.isArray(payload.origins) || payload.origins.length > MAX_SIGNED_ORIGINS) return "TOO_MANY_ORIGINS";
+  for (const origen of payload.origins) {
+    if (typeof origen?.url !== "string" || origen.url.length > 300) return "BAD_ORIGIN";
+    if (typeof origen.label !== "string" || origen.label.length > 60) return "BAD_LABEL";
+  }
+  return null;
+}
+
+/**
+ * Qué pasa cuando dos respuestas dicen ser la misma comunidad.
+ *
+ * `fork` es el caso grave y el que no se resuelve solo: mismo linaje, misma
+ * época, claves distintas. Alguien restauró una copia, o alguien miente. Una
+ * máquina no puede elegir —las dos parecen legítimas desde fuera— y elegir mal
+ * significa mandar el token de sesión al sitio equivocado.
+ */
+export type ContinuityVerdict = "same" | "successor" | "stale" | "fork" | "unrelated";
+
+export function compareIdentities(
+  conocida: InstanceIdentityRef,
+  vista: InstanceIdentityRef,
+): ContinuityVerdict {
+  if (vista.lineage_id !== conocida.lineage_id) return "unrelated";
+  if (vista.epoch === conocida.epoch) {
+    return vista.fingerprint === conocida.fingerprint ? "same" : "fork";
+  }
+  return vista.epoch > conocida.epoch ? "successor" : "stale";
+}
+
 /* ─────────────────────────── Estado de instancia (§26) ─────────────────────────── */
 
 export const INSTANCE_STATES = [
@@ -691,6 +787,10 @@ export const CAPABILITIES = [
   "integrity_report_v1",
   /** Copia cifrada `.distop-backup` v1, e inspección sin restaurar. */
   "encrypted_backup_v1",
+  /** Relevo planificado con certificado de sucesión. */
+  "succession_v1",
+  /** Direcciones alternativas firmadas, con generación. */
+  "signed_origins_v1",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];

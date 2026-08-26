@@ -13,7 +13,7 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 0 | Cierre de C0/A1 | Base resistente y observable | ✅ cerrada |
 | 1 | C1 — copia cifrada y restauración | Recuperación ante pérdida | ✅ cerrada |
 | 2 | C2 — relevo planificado | Cambio de anfitrión sin copiar la clave | ✅ cerrada |
-| 3 | C3 — alternativas firmadas y migración | Recuperación de dirección | ⬜ |
+| 3 | C3 — alternativas firmadas y migración | Recuperación de dirección | 🟡 falta 3.4 |
 | 4 | A1 final — avisos conscientes de sucesión | "Se trasladó" con respaldo criptográfico | ⬜ |
 | 5 | A2 — Web Push opcional | Aviso con la aplicación cerrada | ⬜ |
 | 6 | V1 — reuniones, lobby y estados | Reunión funcional | ⬜ |
@@ -100,20 +100,23 @@ no hay prueba automatizada de "A cae justo entre el recibo y la activación".
 
 ## Fase C3 — alternativas firmadas y migración ⬜
 
-### 3.1 Orígenes firmados
-- [ ] `DISTOP_ORIGIN_SET` con `generation`, lista de orígenes y caducidad
-- [ ] Firmado por la clave PRIMARY actual; nunca se acepta un `generation` menor
-- [ ] Solo dentro de `READY`, para autenticados; **jamás** en `/api/v1/info` anónimo
-- [ ] Máximo tres pistas; la etiqueta la elige el sucesor, nunca el hostname
+### 3.1 Orígenes firmados ✅
+- [x] `DISTOP_ORIGIN_SET` con `generation`, lista de orígenes y caducidad
+- [x] Firmado por la clave actual; nunca se acepta un `generation` menor
+- [x] Solo para autenticados (`GET /api/v1/instance/origins`); **jamás** en `/api/v1/info`
+- [x] Máximo tres pistas; etiqueta elegida por quien hospeda, recortada a 60
+- [x] Cambiarlas queda en la auditoría de cada comunidad
 
-### 3.2 Cadena conocida en el cliente
-- [ ] `known_chain` persistente: payload canónico, firma, clave, huella, época, orígenes
-- [ ] Arreglar el bug de `rememberCommunities` (spread de `previous`)
+### 3.2 Cadena conocida en el cliente ✅
+- [x] `KnownInstance.chain` persistente con los certificados verificados
+- [x] `canonicalJson` compartido entre servidor y navegador (era una copia local
+      en cada lado: si divergen, una firma legítima deja de validar)
+- [x] `rememberCommunities` ya hace spread de `previous`
 
-### 3.3 Detección de fork
-- [ ] Mismo linaje + misma época + claves distintas → `CONTINUITY_CONFLICT`
-- [ ] No elegir automáticamente, no mandar token a ninguno, mostrar huellas, exigir decisión
-- [ ] Misma clave + misma época + dos orígenes → válido solo si ambos están en un `ORIGIN_SET` firmado
+### 3.3 Detección de fork ✅
+- [x] Mismo linaje + misma época + claves distintas → conflicto guardado, sin elegir
+- [x] No se manda el token a ninguna; `continuityConflict()` lo expone a la interfaz
+- [x] Época menor o linaje distinto se rechazan por separado, con motivo propio
 
 ### 3.4 Migración de una comunidad
 - [ ] `DISTOP_COMMUNITY_MIGRATION` firmado por autoridad suficiente

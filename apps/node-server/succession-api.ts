@@ -17,7 +17,7 @@ import { createPublicKey, randomBytes, verify, type JsonWebKey } from "node:cryp
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { canonicalJson, uuidv7 } from "@distop/protocol";
+import { MAX_SIGNED_ORIGINS, canonicalJson, type SignedOrigin } from "@distop/protocol";
 import { config } from "./config.ts";
 import { audit, db } from "./db.ts";
 import { createHandoverBundle } from "./backup.ts";
@@ -52,10 +52,12 @@ import {
   activeHandover,
   authorizeSuccessor,
   currentIdentity,
+  currentOriginSet,
   enrolSuccessor,
   findHandover,
   findSuccessor,
   listSuccessors,
+  mintOriginSet,
   recordSuccession,
   revokeSuccessor,
   setHandoverState,
@@ -512,12 +514,82 @@ route("POST", "/api/v1/succession/receipt", async (ctx) => {
   return { ...comoJson(findHandover(relevo.id)!), activates_at: relevo.activates_at, completed: cortando };
 });
 
+/* ── direcciones alternativas (C3 §3.1) ───────────────────────────────── */
+
+/**
+ * La lista firmada de direcciones, SOLO para quien ya está dentro.
+ *
+ * Nunca en `/api/v1/info`, que es anónimo: publicar "esta comunidad también
+ * está en la dirección de casa de Ana" a quien haga un GET es una fuga, y
+ * además una lista de sitios donde probar suerte.
+ */
+route("GET", "/api/v1/instance/origins", (ctx) => {
+  requireAuth(ctx);
+  const actual = currentOriginSet();
+  return { origins: actual, generation: actual?.payload.generation ?? 0 };
+});
+
+route("PUT", "/api/v1/instance/origins", async (ctx) => {
+  const auth = requireHostLocal(ctx);
+  rateLimit(`origins:${auth.user.id}`, 10, 60_000);
+  const body = await readJson(ctx);
+  const crudas = Array.isArray(body.origins) ? body.origins : [];
+  if (crudas.length > MAX_SIGNED_ORIGINS) {
+    throw badRequest(`Como máximo ${MAX_SIGNED_ORIGINS} direcciones alternativas.`);
+  }
+
+  const origins: SignedOrigin[] = crudas.map((cruda: unknown, i: number) => {
+    const fila = (cruda ?? {}) as Record<string, unknown>;
+    if (typeof fila.url !== "string") throw badRequest(`La dirección ${i + 1} no trae URL.`);
+    return {
+      url: fila.url,
+      priority: typeof fila.priority === "number" ? fila.priority : (i + 1) * 10,
+      kind: ["tunnel", "tailscale", "custom", "lan"].includes(String(fila.kind))
+        ? (fila.kind as SignedOrigin["kind"])
+        : "custom",
+      label: typeof fila.label === "string" ? fila.label : `dirección ${i + 1}`,
+    };
+  });
+
+  let firmado;
+  try {
+    firmado = mintOriginSet(origins);
+  } catch (error) {
+    comoHttp(error);
+  }
+  for (const comunidad of db.prepare("SELECT id FROM communities").all() as Array<{ id: string }>) {
+    /* Cambiar por dónde se llega a una comunidad es exactamente el movimiento
+       que haría alguien que quisiera desviarla: queda escrito. */
+    audit(comunidad.id, auth.user.id, "INSTANCE_ORIGINS_UPDATED", null, {
+      generation: firmado.payload.generation,
+      count: origins.length,
+    });
+  }
+  return firmado;
+});
+
 /** La cadena, para quien tenga fijada esta instancia y necesite seguirla. */
 route("GET", "/api/v1/succession/chain", () => {
   const registro = successionRecord();
+  const entrante = db.prepare("SELECT value FROM meta WHERE key = 'succession_chain'").get() as
+    | { value: string }
+    | undefined;
+  let inbound: unknown[] = [];
+  try {
+    inbound = entrante ? (JSON.parse(entrante.value) as unknown[]) : [];
+  } catch {
+    inbound = [];
+  }
+
   return {
     lineage_id: LINEAGE_ID,
+    instance_id: currentIdentity().instance_id,
     identity: { epoch: instanceEpoch(), fingerprint: instanceFingerprint(), public_key: instancePublicKey() },
+    /* Dos sentidos, y hacen falta los dos. `inbound_chain` es "cómo llegué yo
+       aquí": lo que necesita un cliente que tenía fijado a mi predecesor para
+       comprobar por su cuenta que soy su continuación. `chain` es "a dónde fui",
+       para quien llegue tarde a esta dirección. */
+    inbound_chain: inbound,
     superseded: registro !== null,
     successor_origin: registro?.origin ?? null,
     chain: registro ? [registro.certificate] : [],

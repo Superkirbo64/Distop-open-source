@@ -16,16 +16,21 @@
  */
 import { createHash, createPublicKey, randomBytes, timingSafeEqual, verify, type JsonWebKey } from "node:crypto";
 import {
+  MAX_SIGNED_ORIGINS,
+  ORIGIN_SET_TYPE,
   SUCCESSION_CERT_TYPE,
   SUCCESSION_CHAIN_MAX,
   canonicalJson,
   checkSuccessionStep,
   uuidv7,
   type InstanceIdentityRef,
+  type OriginSetPayload,
+  type SignedOrigin,
+  type SignedOriginSet,
   type SuccessionCert,
   type SuccessionCertPayload,
 } from "@distop/protocol";
-import { audit, db, setMeta } from "./db.ts";
+import { audit, db, meta, setMeta } from "./db.ts";
 import {
   LINEAGE_ID,
   huellaDe,
@@ -423,6 +428,70 @@ export function recordSuccession(cert: SuccessionCert, origin: string | null): v
     "succeeded_by",
     JSON.stringify({ origin, certificate: cert, recorded_at: Date.now() }),
   );
+}
+
+/* ── direcciones alternativas firmadas (C3 §3.1) ──────────────────────── */
+
+/** Cuánto vale un conjunto de orígenes antes de tener que refrescarse. */
+const ORIGENES_TTL_MS = 30 * 24 * 60 * 60_000;
+
+/**
+ * Firma la lista de direcciones por las que se puede encontrar esta instancia.
+ *
+ * `generation` sube en cada cambio y el cliente nunca acepta una menor. Sin eso,
+ * reponer una lista vieja sería un ataque gratis: bastaría con guardar la
+ * respuesta de hace un mes —cuando la instancia estaba en una dirección que
+ * ahora controla otro— y devolverla firmada y todo.
+ */
+export function mintOriginSet(origins: SignedOrigin[], now = Date.now()): SignedOriginSet {
+  if (origins.length > MAX_SIGNED_ORIGINS) {
+    throw new SuccessionError("TOO_MANY_ORIGINS", `Como máximo ${MAX_SIGNED_ORIGINS} direcciones alternativas.`);
+  }
+  const generacion = Number.parseInt(meta("origin_generation", () => "0"), 10) + 1;
+  setMeta("origin_generation", String(generacion));
+
+  const desde = currentIdentity();
+  const payload: OriginSetPayload = {
+    t: ORIGIN_SET_TYPE,
+    version: 1,
+    lineage_id: desde.lineage_id,
+    instance_id: desde.instance_id,
+    epoch: desde.epoch,
+    generation: generacion,
+    origins: origins.map((origen) => ({
+      url: normalizeProofOrigin(origen.url),
+      priority: Math.max(0, Math.min(100, Math.trunc(origen.priority))),
+      kind: origen.kind,
+      /* La etiqueta la escribe quien hospeda. Nunca el hostname ni el nombre de
+         usuario del sistema: "el-portatil-de-ana" en una lista que ven los
+         miembros dice más de Ana de lo que Ana decidió contar. */
+      label: origen.label.slice(0, 60),
+    })),
+    issued_at: now,
+    expires_at: now + ORIGENES_TTL_MS,
+  };
+
+  const firmado: SignedOriginSet = {
+    payload,
+    signature: signAsInstance(canonicalJson(payload)),
+    signer_public_key: instancePublicKey() as Record<string, unknown>,
+    signer_fingerprint: instanceFingerprint(),
+  };
+  setMeta("origin_set", JSON.stringify(firmado));
+  return firmado;
+}
+
+export function currentOriginSet(): SignedOriginSet | null {
+  const fila = db.prepare("SELECT value FROM meta WHERE key = 'origin_set'").get() as { value: string } | undefined;
+  if (!fila) return null;
+  try {
+    const guardado = JSON.parse(fila.value) as SignedOriginSet;
+    /* Un conjunto firmado en una época anterior ya no vale: la firma es de una
+       clave que puede haber cambiado en un relevo. */
+    return guardado.payload.epoch === instanceEpoch() ? guardado : null;
+  } catch {
+    return null;
+  }
 }
 
 export function successionRecord(): { origin: string | null; certificate: SuccessionCert } | null {
