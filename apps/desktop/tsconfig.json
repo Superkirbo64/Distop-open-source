@@ -11,6 +11,8 @@
     "exactOptionalPropertyTypes": true,
     "noImplicitOverride": true,
     "esModuleInterop": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "skipLibCheck": true,
     "types": ["node"]
   },

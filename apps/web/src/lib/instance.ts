@@ -21,9 +21,27 @@ export interface KnownInstance {
   url: string;
   name: string;
   last_seen: number;
+  instance_id?: string;
+  lineage_id?: string;
+  epoch?: number;
+  role?: "PRIMARY" | "STANDBY" | "SUPERSEDED";
+  identity_fingerprint?: string;
+  identity_public_key?: JsonWebKey;
+  watch_url?: string;
+  watch_enabled?: boolean;
   communities?: CachedCommunity[];
 }
 
+
+export interface InstanceIdentityInfo {
+  instance_id: string;
+  lineage_id: string;
+  epoch: number;
+  role: "PRIMARY" | "STANDBY" | "SUPERSEDED";
+  name: string;
+  public_url: string;
+  identity: { algorithm: "ES256"; fingerprint: string; public_key: JsonWebKey };
+}
 export type CachedCommunity = Pick<Community, "id" | "name" | "icon_url" | "accent_color">;
 
 export interface PendingCommunity {
@@ -53,6 +71,11 @@ declare global {
         stop: () => Promise<HostStatus>;
         status: () => Promise<HostStatus>;
         onStatus: (callback: (status: HostStatus) => void) => () => void;
+      };
+      availability: {
+        replace: (items: unknown[]) => Promise<boolean>;
+        status: (url: string, connected: boolean) => void;
+        onOpen: (callback: (url: string) => void) => () => void;
       };
       games: {
         current: () => Promise<string | null>;
@@ -301,12 +324,14 @@ export function rememberCommunities(url: string, communities: Community[]): void
   const previous = list.find((known) => known.url === url);
   const cached = communities.map(({ id, name, icon_url, accent_color }) => ({ id, name, icon_url, accent_color }));
   const entry: KnownInstance = {
+    ...previous,
     url,
     name: previous?.name ?? communities[0]?.name ?? url,
     last_seen: Date.now(),
     communities: cached,
   };
   localStorage.setItem(LIST_KEY, JSON.stringify([entry, ...list.filter((known) => known.url !== url)].slice(0, 20)));
+  syncDesktopAvailability();
 }
 
 export function forgetKnownCommunity(url: string, communityId: string): void {
@@ -324,6 +349,144 @@ export function forgetKnownCommunity(url: string, communityId: string): void {
 
 export function forgetInstance(url: string): void {
   localStorage.setItem(LIST_KEY, JSON.stringify(knownInstances().filter((known) => known.url !== url)));
+  syncDesktopAvailability();
+}
+
+let availabilityConnected = false;
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`).join(",")}}`;
+}
+
+function base64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function fromBase64Url(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(normalized);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function stableWatchUrl(raw: string): string | null {
+  const normalized = normalizeInstanceUrl(raw);
+  if (!normalized) return null;
+  const parsed = new URL(normalized);
+  if (parsed.protocol !== "https:" || parsed.hostname.endsWith(".trycloudflare.com")) return null;
+  return parsed.origin;
+}
+
+/** Ning�n origen nuevo puede obligar al cliente a reservar memoria sin l�mite. */
+async function smallJson(response: Response, limit = 32 * 1024): Promise<unknown> {
+  const announced = Number(response.headers.get("content-length") ?? "0");
+  if (announced > limit || !response.body) throw new Error("INVALID_RESPONSE");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    total += next.value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      throw new Error("INVALID_RESPONSE");
+    }
+    chunks.push(next.value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+/** Verifica una prueba fresca y aplica TOFU: una clave fijada nunca cambia sola. */
+export async function trustInstanceIdentity(info: InstanceIdentityInfo, connectedUrl = instanceBase): Promise<boolean> {
+  const watchUrl = stableWatchUrl(info.public_url) ?? stableWatchUrl(connectedUrl);
+  if (!watchUrl || info.identity?.algorithm !== "ES256") return false;
+  const nonce = base64Url(crypto.getRandomValues(new Uint8Array(24)));
+  try {
+    const response = await fetch(`${watchUrl}/api/v1/instance/challenge`, {
+      method: "POST", redirect: "manual", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ nonce }), signal: AbortSignal.timeout(6_000),
+    });
+    if (!response.ok) return false;
+    const proof = await smallJson(response) as {
+      payload: { t: string; instance_id: string; lineage_id: string; epoch: number; role: string; origin: string; nonce: string; issued_at: number; expires_at: number };
+      signature: string; public_key: JsonWebKey; fingerprint: string;
+    };
+    const encodedKey = new TextEncoder().encode(canonicalJson(proof.public_key));
+    const fingerprint = base64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", encodedKey)));
+    const now = Date.now();
+    if (fingerprint !== info.identity.fingerprint || proof.fingerprint !== fingerprint) return false;
+    if (canonicalJson(proof.public_key) !== canonicalJson(info.identity.public_key)) return false;
+    if (proof.payload.t !== "DISTOP_INSTANCE_PROOF" || proof.payload.instance_id !== info.instance_id) return false;
+    if (proof.payload.lineage_id !== info.lineage_id || proof.payload.epoch !== info.epoch || proof.payload.role !== info.role) return false;
+    if (proof.payload.origin !== watchUrl || proof.payload.nonce !== nonce || proof.payload.issued_at > now + 5_000 || proof.payload.expires_at < now) return false;
+    const key = await crypto.subtle.importKey("jwk", proof.public_key, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+    const valid = await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" }, key, fromBase64Url(proof.signature), new TextEncoder().encode(canonicalJson(proof.payload)),
+    );
+    if (!valid) return false;
+
+    const list = knownInstances();
+    const previous = list.find((known) => known.url === connectedUrl);
+    if (previous?.identity_fingerprint && previous.identity_fingerprint !== fingerprint) return false;
+    const entry: KnownInstance = {
+      ...previous, url: connectedUrl, name: info.name, last_seen: Date.now(),
+      instance_id: info.instance_id, lineage_id: info.lineage_id, epoch: info.epoch, role: info.role,
+      identity_fingerprint: fingerprint, identity_public_key: proof.public_key, watch_url: watchUrl,
+    };
+    localStorage.setItem(LIST_KEY, JSON.stringify([entry, ...list.filter((known) => known.url !== connectedUrl)].slice(0, 20)));
+    syncDesktopAvailability();
+    return true;
+  } catch { return false; }
+}
+
+export function activeAvailabilityWatch(): { eligible: boolean; enabled: boolean } {
+  const known = knownInstances().find((item) => item.url === instanceBase);
+  const eligible = Boolean(window.distop?.availability && known?.watch_url && known.instance_id && known.lineage_id
+    && known.identity_fingerprint && known.identity_public_key && known.communities?.length);
+  return { eligible, enabled: eligible && known?.watch_enabled === true };
+}
+
+export function setActiveAvailabilityWatch(enabled: boolean): boolean {
+  const current = activeAvailabilityWatch();
+  if (!current.eligible) return false;
+  const next = knownInstances().map((known) => known.url === instanceBase ? { ...known, watch_enabled: enabled } : known);
+  localStorage.setItem(LIST_KEY, JSON.stringify(next));
+  syncDesktopAvailability();
+  return enabled;
+}
+
+export async function syncDesktopAvailability(): Promise<void> {
+  if (!window.distop?.availability) return;
+  const items = knownInstances().filter((known) => known.watch_enabled && known.watch_url && known.instance_id
+    && known.lineage_id && known.epoch && known.identity_fingerprint && known.identity_public_key && known.communities?.length)
+    .map((known) => ({
+      url: known.watch_url!, name: known.name, instance_id: known.instance_id!, lineage_id: known.lineage_id!,
+      epoch: known.epoch!, identity_fingerprint: known.identity_fingerprint!, identity_public_key: known.identity_public_key!,
+      enabled: true, connected: known.url === instanceBase && availabilityConnected,
+    }));
+  await window.distop.availability.replace(items);
+}
+
+export async function setDesktopAvailabilityStatus(connected: boolean): Promise<void> {
+  availabilityConnected = connected;
+  await syncDesktopAvailability();
+  const current = knownInstances().find((known) => known.url === instanceBase);
+  if (current?.watch_url) window.distop?.availability.status(current.watch_url, connected);
+}
+
+if (typeof window !== "undefined") {
+  window.distop?.availability.onOpen((url) => { localStorage.setItem(ACTIVE_KEY, url); location.reload(); });
 }
 
 /* ── URLs de media en la frontera ──────────────────────────────────────

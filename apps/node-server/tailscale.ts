@@ -110,11 +110,11 @@ export function advanceTailscale(): TailscaleState {
   return { step: 7, state: "active", url: live.url, error: "", hint_url: "" };
 }
 
-export function stopTailscale(): TailscaleState {
+export function stopTailscale(fallbackToTunnel = true): TailscaleState {
   const bin = binary();
   if (bin) run(bin, ["funnel", "reset"]);
   if (fixedPublicUrl().endsWith(".ts.net")) setFixedPublicUrl("");
-  if (tunnelAutostart() && !config.publicUrl) void startTunnel();
+  if (fallbackToTunnel && tunnelAutostart() && !config.publicUrl) void startTunnel();
   return tailscaleState();
 }
 

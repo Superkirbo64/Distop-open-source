@@ -35,6 +35,20 @@ interface Participant {
 /** canal → participantes. Vive en memoria: si la instancia cae, la llamada también. */
 const rooms = new Map<Snowflake, Map<Snowflake, Participant>>();
 
+/**
+ * Cuánta gente está ahora mismo en una llamada, sumando todos los canales.
+ *
+ * Lo consulta el trabajo de fondo para apartarse: en el PC de casa, leer y
+ * hashear adjuntos mientras cuatro personas hablan se oye — y una voz
+ * entrecortada es un fallo visible, mientras que un hash que llega diez minutos
+ * más tarde no lo nota nadie.
+ */
+export function callParticipants(): number {
+  let total = 0;
+  for (const room of rooms.values()) total += room.size;
+  return total;
+}
+
 export function statesOf(channelId: Snowflake): VoiceState[] {
   const room = rooms.get(channelId);
   if (!room) return [];

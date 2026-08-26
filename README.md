@@ -185,6 +185,28 @@ npm run typecheck # TypeScript estricto en cliente e instancia
 curl http://localhost:5000/health
 ```
 
+## Copias de seguridad
+
+Una copia cifrada de la instancia entera —base, identidad, sesiones y archivos— y
+su restauración verificada en otro directorio: **[docs/copias-de-seguridad.md](docs/copias-de-seguridad.md)**.
+
+```bash
+# hacer una copia (desde el equipo anfitrión, con la cuenta que hospeda)
+curl -X POST http://localhost:5000/api/v1/instance/backups \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"passphrase":"una frase larga que puedas recordar"}'
+
+# mirar dentro sin restaurar nada
+DISTOP_BACKUP_PASSPHRASE='...' node apps/node-server/restore.ts --inspect --deep --file copia.distop-backup
+
+# restaurar, con la instancia parada
+DISTOP_BACKUP_PASSPHRASE='...' node apps/node-server/restore.ts --file copia.distop-backup --target ./data
+```
+
+La frase no se guarda en ningún sitio: si la pierdes, la copia es ruido. Restaurar
+produce **la misma** instancia, no una sucesora — si la original sigue encendida,
+tendrás dos.
+
 ## Lo que esta arquitectura no puede hacer en capas gratuitas
 
 Conviene decirlo antes de que alguien lo descubra desplegando:

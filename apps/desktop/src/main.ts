@@ -18,6 +18,7 @@ import { setupTray } from "./tray";
 import { setupUpdates } from "./updates";
 import { type VoiceOverlayHandle, createVoiceOverlay } from "./voice-overlay";
 import { type DesktopPrefs, loadDesktopPrefs, saveDesktopPrefs } from "./desktop-prefs";
+import { replaceAvailabilityWatches, setAvailabilityConnection, setupAvailability, type AvailabilityWatchInput } from "./availability";
 
 // La presentación completa acompaña el reveal de Universfield sin cortarlo.
 const MIN_SPLASH_MS = 3_050;
@@ -215,6 +216,15 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle("host:status", () => hostStatus());
     ipcMain.handle("games:current", () => currentGame());
     ipcMain.handle("games:scan", () => lastGameScan());
+    ipcMain.handle("availability:replace", (_event, input: unknown) => {
+      if (!Array.isArray(input)) return false;
+      replaceAvailabilityWatches(input as AvailabilityWatchInput[]);
+      return true;
+    });
+    ipcMain.on("availability:status", (_event, url: unknown, connected: unknown) => {
+      if (typeof url !== "string" || typeof connected !== "boolean") return;
+      setAvailabilityConnection(url, connected);
+    });
 
     /* Vigilancia de juegos bajo demanda: el toggle de Ajustes apaga el sondeo
        local entero (tasklist + registro), no solo el reporte al servidor. */
@@ -255,6 +265,7 @@ if (!app.requestSingleInstanceLock()) {
 
     createWindow();
     if (win) {
+      setupAvailability(win);
       setupTray(win);
 
       /* El widget de llamada nace con la primera llamada y muere al colgar: en

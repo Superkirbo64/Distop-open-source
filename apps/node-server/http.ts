@@ -7,6 +7,7 @@ import type { ApiError } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import type { AuthContext } from "./auth.ts";
 import { authenticate } from "./auth.ts";
+import { beginRequest, freezeReason, writesAccepted, type WriteFreeze } from "./lifecycle.ts";
 
 export class HttpError extends Error {
   status: number;
@@ -268,9 +269,16 @@ export function send(ctx: Ctx, status: number, body: unknown, headers: Record<st
   ctx.res.end(payload);
 }
 
-function toApiError(err: unknown, requestId: string): ApiError {
+function toApiError(err: unknown, requestId: string, clientGone = false): ApiError {
   const known = err instanceof HttpError;
-  if (!known) console.error(`[${requestId}]`, err);
+  /* Un cliente que se va a mitad de una subida —o al que corta el apagado— no
+     es un fallo de la instancia. Se registra el hecho en una línea, sin traza:
+     apagar con diez subidas en curso escupía diez pilas de ECONNRESET, y eso es
+     exactamente lo que hace que nadie mire los logs cuando pasa algo de verdad. */
+  if (!known) {
+    if (clientGone) console.warn(`[${requestId}] petición abandonada por el cliente`);
+    else console.error(`[${requestId}]`, err);
+  }
   return {
     code: known ? err.code : "INTERNAL",
     // Fuera de HttpError el mensaje real no sale: puede contener rutas o SQL (§30).
@@ -282,7 +290,24 @@ function toApiError(err: unknown, requestId: string): ApiError {
   };
 }
 
+/**
+ * Por qué la instancia no acepta cambios ahora mismo, dicho tal cual (§26).
+ * "Vuelve más tarde" a secas mete una pausa de treinta segundos y un apagado
+ * definitivo en el mismo mensaje, y no son lo mismo para quien está escribiendo.
+ */
+const MOTIVO_CONGELADO: Record<WriteFreeze, { message: string; retry_after_s: number | null }> = {
+  shutdown: { message: "La instancia se está apagando; no acepta cambios nuevos.", retry_after_s: null },
+  backup: { message: "La instancia está copiando sus datos; en unos segundos vuelve.", retry_after_s: 15 },
+  restore: { message: "La instancia está restaurando una copia; no acepta cambios.", retry_after_s: 60 },
+  handover: { message: "La instancia está entregando el relevo; no acepta cambios.", retry_after_s: 60 },
+};
+
 export async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const method = req.method ?? "GET";
+  /* OPTIONS no muta: si contara, un preflight durante una copia mantendría
+     ocupado el contador que la copia está esperando a que llegue a cero. */
+  const mutating = method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+  const finishRequest = beginRequest(mutating);
   const requestId = randomUUID();
   const host = req.headers.host ?? `localhost:${config.port}`;
   const url = new URL(req.url ?? "/", `http://${host}`);
@@ -294,6 +319,13 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
 
   try {
     if (req.method === "OPTIONS") return send(ctx, 204, undefined);
+    if (mutating && !writesAccepted()) {
+      const motivo = MOTIVO_CONGELADO[freezeReason() ?? "shutdown"];
+      throw new HttpError(503, "INSTANCE_MAINTENANCE", motivo.message, {
+        reason: freezeReason() ?? "shutdown",
+        ...(motivo.retry_after_s === null ? {} : { retry_after_s: motivo.retry_after_s }),
+      });
+    }
 
     rateLimit(`ip:${ip}`, 600, 60_000);
 
@@ -308,9 +340,16 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
     if (result === HANDLED) return;
     send(ctx, result === undefined ? 204 : 200, result);
   } catch (err) {
-    const apiError = toApiError(err, requestId);
+    const apiError = toApiError(err, requestId, req.destroyed || res.destroyed);
+    /* Un apagado corta las subidas a medias destruyendo el socket: para cuando
+       el handler propaga el error ya no hay a quién contestar, y escribir en
+       una respuesta destruida convierte un cierre limpio en una excepción sin
+       dueño. El error igualmente se registró arriba si no era un HttpError. */
+    if (res.destroyed || res.writableEnded) return;
     if (!res.headersSent) send(ctx, apiError.status, { error: apiError });
     else res.end();
+  } finally {
+    finishRequest();
   }
 }
 

@@ -29,7 +29,7 @@ import { detectLocale, loadLocale, type Locale } from "./i18n.ts";
 import { notify, setSoundsEnabled, type NotifyLevel } from "./lib/notify.ts";
 import { configureVoice, currentChannel, handleSignal, resumeVoice, setSoundError, setVideoMode, syncPeers } from "./lib/voice.ts";
 import { playClip } from "./lib/relay.ts";
-import { peekPendingInvite } from "./lib/instance.ts";
+import { instanceBase, peekPendingInvite, rememberCommunities, setDesktopAvailabilityStatus, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
 import { portableAuthPayload, syncPortableMedia } from "./lib/portable.ts";
 
 export type ThemeChoice = "light" | "dark" | "system";
@@ -268,6 +268,7 @@ const MESSAGE_PAGE = 50;
 
 /** Se aprenden en /info y se aplican en READY, cuando ya se sabe quién soy. */
 let iceServers: RTCIceServer[] = [];
+let pendingIdentityInfo: InstanceIdentityInfo | null = null;
 
 /* Pide en segundo plano el diccionario del idioma (solo el español viene en el
    bundle). Al resolver, si sigue siendo el activo —pudo cambiar durante la
@@ -324,7 +325,7 @@ export const useStore = create<State>()((set, get) => ({
     // Se pregunta siempre, antes que nada: una instancia sin dueño enseña la
     // puesta en marcha, no un formulario de acceso a un sitio que es tuyo.
     try {
-      const info = await api<{
+      const info = await api<InstanceIdentityInfo & {
         setup_required: boolean;
         setup_requires_code: boolean;
         ice_servers: RTCIceServer[];
@@ -339,6 +340,7 @@ export const useStore = create<State>()((set, get) => ({
         gifEnabled: Boolean(info.gif_enabled),
         stickerGalleryEnabled: Boolean(info.sticker_gallery_enabled),
       });
+      pendingIdentityInfo = info;
       iceServers = info.ice_servers ?? [];
       setVideoMode(info.video?.mode ?? "host");
     } catch {
@@ -349,6 +351,7 @@ export const useStore = create<State>()((set, get) => ({
       try {
         const user = await api<SelfUser>("GET", "/api/v1/users/me");
         set({ user, ready: true });
+        if (pendingIdentityInfo) void trustInstanceIdentity(pendingIdentityInfo);
         connect();
         return;
       } catch {
@@ -366,6 +369,7 @@ export const useStore = create<State>()((set, get) => ({
         setTokens({ access_token: result.access_token, refresh_token: result.refresh_token });
         const user = await syncPortableMedia(result.user);
         set({ user, ready: true });
+        if (pendingIdentityInfo) void trustInstanceIdentity(pendingIdentityInfo);
         connect();
         return;
       } catch {
@@ -388,6 +392,7 @@ export const useStore = create<State>()((set, get) => ({
       set({ prefs });
       applyPrefs(prefs);
     }
+    if (pendingIdentityInfo) void trustInstanceIdentity(pendingIdentityInfo);
     connect();
 
     /* Una instalación nueva arrancó sin dueño y, por seguridad, no abrió el
@@ -558,7 +563,10 @@ export const useStore = create<State>()((set, get) => ({
 
 /* ── el gateway alimenta el estado ─────────────────────────────────── */
 
-onStatus((status) => useStore.setState({ status }));
+onStatus((status) => {
+  useStore.setState({ status });
+  if (status !== "online") void setDesktopAvailabilityStatus(false);
+});
 
 onEvent((event: ServerEvent) => {
   const state = useStore.getState();
@@ -570,6 +578,8 @@ onEvent((event: ServerEvent) => {
         communities: event.d.communities,
         instance: event.d.instance,
       });
+      if (instanceBase) rememberCommunities(instanceBase, event.d.communities);
+      void setDesktopAvailabilityStatus(true);
       configureVoice(event.d.user.id, iceServers);
 
       /* A TODAS las comunidades, no solo a la abierta: si solo llegaran los

@@ -8,12 +8,16 @@ import { createGzip } from "node:zlib";
 import { createServer } from "node:http";
 import { extname, join, resolve } from "node:path";
 import { config } from "./config.ts";
-import { countOwners, pruneSessions } from "./auth.ts";
+import { countOwners, hostUserId, pruneSessions } from "./auth.ts";
+import { closeDatabase } from "./db.ts";
 import { handleRequest } from "./http.ts";
-import { handleUpgrade } from "./gateway.ts";
+import { closeGateway, handleUpgrade } from "./gateway.ts";
 import { setState, VERSION } from "./instance.ts";
+import { startIntegrityWork, stopIntegrityWork } from "./integrity.ts";
+import { freezeWrites, registerShutdownHandler, waitForRequests } from "./lifecycle.ts";
+import { sweepIncoming } from "./storage.ts";
 import { autostartTunnel } from "./tunnel.ts";
-import { restoreTailscale } from "./tailscale.ts";
+import { restoreTailscale, stopTailscale } from "./tailscale.ts";
 import "./api.ts"; // registra las rutas
 
 /* Junto al servidor por convención (repo y paquetes de escritorio/Termux); la
@@ -95,10 +99,17 @@ server.on("upgrade", (req, socket, head) => {
   handleUpgrade(req, socket, head);
 });
 
-setInterval(pruneSessions, 60 * 60_000).unref();
+const pruneTimer = setInterval(pruneSessions, 60 * 60_000);
+pruneTimer.unref();
 
 server.listen(config.port, config.host, () => {
   setState("ONLINE");
+  /* Lo primero, antes de aceptar una sola subida nueva: tirar lo que quedó a
+     medias. Si el equipo se apagó de golpe con una subida en curso, ese trozo
+     de fichero no le sirve a nadie y ocupa disco hasta que alguien lo mire. */
+  const barrido = sweepIncoming();
+  if (barrido.removed > 0) console.log(`Limpiadas ${barrido.removed} subidas a medias del arranque anterior.`);
+  startIntegrityWork();
   console.log(
     [
       `Distop instancia ${VERSION} — ${config.instanceName}`,
@@ -129,15 +140,68 @@ server.listen(config.port, config.host, () => {
   /* El enlace publico se abre solo, para que quien hospeda solo tenga que
      crear la invitacion. Nunca en una instancia sin duenno: publicarla antes
      de que alguien la reclame es regalarsela al primero que pase. */
-  void autostartTunnel(countOwners() > 0);
-  restoreTailscale();
+  const hasHostAuthority = hostUserId() !== null;
+  void autostartTunnel(hasHostAuthority);
+  if (hasHostAuthority) restoreTailscale();
+  else stopTailscale(false);
 });
 
-/** Cierre limpio: sin esto, docker stop deja WAL a medio escribir. */
-for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.on(signal, () => {
+/** Cierre coordinado e idempotente para Docker, escritorio y la API local. */
+let shutdownPromise: Promise<void> | null = null;
+
+export function shutdown(reason = "signal"): Promise<void> {
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    console.log(`Apagando instancia (${reason})...`);
     setState("MAINTENANCE");
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 3000).unref();
-  });
+    freezeWrites();
+    clearInterval(pruneTimer);
+    await closeGateway(1001, "instancia en mantenimiento");
+    /* El trabajo de fondo se para antes que nada más: es el único que puede
+       estar leyendo un fichero del disco por su cuenta, sin una petición que
+       lo sostenga, y por tanto el único al que `waitForRequests` no ve. */
+    await stopIntegrityWork();
+
+    const httpClosed = new Promise<void>((resolveClosed) => {
+      server.close(() => resolveClosed());
+      server.closeIdleConnections();
+    });
+    /* Se cortan los clientes que no terminaron de enviar, pero SQLite no se
+       cierra hasta que los handlers hayan abandonado de verdad.
+     *
+     * Los 2,5 s no son un número redondo cualquiera: la app de escritorio pide
+     * el apagado y mata el utilityProcess a los 3,2 s (host.ts). Si esperásemos
+     * más, cerrar Distop con una subida en marcha significaría morir a mitad del
+     * checkpoint, y la base tendría que recuperarse del WAL en el arranque
+     * siguiente. Quien cambie uno de los dos números tiene que mirar el otro. */
+    const abortSlowClients = setTimeout(() => server.closeAllConnections(), 2_500);
+    abortSlowClients.unref();
+    await httpClosed;
+    clearTimeout(abortSlowClients);
+    await waitForRequests();
+    closeDatabase();
+  })();
+  return shutdownPromise;
 }
+
+function shutdownAndExit(reason: string): void {
+  void shutdown(reason).then(() => process.exit(0), () => process.exit(1));
+}
+
+registerShutdownHandler(shutdownAndExit);
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => shutdownAndExit(signal));
+}
+
+/* Electron utilityProcess dispone de un canal privado con su proceso padre. */
+type UtilityParentPort = { on(event: "message", listener: (event: unknown) => void): void };
+const utilityParentPort = (process as NodeJS.Process & { parentPort?: UtilityParentPort }).parentPort;
+utilityParentPort?.on("message", (event) => {
+  const payload = event && typeof event === "object" && "data" in event
+    ? (event as { data: unknown }).data
+    : event;
+  if (payload && typeof payload === "object" && (payload as { type?: string }).type === "DISTOP_SHUTDOWN") {
+    shutdownAndExit("desktop");
+  }
+});

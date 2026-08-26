@@ -24,6 +24,19 @@ const api = {
     },
   },
 
+  /** Vigilancia local de instancias estables mientras Distop vive en bandeja. */
+  availability: {
+    replace: (items: unknown[]): Promise<boolean> =>
+      ipcRenderer.invoke("availability:replace", items) as Promise<boolean>,
+    status: (url: string, connected: boolean): void =>
+      ipcRenderer.send("availability:status", url, connected),
+    onOpen: (callback: (url: string) => void): (() => void) => {
+      const listener = (_event: unknown, url: string) => callback(url);
+      ipcRenderer.on("availability:open", listener);
+      return () => ipcRenderer.removeListener("availability:open", listener);
+    },
+  },
+
   /** Juego detectado en este equipo. Solo el nombre ya casado con el catálogo. */
   games: {
     current: (): Promise<string | null> => ipcRenderer.invoke("games:current") as Promise<string | null>,

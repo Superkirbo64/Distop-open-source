@@ -648,6 +648,8 @@ export const en: Record<keyof typeof es, string> = {
   "settings.desktopNotifications": "System notifications",
   "settings.desktopHint":
     "They only appear while the window is in the background.",
+  "settings.availabilityWatch": "Tell me when this community comes back",
+  "settings.availabilityWatchHint": "Distop checks it from the tray. After 15 minutes offline, it checks less often to save battery.",
   "settings.notifyAsk": "Allow notifications",
   "settings.notifyGranted": "Allowed by the browser.",
   "settings.notifyDenied":

@@ -656,6 +656,8 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Notificações e interruptores usam o pacote SND01 adaptado para o Distop.",
   "settings.desktopNotifications": "Notificações do sistema",
   "settings.desktopHint": "Só aparecem com a janela em segundo plano.",
+  "settings.availabilityWatch": "Avisar quando esta comunidade voltar",
+  "settings.availabilityWatchHint": "O Distop verifica pela bandeja. Após 15 minutos offline, reduz a frequência para economizar bateria.",
   "settings.notifyAsk": "Permitir notificações",
   "settings.notifyGranted": "Permitidas pelo navegador.",
   "settings.notifyDenied":

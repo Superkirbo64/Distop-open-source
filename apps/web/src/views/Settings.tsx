@@ -38,6 +38,7 @@ import {
   profileGradient,
 } from "../components/ProfileStyle.tsx";
 import { askNotifyPermission, notifyPermission, type NotifyLevel } from "../lib/notify.ts";
+import { activeAvailabilityWatch, setActiveAvailabilityWatch } from "../lib/instance.ts";
 
 /** Paleta de partida. Cualquier otro color sale del selector, sin cortapisas. */
 const ACCENTS = ["#4059e0", "#7b5cff", "#c2389c", "#d94f43", "#e08c2f", "#2f9e6f", "#2f8fd6", "#5b6472"];
@@ -530,6 +531,8 @@ function AlertsTab() {
   const prefs = useStore((s) => s.prefs);
   const setPref = useStore((s) => s.setPref);
   const [permission, setPermission] = useState(notifyPermission());
+  const availability = activeAvailabilityWatch();
+  const [watchEnabled, setWatchEnabled] = useState(availability.enabled);
 
   const levels: Array<[NotifyLevel, string]> = [
     ["all", t("settings.notifyAll")],
@@ -586,6 +589,15 @@ function AlertsTab() {
           </Button>
         )}
       </div>
+
+      {availability.eligible ? (
+        <Toggle
+          checked={watchEnabled}
+          onChange={(enabled) => { setActiveAvailabilityWatch(enabled); setWatchEnabled(enabled); }}
+          label={t("settings.availabilityWatch")}
+          hint={t("settings.availabilityWatchHint")}
+        />
+      ) : null}
     </div>
   );
 }

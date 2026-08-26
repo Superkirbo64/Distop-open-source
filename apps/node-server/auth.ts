@@ -8,6 +8,7 @@ import { USER_STATUSES, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { PublicUser, SelfUser, UserStatus } from "@distop/protocol";
 import { db } from "./db.ts";
 import { config } from "./config.ts";
+import { writesAccepted } from "./lifecycle.ts";
 
 /* ── contraseñas ───────────────────────────────────────────────────────
    scrypt de node:crypto: memory-hard y sin dependencias nativas que compilar,
@@ -117,11 +118,11 @@ export function authenticate(token: string | null): AuthContext | null {
 
   if (!row) return null;
   if (row.expires_at < Date.now()) {
-    db.prepare("DELETE FROM sessions WHERE id = ?").run(row.session_id);
+    if (writesAccepted()) db.prepare("DELETE FROM sessions WHERE id = ?").run(row.session_id);
     return null;
   }
 
-  db.prepare("UPDATE sessions SET last_seen = ? WHERE id = ?").run(Date.now(), row.session_id);
+  if (writesAccepted()) db.prepare("UPDATE sessions SET last_seen = ? WHERE id = ?").run(Date.now(), row.session_id);
   return { user: toSelfUser(row), sessionId: row.session_id };
 }
 
@@ -210,10 +211,40 @@ export function countOwners(): number {
  * comunidad no da derecho a manejar el ordenador de otra persona (§28.5).
  */
 export function isInstanceOwner(userId: string): boolean {
-  const row = db.prepare("SELECT id FROM users WHERE kind = 'local' ORDER BY created_at LIMIT 1").get() as
-    | { id: string }
+  return hostUserId() === userId;
+}
+
+/** Autoridad explícita del equipo. `null` exige una reclamación local. */
+export function hostUserId(): string | null {
+  const row = db.prepare("SELECT user_id FROM host_authority WHERE id = 1").get() as
+    | { user_id: string | null }
     | undefined;
-  return Boolean(row) && row!.id === userId;
+  return row?.user_id ?? null;
+}
+
+/* Estar sentado delante del ordenador vale lo mismo que arrancarlo: por eso
+   `local-claim` no exige contraseña, igual que `bootstrap`. Una transferencia
+   sí la exige, porque el destino tiene que poder volver a entrar sin estar
+   físicamente en la máquina. */
+const RECLAMOS_PRESENCIALES = new Set(["bootstrap", "local-claim"]);
+
+export function setHostUser(userId: string | null, reason: string, grantedBy: string | null): void {
+  if (userId) {
+    const target = findUserById(userId);
+    if (!target || target.kind !== "local") throw new Error("HOST_AUTHORITY_TARGET_INVALID");
+    if (!RECLAMOS_PRESENCIALES.has(reason) && !target.password_hash) {
+      throw new Error("HOST_AUTHORITY_RECOVERY_REQUIRED");
+    }
+  }
+  db.prepare(
+    `INSERT INTO host_authority (id, user_id, since, granted_by, reason)
+     VALUES (1, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       user_id = excluded.user_id,
+       since = excluded.since,
+       granted_by = excluded.granted_by,
+       reason = excluded.reason`,
+  ).run(userId, Date.now(), grantedBy, reason);
 }
 
 export function findUserById(id: string): UserRow | undefined {
@@ -242,6 +273,14 @@ export function createUser(opts: {
     opts.kind ?? "local",
     Date.now(),
   );
+  /* Instancia recién nacida —sin fila de autoridad todavía—: la primera cuenta
+     local se queda con el equipo. Si la fila existe pero está vacía porque el
+     anfitrión borró su cuenta, NO se hereda sola: registrarse por el túnel no
+     puede dar el mando del ordenador de otra persona. Se recupera a mano desde
+     el propio equipo con /instance/host/claim. */
+  if ((opts.kind ?? "local") === "local" && !db.prepare("SELECT 1 FROM host_authority WHERE id = 1").get()) {
+    setHostUser(id, "bootstrap", null);
+  }
   return findUserById(id)!;
 }
 

@@ -7,7 +7,9 @@ import { PROTOCOL_VERSION } from "@distop/protocol";
 import type { InstanceHealth, InstanceState } from "@distop/protocol";
 import { config } from "./config.ts";
 import { db, INSTANCE_ID } from "./db.ts";
+import { integrityReport } from "./integrity.ts";
 import { storageFreeMb, storageUsedMb } from "./storage.ts";
+import { hostUserId } from "./auth.ts";
 
 export const VERSION = "0.1.0";
 const STARTED_AT = Date.now();
@@ -40,7 +42,7 @@ export function instanceHealth(onlineUsers: number): InstanceHealth {
   const cores = cpus().length || 1;
 
   return {
-    status: state,
+    status: hostUserId() === null ? "HOST_UNCLAIMED" : state,
     protocol: PROTOCOL_VERSION,
     version: VERSION,
     instance_id: INSTANCE_ID,
@@ -56,5 +58,8 @@ export function instanceHealth(onlineUsers: number): InstanceHealth {
     max_upload_mb: config.maxUploadMb,
     registration_enabled: config.registrationEnabled,
     guest_mode_enabled: config.guestModeEnabled,
+    /* Nada sensible: contadores y un código de error. Ni rutas ni nombres de
+       fichero, porque /health lo lee cualquiera. */
+    integrity: integrityReport(),
   };
 }

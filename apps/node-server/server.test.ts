@@ -5,7 +5,7 @@
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -56,7 +56,7 @@ async function call(
 test("health reporta el estado real de la instancia", async () => {
   const { status, json } = await call("GET", "/health");
   assert.equal(status, 200);
-  assert.equal(json.status, "ONLINE");
+  assert.equal(json.status, "HOST_UNCLAIMED");
   assert.equal(json.protocol, "v1");
 });
 
@@ -254,6 +254,22 @@ test("el túnel se maneja desde el equipo anfitrión, no por cualquier admin rem
   assert.equal(relevo.status, 403, "ni decidir por dónde pasa la voz de la instancia");
 });
 
+
+test("el desafio firma nonce, origen, linaje y epoca con la identidad publicada", async () => {
+  const info = await call("GET", "/api/v1/info");
+  const nonce = "nonce_de_prueba_abcdefghijklmnop";
+  const challenge = await call("POST", "/api/v1/instance/challenge", { body: { nonce, origin: "https://atacante.example" } });
+  assert.equal(challenge.status, 200);
+  assert.equal(challenge.json.payload.nonce, nonce);
+  assert.equal(challenge.json.payload.origin, base);
+  assert.equal(challenge.json.payload.lineage_id, info.json.lineage_id);
+  assert.equal(challenge.json.payload.epoch, info.json.epoch);
+  assert.equal(challenge.json.fingerprint, info.json.identity.fingerprint);
+  const { verifyInstanceProof } = await import("./identity.ts");
+  assert.equal(verifyInstanceProof(challenge.json), true);
+  challenge.json.payload.origin = "https://suplantacion.example";
+  assert.equal(verifyInstanceProof(challenge.json), false, "alterar un campo invalida la firma");
+});
 test("la instancia publica su id y solo fija una dirección que vuelve al mismo servidor", async () => {
   const login = await call("POST", "/api/v1/auth/login", {
     body: { username: "ana", password: "contrasena-larga-1" },
@@ -372,7 +388,127 @@ test("los clientes empaquetados pasan el CORS y un origen ajeno no", async () =>
   }
 });
 
+
+test("la autoridad explicita no vuelve por accidente a la cuenta mas antigua", async () => {
+  const { createUser, hostUserId, isInstanceOwner, setHostUser } = await import("./auth.ts");
+  const { db } = await import("./db.ts");
+  const original = hostUserId();
+  assert.ok(original);
+  const successor = createUser({ username: "successor-test", displayName: "Successor", password: "clave-larga-successor" });
+  setHostUser(successor.id, "transfer-test", original);
+  assert.equal(hostUserId(), successor.id);
+  db.prepare("DELETE FROM users WHERE id = ?").run(successor.id);
+  assert.equal(hostUserId(), null, "ON DELETE deja autoridad vacia");
+  assert.equal(isInstanceOwner(original!), false, "no reaparece el usuario antiguo por fallback");
+  setHostUser(original!, "recovery-test", null);
+});
+
+test("la autoridad se transfiere por la API solo a una cuenta recuperable", async () => {
+  const { createSession, createUser, hostUserId, setHostUser } = await import("./auth.ts");
+  const original = hostUserId();
+  assert.ok(original);
+  const session = createSession(original!);
+  const withoutPassword = createUser({ username: "transfer-no-password", displayName: "Sin clave" });
+  const rejected = await call("POST", "/api/v1/instance/host/transfer", {
+    token: session.accessToken,
+    body: { user_id: withoutPassword.id },
+  });
+  assert.equal(rejected.status, 400);
+  assert.equal(hostUserId(), original);
+
+  const successor = createUser({
+    username: "transfer-with-password",
+    displayName: "Con clave",
+    password: "clave-larga-para-transferir",
+  });
+  const transferred = await call("POST", "/api/v1/instance/host/transfer", {
+    token: session.accessToken,
+    body: { user_id: successor.id },
+  });
+  assert.equal(transferred.status, 200);
+  assert.equal(transferred.json.host_user_id, successor.id);
+  assert.equal(hostUserId(), successor.id);
+
+  const repeated = await call("POST", "/api/v1/instance/host/transfer", {
+    token: session.accessToken,
+    body: { user_id: original },
+  });
+  assert.equal(repeated.status, 403, "la cuenta anterior pierde la autoridad en el acto");
+  setHostUser(original!, "test-recovery", successor.id);
+});
+
+test("una instancia sin dueño se recupera desde el equipo, y solo una vez", async () => {
+  const { createSession, createUser, hostUserId, setHostUser } = await import("./auth.ts");
+  const original = hostUserId();
+  assert.ok(original);
+
+  /* El anfitrión borró su cuenta: ON DELETE deja la fila con user_id vacío, y
+     eso dejaba /instance/relay, /purge y /shutdown cerrados a todo el mundo
+     para siempre, sin ninguna forma de volver atrás. */
+  setHostUser(null, "test-vaciado", null);
+  assert.equal(hostUserId(), null);
+
+  const guest = await call("POST", "/api/v1/auth/guest", { body: { display_name: "De paso" } });
+  assert.equal(guest.status, 200);
+  const ajeno = await call("POST", "/api/v1/instance/host/claim", { token: guest.json.access_token });
+  assert.equal(ajeno.status, 403, "una cuenta de invitado no se queda con el ordenador");
+  assert.equal(hostUserId(), null);
+
+  const vecino = createUser({ username: "claim-test", displayName: "Vecino" });
+  const sesion = createSession(vecino.id);
+  const reclamo = await call("POST", "/api/v1/instance/host/claim", { token: sesion.accessToken });
+  assert.equal(reclamo.status, 200);
+  assert.equal(reclamo.json.host_user_id, vecino.id);
+  assert.equal(hostUserId(), vecino.id, "sin contraseña: estar delante del equipo es el listón con el que se arrancó");
+
+  const repetido = await call("POST", "/api/v1/instance/host/claim", { token: sesion.accessToken });
+  assert.equal(repetido.status, 409, "con dueño puesto, la reclamación deja de estar abierta");
+
+  setHostUser(original!, "recovery-test", null);
+});
 test("uuidv7 ordena por tiempo de creación", () => {
   const ids = Array.from({ length: 50 }, uuidv7);
   assert.deepEqual([...ids].sort(), ids, "el orden lexicográfico coincide con el de creación");
+});
+test("el backfill avanza aunque el primer archivo haya desaparecido", async () => {
+  const { db } = await import("./db.ts");
+  const { backfillAttachmentHashes } = await import("./storage.ts");
+  const uploads = join(workdir, "uploads");
+  mkdirSync(uploads, { recursive: true });
+  writeFileSync(join(uploads, "segundo.bin"), "contenido-verificable");
+
+  const missingId = uuidv7();
+  const validId = uuidv7();
+  const insert = db.prepare(
+    "INSERT INTO attachments (id, message_id, owner_id, filename, content_type, size, path, created_at) VALUES (?, NULL, ?, ?, ?, ?, ?, ?)",
+  );
+  const now = Date.now();
+  insert.run(missingId, missingId, "missing.bin", "application/octet-stream", 1, "missing.bin", now);
+  insert.run(validId, validId, "segundo.bin", "application/octet-stream", 21, "segundo.bin", now + 1);
+
+  // El que falta no se salta en silencio: se cuenta y se nombra con un código.
+  assert.deepEqual(await backfillAttachmentHashes(1), {
+    scanned: 1,
+    updated: 0,
+    failed: 1,
+    done: false,
+    last_error: "MISSING_FILE",
+  });
+  // Y el siguiente se completa igual: uno roto no bloquea a los que vienen detrás.
+  assert.deepEqual(await backfillAttachmentHashes(1), {
+    scanned: 1,
+    updated: 1,
+    failed: 0,
+    done: false,
+    last_error: "",
+  });
+  assert.deepEqual(await backfillAttachmentHashes(1), {
+    scanned: 0,
+    updated: 0,
+    failed: 0,
+    done: true,
+    last_error: "",
+  });
+  const row = db.prepare("SELECT content_hash FROM attachments WHERE id = ?").get(validId) as { content_hash: string };
+  assert.match(row.content_hash, /^sha256:[0-9a-f]{64}$/);
 });

@@ -17,6 +17,7 @@ import { rateLimit } from "./http.ts";
 import * as voice from "./voice.ts";
 import * as race from "./race.ts";
 import { getEmoji } from "./expressions.ts";
+import { writesAccepted } from "./lifecycle.ts";
 
 interface Client {
   ws: WebSocket;
@@ -46,6 +47,7 @@ const videoClients = new Set<VideoClient>();
    compartida los pasa de largo. El límite de verdad lo pone LIMITS por tipo de
    paquete; esto es solo la red de seguridad del protocolo. */
 const wss = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 });
+let gatewayClosing = false;
 
 export function onlineCount(): number {
   return new Set([...clients].map((c) => c.userId)).size;
@@ -120,6 +122,7 @@ function broadcastPresence(communityId: Snowflake): void {
 }
 
 function handleCommand(client: Client, raw: string): void {
+  if (!writesAccepted()) return;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -427,6 +430,11 @@ export function announceVoice(channelId: Snowflake): void {
  * handshake WebSocket. Es de vida corta y revocable, y sobre wss no sale del túnel TLS.
  */
 export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): void {
+  if (gatewayClosing) {
+    socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+    socket.destroy();
+    return;
+  }
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   const auth = authenticate(url.searchParams.get("token"));
 
@@ -504,7 +512,7 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
 }
 
 /* Sin esto un cliente que pierde la red queda "online" hasta el timeout del SO. */
-setInterval(() => {
+const heartbeat = setInterval(() => {
   for (const client of clients) {
     if (!client.alive) {
       client.ws.terminate();
@@ -522,3 +530,21 @@ setInterval(() => {
     client.ws.ping();
   }
 }, 30_000).unref();
+
+/** Avisa cierre normal (1001), da tiempo a vaciar buffers y termina rezagados. */
+export async function closeGateway(code = 1001, reason = "instancia en mantenimiento"): Promise<void> {
+  if (gatewayClosing) return;
+  gatewayClosing = true;
+  clearInterval(heartbeat);
+  const sockets = [
+    ...[...clients].map((client) => client.ws),
+    ...[...videoClients].map((client) => client.ws),
+  ];
+  for (const socket of sockets) {
+    if (socket.readyState === socket.OPEN || socket.readyState === socket.CONNECTING) socket.close(code, reason);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  for (const socket of sockets) {
+    if (socket.readyState !== socket.CLOSED) socket.terminate();
+  }
+}

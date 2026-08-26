@@ -89,9 +89,7 @@ export function connect(): void {
   socket = new WebSocket(wsUrl(`/realtime?token=${encodeURIComponent(tokens.access_token)}`));
 
   socket.onopen = () => {
-    retries = 0;
-    emitStatus("online");
-    connectVideo(tokens.access_token);
+    /* La conexi¢n TCP sola no demuestra sesi¢n ni membres¡a. READY decide. */
   };
 
   // Los paquetes de voz llegan en binario por este mismo socket; no hay que
@@ -113,6 +111,11 @@ export function connect(): void {
     // Misma frontera que api.ts: empaquetado, las rutas de media se absolutizan.
     absolutizeUrls(event);
     for (const handler of eventHandlers) handler(event);
+    if (event.t === "READY") {
+      retries = 0;
+      emitStatus("online");
+      connectVideo(tokens.access_token);
+    }
   };
 
   socket.onerror = () => socket?.close();

@@ -4,7 +4,9 @@
  * leer o escribir. La validación del cliente es cortesía, esta es la que cuenta.
  */
 import { randomBytes } from "node:crypto";
-import { PERMISSIONS, ALL_PERMISSIONS, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
+import { isIP } from "node:net";
+import { join } from "node:path";
+import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import { fixedPublicUrl, setFixedPublicUrl, setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
@@ -22,7 +24,9 @@ import {
   linkPortableIdentity,
   portableUser,
   hashPassword,
+  hostUserId,
   isInstanceOwner,
+  setHostUser,
   revokeAllSessions,
   revokeSession,
   rotateSession,
@@ -75,11 +79,16 @@ import {
   type Ctx,
 } from "./http.ts";
 import { instanceHealth, invalidateStorageCache, VERSION } from "./instance.ts";
+import { BACKUP_DIR, backupJob, listBackupFiles, recentBackupJobs, startBackup } from "./backup.ts";
+import { BackupError } from "./backup-format.ts";
+import { inspectBackup } from "./restore.ts";
 import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
 import { disconnectSession, disconnectUser, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.ts";
 import { statesOfCommunity } from "./voice.ts";
 import { advanceTailscale, stopTailscale, tailscaleState } from "./tailscale.ts";
+import { requestShutdown } from "./lifecycle.ts";
+import { createInstanceProof, INSTANCE_EPOCH, INSTANCE_FINGERPRINT, INSTANCE_PUBLIC_KEY, INSTANCE_ROLE, LINEAGE_ID, verifyInstanceProof, type SignedInstanceProof } from "./identity.ts";
 
 /* ── guardas ───────────────────────────────────────────────────────── */
 
@@ -106,6 +115,17 @@ route("GET", "/api/v1/health", () => instanceHealth(onlineCount()));
 
 route("GET", "/api/v1/info", async (ctx) => ({
   instance_id: INSTANCE_ID,
+  lineage_id: LINEAGE_ID,
+  epoch: INSTANCE_EPOCH,
+  role: INSTANCE_ROLE,
+  /** Lo que esta instancia sabe hacer, por nombre. Un cliente no debe deducirlo
+      de la versión: las instancias se actualizan cuando su anfitrión quiere. */
+  capabilities: CAPABILITIES,
+  identity: {
+    algorithm: "ES256",
+    fingerprint: INSTANCE_FINGERPRINT,
+    public_key: INSTANCE_PUBLIC_KEY,
+  },
   name: config.instanceName,
   version: VERSION,
   registration_enabled: config.registrationEnabled,
@@ -136,6 +156,27 @@ route("GET", "/api/v1/info", async (ctx) => ({
       anfitrión, para poder volver a entrar sin adivinar el nombre (§26). */
   recoverable: isLocalRequest(ctx) ? recoverableAccounts() : [],
 }));
+
+/* Solo PUT /public-url puede asociar temporalmente un nonce a un origen nuevo.
+   El endpoint publico nunca firma un origen elegido por quien lo llama. */
+const pendingProofOrigins = new Map<string, { origin: string; expiresAt: number }>();
+
+/** Prueba fresca: el nonce del cliente impide reutilizar una respuesta observada. */
+route("POST", "/api/v1/instance/challenge", async (ctx) => {
+  rateLimit(`identity-challenge:${ctx.ip}`, 60, 60_000);
+  const body = await readJson(ctx);
+  const nonce = v.string(body, "nonce", { min: 16, max: 128, pattern: /^[A-Za-z0-9_-]+$/ });
+  const pending = pendingProofOrigins.get(nonce);
+  if (pending && pending.expiresAt < Date.now()) pendingProofOrigins.delete(nonce);
+  const configuredOrigin = publicUrl();
+  const origin = pending && pending.expiresAt >= Date.now() ? pending.origin : configuredOrigin || (isLocalRequest(ctx) ? ctx.url.origin : "");
+  if (!origin) throw conflict("La instancia todavia no tiene una direccion publica estable.");
+  try {
+    return createInstanceProof({ instanceId: INSTANCE_ID, origin, nonce });
+  } catch {
+    throw badRequest("El origen del desafio no es valido.");
+  }
+});
 
 interface RecoverableAccount {
   username: string;
@@ -2156,14 +2197,189 @@ function requireHost(ctx: Ctx): ReturnType<typeof requireAuth> {
  */
 function requireTunnelHost(ctx: Ctx): ReturnType<typeof requireAuth> {
   const auth = requireAuth(ctx);
+  if (hostUserId() === null) throw forbidden("Primero hay que reclamar la administracion desde el equipo anfitrion.");
   if (!isLocalRequest(ctx) && !isInstanceOwner(auth.user.id))
     throw forbidden("El túnel solo puede manejarse desde el equipo anfitrión o con su cuenta propietaria.");
   return auth;
 }
 
+/** Apagado remoto solo desde este equipo, con sesion y autoridad del host. */
+route("POST", "/api/v1/instance/shutdown", async (ctx) => {
+  const auth = requireHost(ctx);
+  if (!isLocalRequest(ctx)) throw forbidden("El apagado solo puede pedirse desde el equipo anfitrion.");
+  rateLimit(`shutdown:${auth.user.id}`, 3, 60_000);
+  const body = await readJson(ctx);
+  if (body.confirm !== true) throw badRequest("Confirma el apagado con confirm=true.");
+  setTimeout(() => requestShutdown("api"), 50).unref();
+  return { ok: true };
+});
+
+/**
+ * Instancia sin dueño porque la cuenta anfitriona se borró. No se hereda sola:
+ * el siguiente que se registre no manda en el ordenador de nadie. Pero tampoco
+ * puede quedarse trabada para siempre, así que se recupera desde el propio
+ * equipo, que es el mismo listón con el que se arrancó (§28.5).
+ */
+route("POST", "/api/v1/instance/host/claim", (ctx) => {
+  const auth = requireAuth(ctx);
+  rateLimit(`host-claim:${ctx.ip}`, 5, 60_000);
+  if (!isLocalRequest(ctx)) throw forbidden("El equipo solo se reclama desde el propio ordenador anfitrión.");
+  if (hostUserId() !== null) throw conflict("Esta instancia ya tiene quien la administra.");
+  if (findUserById(auth.user.id)?.kind !== "local")
+    throw forbidden("Solo una cuenta local de esta instancia puede administrarla.");
+
+  setHostUser(auth.user.id, "local-claim", null);
+  /* Quién manda en la máquina es un hecho que merecen ver todos los miembros,
+     no solo quien lo hizo: mismo criterio que la limpieza de datos. */
+  for (const row of db.prepare("SELECT id FROM communities").all() as Array<{ id: string }>) {
+    audit(row.id, auth.user.id, "INSTANCE_HOST_CLAIMED", auth.user.id, {});
+  }
+  return { ok: true, host_user_id: auth.user.id };
+});
+/** Transfiere explícitamente el mando del equipo a otra cuenta local recuperable. */
+route("POST", "/api/v1/instance/host/transfer", async (ctx) => {
+  const auth = requireHost(ctx);
+  rateLimit(`host-transfer:${auth.user.id}`, 5, 60_000);
+  const body = await readJson(ctx);
+  const targetId = v.string(body, "user_id", { max: 64 });
+  if (targetId === auth.user.id) throw conflict("Esa cuenta ya administra la instancia.");
+  const target = findUserById(targetId);
+  if (!target || target.kind !== "local") throw badRequest("El destino debe ser una cuenta local de esta instancia.");
+  if (!target.password_hash) throw badRequest("La cuenta de destino necesita una contraseña recuperable antes de recibir el equipo.");
+
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    setHostUser(target.id, "transfer", auth.user.id);
+    for (const row of db.prepare("SELECT id FROM communities").all() as Array<{ id: string }>) {
+      audit(row.id, auth.user.id, "INSTANCE_HOST_TRANSFERRED", target.id, {});
+    }
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return { ok: true, host_user_id: target.id };
+}
+);
+
+/* ── copias de recuperación (§21, plan C1) ─────────────────────────────
+ *
+ * Crear una copia sí es una ruta; restaurarla NO. Restaurar reemplaza el
+ * directorio de datos entero, y una ruta capaz de hacer eso sería el mando a
+ * distancia perfecto el día que alguien se cuele. Se hace con la instancia
+ * parada, desde `restore.ts`, delante del ordenador.
+ */
+
+route("POST", "/api/v1/instance/backups", async (ctx) => {
+  const auth = requireHost(ctx);
+  if (!isLocalRequest(ctx)) throw forbidden("Las copias se piden desde el propio equipo anfitrión.");
+  rateLimit(`backup:${auth.user.id}`, 3, 60_000);
+
+  const body = await readJson(ctx);
+  /* La frase no pasa por `v.string`: ese validador recorta espacios, y en una
+     frase de paso un espacio final es un carácter como cualquier otro. Quien la
+     escribió así tiene que poder volver a escribirla así. */
+  const passphrase = typeof body.passphrase === "string" ? body.passphrase : "";
+  if (passphrase.length < 12) throw badRequest("La frase de la copia necesita al menos 12 caracteres.");
+  if (passphrase.length > 1024) throw badRequest("Esa frase es demasiado larga.");
+
+  let job;
+  try {
+    job = startBackup(passphrase);
+  } catch (error) {
+    if (error instanceof BackupError) throw conflict(error.message);
+    throw error;
+  }
+  for (const row of db.prepare("SELECT id FROM communities").all() as Array<{ id: string }>) {
+    /* Una copia se lleva los mensajes de todo el mundo. Que quede escrito quién
+       la hizo y cuándo no es burocracia: es lo que permite a un miembro saber
+       que existe un fichero con lo que escribió. */
+    audit(row.id, auth.user.id, "INSTANCE_BACKUP_STARTED", job.id, { redacted: job.redacted });
+  }
+  return job;
+});
+
+route("GET", "/api/v1/instance/backups", (ctx) => {
+  requireHost(ctx);
+  if (!isLocalRequest(ctx)) throw forbidden("Las copias solo se consultan desde el propio equipo anfitrión.");
+  return { jobs: recentBackupJobs(), files: listBackupFiles() };
+});
+
+route("GET", "/api/v1/instance/backups/:job_id", (ctx) => {
+  requireHost(ctx);
+  if (!isLocalRequest(ctx)) throw forbidden("Las copias solo se consultan desde el propio equipo anfitrión.");
+  const job = backupJob(ctx.params.job_id ?? "");
+  if (!job) throw notFound("Esa copia no existe.");
+  return job;
+});
+
+/**
+ * Mirar dentro de una copia sin restaurar nada: de quién es, de cuándo, qué
+ * trae y si está entera. Es la comprobación que hay que poder hacer ANTES de
+ * confiar en un fichero, no después de haberlo restaurado encima de los datos.
+ */
+route("POST", "/api/v1/instance/restore/inspect", async (ctx) => {
+  const auth = requireHost(ctx);
+  if (!isLocalRequest(ctx)) throw forbidden("Las copias solo se abren desde el propio equipo anfitrión.");
+  /* Límite estrecho: cada intento cuesta un scrypt duro, y ese coste es
+     precisamente lo que protege la frase de quien lo intente por fuerza. */
+  rateLimit(`inspect:${auth.user.id}`, 10, 60_000);
+
+  const body = await readJson(ctx);
+  const filename = typeof body.filename === "string" ? body.filename : "";
+  const passphrase = typeof body.passphrase === "string" ? body.passphrase : "";
+  if (!passphrase) throw badRequest("Falta la frase de la copia.");
+
+  /* El nombre se busca en la lista real de copias en vez de componer una ruta
+     con lo que llegue: así "../../secret.key" no es una ruta que exista, es un
+     nombre que no está en la lista. */
+  const existente = listBackupFiles().find((item) => item.filename === filename);
+  if (!existente) throw notFound("Esa copia no está en la carpeta de copias.");
+
+  try {
+    return await inspectBackup(join(BACKUP_DIR, existente.filename), passphrase, {
+      deep: body.deep === true,
+    });
+  } catch (error) {
+    if (error instanceof BackupError) throw new HttpError(422, error.code, error.message);
+    throw error;
+  }
+});
+
 /** Estado operativo y dirección efectiva en una sola foto coherente. */
 function tunnelView() {
   return { ...tunnelState(), autostart: tunnelAutostart(), public_url: publicUrl(), fixed_url: fixedPublicUrl() };
+}
+
+function isLanHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) return true;
+  const version = isIP(host);
+  if (version === 4) {
+    const [a, b] = host.split(".").map(Number);
+    return a === 10 || a === 127 || (a === 192 && b === 168) || (a === 172 && b! >= 16 && b! <= 31) || (a === 169 && b === 254);
+  }
+  return version === 6 && (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe8") || host.startsWith("fe9") || host.startsWith("fea") || host.startsWith("feb"));
+}
+
+async function readSmallJson(response: Response, limit = 32 * 1024): Promise<unknown> {
+  const announced = Number(response.headers.get("content-length") ?? "0");
+  if (announced > limit) throw new Error("RESPONSE_TOO_LARGE");
+  if (!response.body) throw new Error("EMPTY_RESPONSE");
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const next = await reader.read();
+    if (next.done) break;
+    total += next.value.byteLength;
+    if (total > limit) { await reader.cancel(); throw new Error("RESPONSE_TOO_LARGE"); }
+    chunks.push(next.value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
 route("PUT", "/api/v1/instance/public-url", async (ctx) => {
@@ -2182,18 +2398,52 @@ route("PUT", "/api/v1/instance/public-url", async (ctx) => {
   } catch {
     return { ok: false, reachable: false, public_url: publicUrl(), error: "La dirección no es una URL válida." };
   }
-  if (!['http:', 'https:'].includes(candidate.protocol) || candidate.username || candidate.password) {
+  if (!["http:", "https:"].includes(candidate.protocol) || candidate.username || candidate.password) {
     return { ok: false, reachable: false, public_url: publicUrl(), error: "La dirección debe comenzar por http:// o https:// y no incluir credenciales." };
   }
+  if (candidate.pathname !== "/" || candidate.search || candidate.hash) {
+    return { ok: false, reachable: false, public_url: publicUrl(), error: "La dirección debe ser un origen, sin ruta, consulta ni fragmento." };
+  }
+  if (process.env.NODE_ENV !== "development" && candidate.protocol !== "https:" && !isLanHostname(candidate.hostname)) {
+    return { ok: false, reachable: false, public_url: publicUrl(), error: "Fuera de la red local la dirección necesita HTTPS." };
+  }
 
+  const nonce = randomBytes(24).toString("base64url");
+  let response: Response;
+  pendingProofOrigins.set(nonce, { origin: candidate.origin, expiresAt: Date.now() + 10_000 });
   try {
-    const response = await fetch(`${candidate.origin}/api/v1/info`, { signal: AbortSignal.timeout(12_000) });
-    const info = (await response.json()) as { instance_id?: string };
-    if (!response.ok || info.instance_id !== INSTANCE_ID) {
-      return { ok: false, reachable: true, public_url: publicUrl(), error: "La dirección responde, pero pertenece a otra instancia de Distop." };
-    }
+    response = await fetch(`${candidate.origin}/api/v1/instance/challenge`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ nonce }),
+      signal: AbortSignal.timeout(8_000),
+    });
   } catch {
     return { ok: false, reachable: false, public_url: publicUrl(), error: "No se pudo llegar a esta instancia mediante esa dirección." };
+  } finally {
+    pendingProofOrigins.delete(nonce);
+  }
+
+  let proof: SignedInstanceProof;
+  try {
+    proof = await readSmallJson(response) as SignedInstanceProof;
+  } catch {
+    return { ok: false, reachable: true, public_url: publicUrl(), error: "La dirección respondió con una prueba inválida." };
+  }
+  const now = Date.now();
+  const valid = response.ok
+    && verifyInstanceProof(proof)
+    && proof.fingerprint === INSTANCE_FINGERPRINT
+    && proof.payload.instance_id === INSTANCE_ID
+    && proof.payload.lineage_id === LINEAGE_ID
+    && proof.payload.epoch === INSTANCE_EPOCH
+    && proof.payload.origin === candidate.origin
+    && proof.payload.nonce === nonce
+    && proof.payload.issued_at <= now + 5_000
+    && proof.payload.expires_at >= now;
+  if (!valid) {
+    return { ok: false, reachable: true, public_url: publicUrl(), error: "La dirección responde, pero no demuestra la identidad de esta instancia." };
   }
 
   setFixedPublicUrl(candidate.origin);

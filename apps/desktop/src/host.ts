@@ -127,16 +127,43 @@ export async function startHost(): Promise<HostStatus> {
   return hostStatus();
 }
 
-export function stopHost(): HostStatus {
+let stopping: Promise<HostStatus> | null = null;
+
+export function stopHost(): Promise<HostStatus> {
+  if (stopping) return stopping;
   const proc = child;
-  child = null;
+  if (!proc) {
+    setState("off");
+    return Promise.resolve(hostStatus());
+  }
+
   setState("off");
-  proc?.kill();
-  return hostStatus();
+  stopping = (async () => {
+    const exited = new Promise<void>((resolveExit) => proc.once("exit", () => resolveExit()));
+    try {
+      proc.postMessage({ type: "DISTOP_SHUTDOWN" });
+    } catch {
+      // Un proceso que murio entre ambas lineas ya no necesita aviso.
+    }
+    /* 3,2 s contra los 2,5 s que la instancia se da para cortar subidas en
+       vuelo (server.ts): el margen tiene que ser mayor que el suyo, o matariamos
+       el proceso justo mientras cierra la base. Los dos numeros van juntos. */
+    await Promise.race([exited, new Promise((resolveWait) => setTimeout(resolveWait, 3_200))]);
+    if (child === proc) {
+      proc.kill();
+      await Promise.race([exited, new Promise((resolveWait) => setTimeout(resolveWait, 500))]);
+    }
+    if (child === proc) child = null;
+    return hostStatus();
+  })().finally(() => { stopping = null; });
+  return stopping;
 }
 
-// La instancia es un hijo del proceso principal: si la app muere, muere con
-// ella. Apagar el equipo apaga la comunidad, y la interfaz ya lo cuenta (§28.1).
-app.on("before-quit", () => {
-  stopHost();
+// Antes de cerrar Electron se da al hijo su ventana real de checkpoint.
+let quittingAfterHost = false;
+app.on("before-quit", (event) => {
+  if (!child || quittingAfterHost) return;
+  event.preventDefault();
+  quittingAfterHost = true;
+  void stopHost().finally(() => app.quit());
 });

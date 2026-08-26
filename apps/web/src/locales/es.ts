@@ -664,6 +664,8 @@ export const es = {
     "Notificaciones e interruptores usan el pack SND01 adaptado para Distop.",
   "settings.desktopNotifications": "Notificaciones del sistema",
   "settings.desktopHint": "Solo aparecen con la ventana en segundo plano.",
+  "settings.availabilityWatch": "Avisarme cuando esta comunidad vuelva",
+  "settings.availabilityWatchHint": "Distop la comprueba desde la bandeja. Tras 15 minutos sin respuesta, reduce la frecuencia para ahorrar batería.",
   "settings.notifyAsk": "Permitir notificaciones",
   "settings.notifyGranted": "Permitidas por el navegador.",
   "settings.notifyDenied":

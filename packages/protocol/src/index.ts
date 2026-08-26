@@ -521,6 +521,7 @@ export interface AuditLogEntry {
 
 export const INSTANCE_STATES = [
   "ONLINE",
+  "HOST_UNCLAIMED",
   "OFFLINE",
   "STARTING",
   "DEGRADED",
@@ -533,6 +534,60 @@ export const INSTANCE_STATES = [
 ] as const;
 
 export type InstanceState = (typeof INSTANCE_STATES)[number];
+
+/* ── Integridad observable ────────────────────────────────────────────────
+   Rellenar los hashes de adjuntos viejos es trabajo de fondo que puede durar
+   horas en un disco lento. Sin progreso visible, quien hospeda no distingue
+   "va por la mitad" de "lleva parado desde el martes", y una copia de
+   seguridad tomada a ciegas heredaría esa duda. */
+
+export const BACKFILL_STATES = [
+  "idle",
+  "running",
+  /** Hay gente en una llamada: el disco y la CPU son suyos mientras dure. */
+  "paused_call",
+  "paused_disk_pressure",
+  /** Copia, restauración o relevo en curso: nadie más toca el almacenamiento. */
+  "paused_maintenance",
+  "complete",
+  /** Terminó, pero algún adjunto no se pudo leer. No es lo mismo que completo. */
+  "degraded",
+] as const;
+
+export type BackfillState = (typeof BACKFILL_STATES)[number];
+
+export interface AttachmentHashProgress {
+  state: BackfillState;
+  scanned: number;
+  updated: number;
+  failed: number;
+  remaining: number;
+  /** Código estable, nunca un mensaje: una ruta o un nombre de fichero
+      publicados en /health serían una fuga (§8). Vacío si no hubo fallos. */
+  last_error: string;
+}
+
+export interface InstanceIntegrity {
+  attachment_hashes: AttachmentHashProgress;
+}
+
+/**
+ * Lo que esta instancia sabe hacer, por nombre y versión.
+ *
+ * Un cliente no debe deducir soporte de la versión del programa: las instancias
+ * se actualizan en momentos distintos (§28.6) y una función puede existir en
+ * 0.1.0 y faltar en otra 0.1.0 compilada sin ella. Se declara, no se infiere.
+ */
+export const CAPABILITIES = [
+  /** Prueba de origen firmada ES256 con nonce del cliente (`/instance/challenge`). */
+  "signed_identity_v1",
+  /** Progreso de integridad publicado en `/health`. */
+  "integrity_report_v1",
+  /** Copia cifrada `.distop-backup` v1, e inspección sin restaurar. */
+  "encrypted_backup_v1",
+] as const;
+
+export type Capability = (typeof CAPABILITIES)[number];
 
 export interface InstanceHealth {
   status: InstanceState;
@@ -553,6 +608,7 @@ export interface InstanceHealth {
   max_upload_mb: number;
   registration_enabled: boolean;
   guest_mode_enabled: boolean;
+  integrity: InstanceIntegrity;
 }
 
 /* ─────────────────────────── Eventos WebSocket (§18) ─────────────────────────── */
@@ -726,6 +782,19 @@ export const ERROR_CODES = {
 
 let lastMs = 0;
 let sequence = 0;
+
+/**
+ * Adelanta el reloj monotónico de UUIDv7 hasta un instante ya persistido.
+ * Al restaurar una base en un equipo cuyo reloj va atrasado, arrancar en cero
+ * haría que los ids nuevos ordenasen antes que los antiguos.
+ */
+export function seedUuidClock(ms: number): void {
+  if (!Number.isFinite(ms) || ms < 0) return;
+  if (ms > lastMs) {
+    lastMs = Math.floor(ms);
+    sequence = 0;
+  }
+}
 
 export function uuidv7(): string {
   const bytes = new Uint8Array(16);

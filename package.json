@@ -17,8 +17,8 @@
     "voice-check": "node scripts/voice-check.mjs",
     "site": "npm run dev --workspace @distop/marketing",
     "site:build": "npm run build --workspace @distop/marketing",
-    "test": "npm run test --workspace @distop/node-server",
-    "typecheck": "tsc -p apps/node-server --noEmit && tsc -p apps/web --noEmit && npm run typecheck --workspace @distop/marketing"
+    "test": "npm run test --workspace @distop/node-server && npm run test --workspace @distop/web && npm run test --workspace @distop/desktop",
+    "typecheck": "tsc -p apps/node-server --noEmit && tsc -p apps/web --noEmit && npm run typecheck --workspace @distop/desktop && npm run typecheck --workspace @distop/marketing"
   },
   "devDependencies": {
     "concurrently": "9.1.2",

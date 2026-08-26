@@ -3,9 +3,10 @@
  * El nombre que sube el usuario nunca toca el sistema de ficheros: se guarda en
  * la base y en disco vive un UUID, lo que cierra path traversal por construcción.
  */
+import { createHash } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, statSync, statfsSync, unlinkSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { extname, join, resolve, sep } from "node:path";
 import { Transform, type Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { uuidv7 } from "@distop/protocol";
@@ -14,8 +15,37 @@ import { config } from "./config.ts";
 import { db } from "./db.ts";
 import { HttpError, badRequest, notFound, rateLimit, type Ctx, HANDLED } from "./http.ts";
 
-const ROOT = resolve(config.storagePath);
+export const ROOT = resolve(config.storagePath);
 mkdirSync(ROOT, { recursive: true });
+
+/**
+ * El único sitio donde vive un archivo a medias.
+ *
+ * Antes el temporal se escribía junto a su destino, dentro del cajón del mes.
+ * Funcionaba, pero un corte de luz a mitad de una subida dejaba un `.part`
+ * mezclado con los archivos buenos, y limpiarlo al arrancar habría obligado a
+ * recorrer todos los cajones decidiendo qué borrar entre ficheros reales. Con
+ * un directorio propio la limpieza mira un solo sitio y no puede equivocarse de
+ * fichero. Sigue dentro de ROOT, así que el rename de cierre no cruza volumen y
+ * continúa siendo atómico.
+ */
+const INCOMING = join(ROOT, ".incoming");
+mkdirSync(INCOMING, { recursive: true });
+
+/**
+ * Ruta absoluta de un `path` de la base, o `null` si se sale del almacén.
+ *
+ * `full.startsWith(ROOT)` a secas —lo que había en media docena de sitios— deja
+ * pasar `/data/uploads-de-otro/x` cuando ROOT es `/data/uploads`: comparte
+ * prefijo sin estar dentro. Con `path` generado por nosotros nunca llegó a
+ * importar, pero en cuanto exista restauración el contenido de la base pasa a
+ * venir de un fichero que alguien nos dio, y entonces sí (§22).
+ */
+export function insideStorage(relative: string): string | null {
+  if (!relative) return null;
+  const full = resolve(ROOT, relative);
+  return full.startsWith(`${ROOT}${sep}`) ? full : null;
+}
 
 const SAFE_EXT = /^\.[a-z0-9]{1,8}$/i;
 
@@ -60,12 +90,13 @@ function insertarAdjunto(opts: {
   contentType: string;
   size: number;
   relative: string;
+  contentHash: string;
 }): Attachment {
   const name = sanitizeName(opts.filename);
   db.prepare(
-    `INSERT INTO attachments (id, message_id, owner_id, filename, content_type, size, path, created_at)
-     VALUES (?, NULL, ?, ?, ?, ?, ?, ?)`,
-  ).run(opts.id, opts.ownerId, name, opts.contentType, opts.size, opts.relative, Date.now());
+    `INSERT INTO attachments (id, message_id, owner_id, filename, content_type, size, path, content_hash, created_at)
+     VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(opts.id, opts.ownerId, name, opts.contentType, opts.size, opts.relative, opts.contentHash, Date.now());
 
   return {
     id: opts.id,
@@ -101,6 +132,7 @@ export function saveUpload(opts: {
     contentType: opts.contentType,
     size: opts.data.length,
     relative,
+    contentHash: `sha256:${createHash("sha256").update(opts.data).digest("hex")}`,
   });
 }
 
@@ -115,9 +147,9 @@ const FIRMA_BYTES = 12;
  * el escritorio, donde la instancia vive en un utilityProcess, y en una
  * Raspberry Pi con varias subidas a la vez.
  *
- * El cuerpo fluye a un temporal JUNTO al destino final (mismo volumen), así el
- * rename de cierre es atómico y nunca queda visible un archivo a medias. El
- * límite se aplica contando bytes al vuelo: superarlo destruye el stream,
+ * El cuerpo fluye a un temporal en `.incoming` (mismo volumen que el destino),
+ * así el rename de cierre es atómico y nunca queda visible un archivo a medias.
+ * El límite se aplica contando bytes al vuelo: superarlo destruye el stream,
  * borra el temporal y responde el mismo 413 de siempre — el cap no se relaja,
  * es un invariante de seguridad (§22).
  */
@@ -136,7 +168,7 @@ export async function saveUploadStream(opts: {
   }
 
   const { id, relative, full } = nuevaRutaEnDisco(opts.filename);
-  const temporal = `${full}.part`;
+  const temporal = join(INCOMING, `${id}.part`);
 
   const esAudio = opts.contentType.startsWith("audio/");
   const cabecera: Buffer[] = [];
@@ -144,6 +176,7 @@ export async function saveUploadStream(opts: {
   let firmaComprobada = false;
   const firmaValida = (): boolean => hasAudioSignature(opts.contentType, Buffer.concat(cabecera, cabeceraBytes));
 
+  const hasher = createHash("sha256");
   let total = 0;
   const contador = new Transform({
     transform(chunk: Buffer, _enc, done) {
@@ -169,6 +202,7 @@ export async function saveUploadStream(opts: {
           }
         }
       }
+      hasher.update(chunk);
       done(null, chunk);
     },
   });
@@ -188,6 +222,7 @@ export async function saveUploadStream(opts: {
     await rm(temporal, { force: true }).catch(() => {});
     throw err;
   }
+  const contentHash = `sha256:${hasher.digest("hex")}`;
 
   return insertarAdjunto({
     id,
@@ -196,7 +231,141 @@ export async function saveUploadStream(opts: {
     contentType: opts.contentType,
     size: total,
     relative,
+    contentHash,
   });
+}
+
+/** Códigos de fallo del backfill. De aquí no sale nunca una ruta ni un nombre:
+    esto acaba publicado en /health, que cualquiera puede leer (§8). */
+export type BackfillErrorCode = "" | "MISSING_FILE" | "OUTSIDE_STORAGE" | "READ_FAILED";
+
+export interface AttachmentHashBackfillResult {
+  scanned: number;
+  updated: number;
+  failed: number;
+  /** Ya no quedan filas detrás del cursor: la pasada llegó al final. */
+  done: boolean;
+  last_error: BackfillErrorCode;
+}
+
+let backfillCursor: { created_at: number; id: string } | null = null;
+
+/** Cuántos adjuntos con fichero propio siguen sin hash. Barato: hay índice
+    parcial justo para esta condición (migración 12). */
+export function pendingHashCount(): number {
+  const row = db
+    .prepare("SELECT COUNT(*) AS n FROM attachments WHERE path <> '' AND content_hash IS NULL")
+    .get() as { n: number };
+  return row.n;
+}
+
+/**
+ * Completa gradualmente hashes de adjuntos creados antes de la migracion.
+ *
+ * El cursor permite avanzar aunque un fichero haya desaparecido; al reiniciar
+ * se vuelve a intentar ese fichero sin bloquear todos los que venian despues.
+ * Un fallo NO detiene la pasada y NO se reintenta en bucle: se cuenta, se
+ * nombra con un código y la instancia queda `degraded` en vez de `complete`,
+ * que es la diferencia entre "ya está" y "ya está, menos doce fotos".
+ */
+export async function backfillAttachmentHashes(limit = 25): Promise<AttachmentHashBackfillResult> {
+  const rows = db.prepare(
+    `SELECT id, path, created_at FROM attachments
+      WHERE path <> '' AND content_hash IS NULL
+        AND (? IS NULL OR created_at > ? OR (created_at = ? AND id > ?))
+      ORDER BY created_at, id
+      LIMIT ?`,
+  ).all(
+    backfillCursor?.id ?? null,
+    backfillCursor?.created_at ?? 0,
+    backfillCursor?.created_at ?? 0,
+    backfillCursor?.id ?? "",
+    limit,
+  ) as Array<{ id: string; path: string; created_at: number }>;
+
+  let updated = 0;
+  let failed = 0;
+  let lastError: BackfillErrorCode = "";
+
+  for (const row of rows) {
+    backfillCursor = { created_at: row.created_at, id: row.id };
+
+    const full = insideStorage(row.path);
+    if (full === null) {
+      /* Una fila que apunta fuera del almacén no se lee: se cuenta. Con `path`
+         escrito por nosotros esto no puede pasar; después de una restauración,
+         sí, y entonces es justo lo que hay que ver publicado. */
+      failed++;
+      lastError = "OUTSIDE_STORAGE";
+      continue;
+    }
+    if (!existsSync(full)) {
+      failed++;
+      lastError = "MISSING_FILE";
+      continue;
+    }
+    try {
+      const hasher = createHash("sha256");
+      for await (const chunk of createReadStream(full)) hasher.update(chunk);
+      const result = db.prepare(
+        "UPDATE attachments SET content_hash = ? WHERE id = ? AND content_hash IS NULL",
+      ).run(`sha256:${hasher.digest("hex")}`, row.id);
+      updated += Number(result.changes);
+    } catch {
+      // Permisos, disco que devuelve error, o desaparecido a mitad de la lectura.
+      failed++;
+      lastError = "READ_FAILED";
+    }
+  }
+
+  return { scanned: rows.length, updated, failed, done: rows.length < limit, last_error: lastError };
+}
+
+/**
+ * Borra lo que quedó a medias en `.incoming`.
+ *
+ * Se llama UNA vez al arrancar y por eso puede vaciarlo entero: durante un
+ * arranque normal no hay ninguna subida de este proceso en vuelo, así que todo
+ * lo que hay dentro es de una ejecución que ya murió. Cada entrada se borra por
+ * su nombre dentro del directorio conocido —nunca por una ruta reconstruida
+ * desde la base— y se comprueba igualmente que no se sale de él.
+ *
+ * Lo que NO hace, a propósito: buscar ficheros finales sin fila y borrarlos.
+ * Esa lista se calcula con una consulta, y el día que la consulta esté mal se
+ * borran las fotos de alguien. Un fichero de más ocupa disco; un fichero de
+ * menos es una pérdida.
+ */
+export function sweepIncoming(): { removed: number; kept: number } {
+  let removed = 0;
+  let kept = 0;
+  let entries: ReturnType<typeof readdirSync>;
+  try {
+    entries = readdirSync(INCOMING, { withFileTypes: true });
+  } catch {
+    return { removed: 0, kept: 0 };
+  }
+
+  for (const entry of entries) {
+    const full = join(INCOMING, entry.name);
+    if (!full.startsWith(`${INCOMING}${sep}`)) {
+      kept++;
+      continue;
+    }
+    /* Un enlace simbólico se desata, no se sigue: unlink quita el enlace y
+       jamás lo que hubiera al otro lado. Un directorio aquí no lo pone este
+       código, así que no se toca. */
+    if (!entry.isFile() && !entry.isSymbolicLink()) {
+      kept++;
+      continue;
+    }
+    try {
+      unlinkSync(full);
+      removed++;
+    } catch {
+      kept++;
+    }
+  }
+  return { removed, kept };
 }
 
 /**
@@ -322,8 +491,8 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
     return HANDLED;
   }
 
-  const full = resolve(ROOT, row.path);
-  if (!full.startsWith(ROOT) || !existsSync(full)) throw notFound("Archivo no encontrado.");
+  const full = insideStorage(row.path);
+  if (full === null || !existsSync(full)) throw notFound("Archivo no encontrado.");
 
   // inline solo para tipos que el navegador no puede usar para ejecutar script.
   const inline = row.content_type.startsWith("image/") && row.content_type !== "image/svg+xml";
@@ -346,8 +515,8 @@ export function deleteStoredAttachment(id: string): void {
   const row = db.prepare("SELECT path FROM attachments WHERE id = ?").get(id) as { path: string } | undefined;
   if (!row) return;
   if (row.path) {
-    const full = resolve(ROOT, row.path);
-    if (full.startsWith(ROOT) && existsSync(full)) unlinkSync(full);
+    const full = insideStorage(row.path);
+    if (full && existsSync(full)) unlinkSync(full);
   }
   db.prepare("DELETE FROM attachments WHERE id = ?").run(id);
 }
@@ -360,8 +529,8 @@ export function deleteAttachmentsOf(messageId: string): void {
   for (const row of rows) {
     // Reenviado (§22): sin fichero propio, path queda vacío y no hay nada que borrar.
     if (!row.path) continue;
-    const full = resolve(ROOT, row.path);
-    if (full.startsWith(ROOT) && existsSync(full)) unlinkSync(full);
+    const full = insideStorage(row.path);
+    if (full && existsSync(full)) unlinkSync(full);
   }
   db.prepare("DELETE FROM attachments WHERE message_id = ?").run(messageId);
 }
@@ -378,8 +547,8 @@ export function deleteAttachmentsOwnedBy(userId: string): void {
   }[];
   for (const row of rows) {
     if (!row.path) continue;
-    const full = resolve(ROOT, row.path);
-    if (full.startsWith(ROOT) && existsSync(full)) unlinkSync(full);
+    const full = insideStorage(row.path);
+    if (full && existsSync(full)) unlinkSync(full);
   }
   db.prepare("DELETE FROM attachments WHERE owner_id = ?").run(userId);
 }
@@ -403,8 +572,8 @@ export function purgeChatFiles(): { files: number; mb: number } {
   for (const row of rows) {
     // Reenviado (§22): sin fichero propio, path queda vacío y no hay nada que borrar.
     if (!row.path) continue;
-    const full = resolve(ROOT, row.path);
-    if (full.startsWith(ROOT) && existsSync(full)) {
+    const full = insideStorage(row.path);
+    if (full && existsSync(full)) {
       unlinkSync(full);
       bytes += row.size;
     }
@@ -413,15 +582,27 @@ export function purgeChatFiles(): { files: number; mb: number } {
   return { files: rows.length, mb: Math.round((bytes / 1024 / 1024) * 10) / 10 };
 }
 
-/** Lo que queda libre en el disco donde viven los archivos, en MB. */
-export function storageFreeMb(): number {
+/**
+ * Lo que queda libre en el disco donde viven los archivos, en MB, o `null` si
+ * el sistema de ficheros no sabe contestar.
+ *
+ * La diferencia entre `null` y `0` importa: "no lo sé" y "no queda nada" llevan
+ * a decisiones opuestas. Quien solo quiere pintarlo usa `storageFreeMb()`;
+ * quien va a decidir con ello —pausar el trabajo de fondo, negarse a hacer una
+ * copia— tiene que poder distinguirlos.
+ */
+export function storageFreeMbOrNull(): number | null {
   try {
     const stats = statfsSync(ROOT);
     return Math.round((stats.bavail * stats.bsize) / 1024 / 1024);
   } catch {
-    // Sistema de ficheros que no sabe contestar: mejor 0 que inventar un número.
-    return 0;
+    return null;
   }
+}
+
+/** Lo que queda libre en el disco donde viven los archivos, en MB. */
+export function storageFreeMb(): number {
+  return storageFreeMbOrNull() ?? 0;
 }
 
 export function storageUsedMb(): number {
