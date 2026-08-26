@@ -82,13 +82,14 @@ import { instanceHealth, invalidateStorageCache, VERSION } from "./instance.ts";
 import { BACKUP_DIR, backupJob, listBackupFiles, recentBackupJobs, startBackup } from "./backup.ts";
 import { BackupError } from "./backup-format.ts";
 import { inspectBackup } from "./restore.ts";
+import { successionRecord } from "./succession.ts";
 import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
 import { disconnectSession, disconnectUser, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.ts";
 import { statesOfCommunity } from "./voice.ts";
 import { advanceTailscale, stopTailscale, tailscaleState } from "./tailscale.ts";
 import { requestShutdown } from "./lifecycle.ts";
-import { createInstanceProof, INSTANCE_EPOCH, INSTANCE_FINGERPRINT, INSTANCE_PUBLIC_KEY, INSTANCE_ROLE, LINEAGE_ID, verifyInstanceProof, type SignedInstanceProof } from "./identity.ts";
+import { createInstanceProof, instanceEpoch, instanceFingerprint, instancePublicKey, instanceRole, LINEAGE_ID, verifyInstanceProof, type SignedInstanceProof } from "./identity.ts";
 
 /* ── guardas ───────────────────────────────────────────────────────── */
 
@@ -113,18 +114,26 @@ const CHANNEL_NAME = /^[^\s#@][^#@]{0,63}$/;
 route("GET", "/health", () => instanceHealth(onlineCount()));
 route("GET", "/api/v1/health", () => instanceHealth(onlineCount()));
 
+/** La dirección nueva y su certificado, para quien llegue a la vieja. */
+function movedTo(): { origin: string | null; certificate_chain: unknown[] } | null {
+  const registro = successionRecord();
+  return registro ? { origin: registro.origin, certificate_chain: [registro.certificate] } : null;
+}
+
 route("GET", "/api/v1/info", async (ctx) => ({
   instance_id: INSTANCE_ID,
   lineage_id: LINEAGE_ID,
-  epoch: INSTANCE_EPOCH,
-  role: INSTANCE_ROLE,
+  epoch: instanceEpoch(),
+  role: instanceRole(),
   /** Lo que esta instancia sabe hacer, por nombre. Un cliente no debe deducirlo
       de la versión: las instancias se actualizan cuando su anfitrión quiere. */
   capabilities: CAPABILITIES,
+  /** A dónde se fue la línea, si ya se fue. `null` mientras esta manda. */
+  moved_to: movedTo(),
   identity: {
     algorithm: "ES256",
-    fingerprint: INSTANCE_FINGERPRINT,
-    public_key: INSTANCE_PUBLIC_KEY,
+    fingerprint: instanceFingerprint(),
+    public_key: instancePublicKey(),
   },
   name: config.instanceName,
   version: VERSION,
@@ -711,7 +720,21 @@ route("DELETE", "/api/v1/communities/:id", (ctx) => {
   publish(community.id, { t: "MEMBER_LEAVE", d: { community_id: community.id, user_id: user.id } });
 });
 
-route("POST", "/api/v1/communities/:id/leave", (ctx) => {
+/**
+ * Salir de una comunidad, con o sin llevarte lo que escribiste.
+ *
+ * Son dos de las tres acciones que la interfaz tiene que ofrecer por separado
+ * (la tercera, borrar la cuenta entera de la instancia, es `DELETE /users/me`).
+ * Estaban mezcladas en una sola y no son lo mismo: alguien que se va de un
+ * servidor no siempre quiere borrar tres años de conversación, y alguien que
+ * quiere borrarla no siempre entiende que irse no la borra.
+ *
+ * Lo que NO se promete: que los mensajes desaparezcan del mundo. Estuvieron en
+ * el disco de quien hospeda desde el primer día y pudo copiarlos. Lo que se
+ * ofrece es real —dejan de servirse y dejan de estar en la base— y se dice tal
+ * cual, sin fingir un derecho al olvido que ninguna instancia puede cumplir.
+ */
+route("POST", "/api/v1/communities/:id/leave", async (ctx) => {
   const { user } = requireAuth(ctx);
   const communityId = ctx.params.id!;
   requireMembership(communityId, user.id);
@@ -719,8 +742,36 @@ route("POST", "/api/v1/communities/:id/leave", (ctx) => {
   if (!community) throw notFound("Comunidad no encontrada.");
   if (community.owner_id === user.id) throw conflict("Transfiere o elimina la comunidad antes de salir.");
 
+  const body = await readJson(ctx);
+  const borrarMensajes = v.bool(body, "purge_messages", false);
+
+  let mensajes = 0;
+  if (borrarMensajes) {
+    const mios = db
+      .prepare("SELECT id FROM messages WHERE community_id = ? AND author_id = ?")
+      .all(communityId, user.id) as Array<{ id: string }>;
+    for (const fila of mios) deleteAttachmentsOf(fila.id);
+    db.prepare("DELETE FROM messages WHERE community_id = ? AND author_id = ?").run(communityId, user.id);
+    mensajes = mios.length;
+    invalidateStorageCache();
+
+    /* Hasta doscientos se avisa uno a uno y los clientes los quitan sin
+       recargar. Por encima, un solo aviso de "vuelve a pedir el historial":
+       mandar diez mil eventos por WebSocket para pintar una lista más corta
+       tumbaría a los que están mirando ese canal. */
+    if (mios.length <= 200) {
+      for (const fila of mios) {
+        publish(communityId, { t: "MESSAGE_DELETE", d: { id: fila.id, channel_id: "" } });
+      }
+    } else {
+      publish(communityId, { t: "MESSAGES_PURGED", d: { community_id: communityId } });
+    }
+    audit(communityId, user.id, "MEMBER_PURGED_OWN_MESSAGES", user.id, { messages: mensajes });
+  }
+
   db.prepare("DELETE FROM members WHERE community_id = ? AND user_id = ?").run(communityId, user.id);
   publish(communityId, { t: "MEMBER_LEAVE", d: { community_id: communityId, user_id: user.id } });
+  return { ok: true, messages_deleted: mensajes };
 });
 
 route("GET", "/api/v1/discovery", (ctx) => {
@@ -2434,10 +2485,10 @@ route("PUT", "/api/v1/instance/public-url", async (ctx) => {
   const now = Date.now();
   const valid = response.ok
     && verifyInstanceProof(proof)
-    && proof.fingerprint === INSTANCE_FINGERPRINT
+    && proof.fingerprint === instanceFingerprint()
     && proof.payload.instance_id === INSTANCE_ID
     && proof.payload.lineage_id === LINEAGE_ID
-    && proof.payload.epoch === INSTANCE_EPOCH
+    && proof.payload.epoch === instanceEpoch()
     && proof.payload.origin === candidate.origin
     && proof.payload.nonce === nonce
     && proof.payload.issued_at <= now + 5_000
@@ -2613,3 +2664,7 @@ route("GET", "/api/v1/communities/:id/export", (ctx) => {
   });
   return HANDLED;
 });
+
+/* Las rutas del relevo viven aparte: son otro público y otra forma de
+   autenticar, y api.ts ya es bastante largo. */
+import "./succession-api.ts";

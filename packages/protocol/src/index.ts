@@ -517,6 +517,112 @@ export interface AuditLogEntry {
   created_at: number;
 }
 
+/* ────────────────────── Firma canónica y sucesión (C2) ──────────────────────
+   Todo lo que se firma en Distop se firma sobre ESTA codificación. Vive aquí y
+   no en cada lado porque servidor y cliente tienen que producir byte a byte lo
+   mismo: si difieren en el orden de una clave, una firma legítima no valida y
+   el cliente concluye que su comunidad es un impostor.
+
+   Lo que NO se comparte es la primitiva criptográfica: el servidor firma con
+   `node:crypto` y el navegador verifica con WebCrypto. Lo que se comparte son
+   las reglas, que es donde están los errores que importan. */
+
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const object = value as Record<string, unknown>;
+  return `{${Object.keys(object)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(object[key])}`)
+    .join(",")}}`;
+}
+
+export const SUCCESSION_CERT_TYPE = "DISTOP_SUCCESSION_CERT";
+
+/**
+ * Un eslabón de la cadena: "yo, la instancia A en la época N, autorizo a la
+ * instancia B con ESTA clave a continuar la línea en la época N+1".
+ *
+ * La clave privada de A nunca viaja. Esto es lo único que hace que B pueda
+ * demostrar a quien tenía fijada a A que no es un impostor.
+ */
+export interface SuccessionCertPayload {
+  t: typeof SUCCESSION_CERT_TYPE;
+  version: 1;
+  lineage_id: Snowflake;
+  from_instance_id: Snowflake;
+  from_epoch: number;
+  from_fingerprint: string;
+  to_instance_id: Snowflake;
+  to_epoch: number;
+  to_fingerprint: string;
+  to_public_key: JsonWebKeyLike;
+  /** Direcciones desde las que se acepta al sucesor. Vacío = ninguna todavía. */
+  allowed_origins: string[];
+  issued_at: number;
+  not_before: number;
+  expires_at: number;
+  handover_id: Snowflake;
+}
+
+/** JWK sin depender de los tipos de Node: el cliente también lo usa. */
+export type JsonWebKeyLike = Record<string, unknown>;
+
+export interface SuccessionCert {
+  payload: SuccessionCertPayload;
+  signature: string;
+  signer_public_key: JsonWebKeyLike;
+  signer_fingerprint: string;
+}
+
+/** Dónde está fijada una identidad ahora mismo, para el cliente. */
+export interface InstanceIdentityRef {
+  instance_id: Snowflake;
+  lineage_id: Snowflake;
+  epoch: number;
+  fingerprint: string;
+}
+
+/**
+ * Tope de eslabones. Una comunidad que cambia de manos catorce veces existe;
+ * una cadena de mil es alguien intentando que gastes CPU verificándola.
+ */
+export const SUCCESSION_CHAIN_MAX = 16;
+
+/**
+ * Las reglas de un eslabón, sin tocar criptografía.
+ *
+ * Aparte de la firma a propósito: verificar la firma solo dice "esto lo escribió
+ * quien dice"; estas reglas dicen "y además tiene sentido". Un certificado
+ * perfectamente firmado que salta de la época 3 a la 7, o que cambia de linaje,
+ * o que ya caducó, es un certificado válido y una mentira.
+ *
+ * Devuelve `null` si el paso es bueno, o el motivo del rechazo.
+ */
+export function checkSuccessionStep(
+  from: InstanceIdentityRef,
+  payload: SuccessionCertPayload,
+  now: number,
+): string | null {
+  if (payload?.t !== SUCCESSION_CERT_TYPE || payload.version !== 1) return "NOT_A_CERT";
+  if (payload.lineage_id !== from.lineage_id) return "LINEAGE_MISMATCH";
+  if (payload.from_instance_id !== from.instance_id) return "FROM_INSTANCE_MISMATCH";
+  if (payload.from_epoch !== from.epoch) return "FROM_EPOCH_MISMATCH";
+  if (payload.from_fingerprint !== from.fingerprint) return "FROM_KEY_MISMATCH";
+  /* Exactamente uno. Saltar épocas dejaría un hueco en el que nadie sabe qué
+     pasó, y repetir una permitiría dos sucesores para el mismo número: un fork
+     firmado con nuestra propia clave. */
+  if (payload.to_epoch !== from.epoch + 1) return "EPOCH_NOT_NEXT";
+  if (payload.to_instance_id === from.instance_id) return "SAME_INSTANCE";
+  if (payload.to_fingerprint === from.fingerprint) return "SAME_KEY";
+  if (!payload.to_instance_id || !payload.to_fingerprint) return "INCOMPLETE";
+  if (!Number.isSafeInteger(payload.not_before) || !Number.isSafeInteger(payload.expires_at)) return "BAD_WINDOW";
+  if (now < payload.not_before) return "NOT_YET_VALID";
+  if (now >= payload.expires_at) return "EXPIRED";
+  if (!Array.isArray(payload.allowed_origins) || payload.allowed_origins.length > 4) return "BAD_ORIGINS";
+  return null;
+}
+
 /* ─────────────────────────── Estado de instancia (§26) ─────────────────────────── */
 
 export const INSTANCE_STATES = [

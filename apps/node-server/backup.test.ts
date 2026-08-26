@@ -493,10 +493,10 @@ test("B arranca de verdad sobre lo restaurado y se presenta como la misma instan
      quedado a medias, es aquí donde se vería. */
   const guion = `
     const { db, closeDatabase } = await import('./db.ts');
-    const { INSTANCE_FINGERPRINT, LINEAGE_ID } = await import('./identity.ts');
+    const { instanceFingerprint, LINEAGE_ID } = await import('./identity.ts');
     const fila = db.prepare("SELECT value FROM meta WHERE key='instance_id'").get();
     const mensajes = db.prepare('SELECT COUNT(*) AS n FROM messages').get();
-    console.log(JSON.stringify({ instance_id: fila.value, lineage: LINEAGE_ID, huella: INSTANCE_FINGERPRINT, mensajes: mensajes.n }));
+    console.log(JSON.stringify({ instance_id: fila.value, lineage: LINEAGE_ID, huella: instanceFingerprint(), mensajes: mensajes.n }));
     closeDatabase();
   `;
   const { AUTH_SECRET: _sinSecreto, INSTANCE_NAME: _sinNombre, ...entorno } = process.env;

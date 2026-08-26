@@ -93,3 +93,53 @@ test("limpiar datos vacía el historial pero no toca la comunidad, y solo puede 
     "sus miembros tienen derecho a saber quién vació el historial",
   );
 });
+
+test("salir e irse borrando lo escrito son dos acciones distintas", async () => {
+  const dueña = await call("POST", "/api/v1/auth/register", {
+    body: { username: "duena-plaza", password: "contrasena-larga-para-salidas" },
+  });
+  assert.equal(dueña.status, 200);
+  const tokenDueña = dueña.json.access_token as string;
+  const comunidad = await call("POST", "/api/v1/communities", { token: tokenDueña, body: { name: "La Plaza" } });
+  const boot = await call("GET", `/api/v1/communities/${comunidad.json.id}/bootstrap`, { token: tokenDueña });
+  const canal = (boot.json.channels as Array<{ id: string; kind: string }>).find((c) => c.kind === "text")!;
+  const invitacion = await call("POST", `/api/v1/communities/${comunidad.json.id}/invites`, {
+    token: tokenDueña,
+    body: {},
+  });
+
+  const entra = async (nombre: string): Promise<string> => {
+    const visita = await call("POST", "/api/v1/auth/guest", { body: { display_name: nombre } });
+    const t = visita.json.access_token as string;
+    await call("POST", `/api/v1/invites/${invitacion.json.code}/join`, { token: t });
+    await call("POST", `/api/v1/channels/${canal.id}/messages`, { token: t, body: { content: `hola de ${nombre}` } });
+    return t;
+  };
+
+  // Quien se va sin más: deja de ser miembro, y lo que escribió se queda.
+  const tokenAna = await entra("Ana");
+  const salida = await call("POST", `/api/v1/communities/${comunidad.json.id}/leave`, { token: tokenAna });
+  assert.equal(salida.status, 200);
+  assert.equal(salida.json.messages_deleted, 0, "irse no borra nada, y no se finge lo contrario");
+
+  // Quien se va llevándose lo suyo: se borra lo suyo, y solo lo suyo.
+  const tokenBea = await entra("Bea");
+  const conBorrado = await call("POST", `/api/v1/communities/${comunidad.json.id}/leave`, {
+    token: tokenBea,
+    body: { purge_messages: true },
+  });
+  assert.equal(conBorrado.status, 200);
+  assert.equal(conBorrado.json.messages_deleted, 1);
+
+  const quedan = await call("GET", `/api/v1/channels/${canal.id}/messages?limit=50`, { token: tokenDueña });
+  const textos = (quedan.json as Array<{ content: string }>).map((m) => m.content);
+  assert.ok(textos.includes("hola de Ana"), "lo de quien solo se fue sigue ahí");
+  assert.ok(!textos.includes("hola de Bea"), "lo de quien pidió borrarlo, no");
+
+  // Y queda escrito, porque afecta al historial que leen los demás.
+  const log = await call("GET", `/api/v1/communities/${comunidad.json.id}/audit`, { token: tokenDueña });
+  assert.ok(
+    (log.json as Array<{ action: string }>).some((e) => e.action === "MEMBER_PURGED_OWN_MESSAGES"),
+    "una conversación que encoge tiene una explicación",
+  );
+});

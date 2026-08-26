@@ -12,7 +12,7 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 |---|---|---|---|
 | 0 | Cierre de C0/A1 | Base resistente y observable | ✅ cerrada |
 | 1 | C1 — copia cifrada y restauración | Recuperación ante pérdida | ✅ cerrada |
-| 2 | C2 — relevo planificado | Cambio de anfitrión sin copiar la clave | ⬜ |
+| 2 | C2 — relevo planificado | Cambio de anfitrión sin copiar la clave | ✅ cerrada |
 | 3 | C3 — alternativas firmadas y migración | Recuperación de dirección | ⬜ |
 | 4 | A1 final — avisos conscientes de sucesión | "Se trasladó" con respaldo criptográfico | ⬜ |
 | 5 | A2 — Web Push opcional | Aviso con la aplicación cerrada | ⬜ |
@@ -65,56 +65,36 @@ WebSocket falso no produce notificación · integración del vigilante probada.
 
 ---
 
-## Fase C2 — relevo planificado ⬜
+## Fase C2 — relevo planificado ✅
 
-### 2.1 Modelo de identidad
-- [ ] `instance_id` cambia, `lineage_id` permanece, `epoch` sube exactamente 1
-- [ ] El sucesor genera clave privada nueva; la anterior **nunca** viaja
-- [ ] El predecesor firma la autorización para la clave del sucesor
+Documentado en [relevo.md](relevo.md).
 
-### 2.2 Certificado de sucesión
-- [ ] Payload `DISTOP_SUCCESSION_CERT` canónico con `lineage_id`, `from_*`, `to_*`,
-      `allowed_origins`, `issued_at`, `not_before`, `expires_at`, `handover_id`
-- [ ] Firma con la clave del predecesor sobre el JSON canónico
-- [ ] El sucesor sirve su prueba normal + el certificado + la cadena anterior
+- [x] `instance_id` cambia, `lineage_id` permanece, `epoch` sube exactamente 1
+- [x] El sucesor genera clave propia; la del predecesor **nunca** viaja
+- [x] Certificado `DISTOP_SUCCESSION_CERT` firmado sobre JSON canónico
+- [x] Cadena verificable desde la identidad fijada, con tope de eslabones
+- [x] Estados `PREPARING · STANDBY_SYNC · READY_TO_ACTIVATE · ACTIVATING · COMPLETED · ABORTED · FAILED`
+- [x] Roles `PRIMARY → SUPERSEDED` y `STANDBY → PRIMARY`; nunca dos PRIMARY mutando
+- [x] Autorización a nivel de instancia, no de comunidad, y no como bit de permiso
+- [x] Un solo mandato vivo por época de destino (índice único parcial)
+- [x] Código de emparejamiento de un solo uso, TTL, guardado como hash
+- [x] Transferencia **pull**, por rangos HTTP, reanudable
+- [x] Certificado prefirmado al enrolar, no al final
+- [x] Copia final con las escrituras congeladas: no se pierde lo escrito durante la espera
+- [x] Recibo firmado por la clave del sucesor antes de que el predecesor se retire
+- [x] `410 INSTANCE_SUPERSEDED` con origen y cadena; salud, info, cadena, login y export siguen abiertos
+- [x] Cancelable antes y durante el corte, sin tocar la época
+- [x] Una instancia retirada no vuelve a PRIMARY por su cuenta
+- [x] Aviso de 24 h por defecto; emergencia con confirmación reforzada y auditada
+- [x] Tres acciones de salida diferenciadas
+- [x] Rotación del secreto de sesiones con ventana doble y reanclaje en el primer uso
+- [x] Pruebas: firma manipulada · firmante que no es el predecesor · huella declarada ·
+      época saltada/repetida/atrás · linaje distinto · caducado · auto-autorización ·
+      lista de orígenes sin fondo · cadena demasiado larga · eslabón que no encaja ·
+      relevo completo A→B con arranque real de B · sesión que sobrevive · dos relevos a la vez
 
-### 2.3 Estados de handover
-- [ ] `NONE · PREPARING · STANDBY_SYNC · READY_TO_ACTIVATE · ACTIVATING · COMPLETED · ABORTED · FAILED`
-- [ ] Roles: A `PRIMARY → SUPERSEDED`, B `STANDBY → PRIMARY`
-- [ ] Nunca un intervalo normal con dos `PRIMARY` aceptando mutaciones
-
-### 2.4 Preparación
-- [ ] Tabla de sucesores autorizados a nivel de **instancia**, no de comunidad
-- [ ] Un solo mandato activo para la época siguiente
-- [ ] Código de emparejamiento: un solo uso, TTL corto, guardado como hash, atado al `handover_id`
-- [ ] Transferencia **pull** desde el sucesor, por archivos y bloques, reanudable
-- [ ] Verificación completa en destino y recibo firmado
-- [ ] Certificado prefirmado al enrolar, no al final
-
-### 2.5 Activación
-- [ ] A congela mutaciones → delta final → B importa → B confirma → A firma → B pasa a PRIMARY
-- [ ] A pasa a `SUPERSEDED` y devuelve `410 INSTANCE_SUPERSEDED` con `successor` y cadena
-- [ ] `/health`, `/api/v1/info` y la exportación siguen respondiendo en A
-- [ ] A no abre túnel nunca más
-
-### 2.6 Cancelación y rollback
-- [ ] Cancelable antes de la activación, sin cambiar la época
-- [ ] Después de activar no se vuelve atrás en silencio (sería rollback criptográfico)
-
-### 2.7 Ventana de aviso y salida
-- [ ] Relevo normal: 24 h por defecto, visible, con fecha, nuevo anfitrión y motivo
-- [ ] Relevo de emergencia: `unplanned=true`, confirmación reforzada, sin fingir aviso
-- [ ] Tres acciones diferenciadas: salir de la comunidad · borrar mis mensajes y salir · borrar mi cuenta
-- [ ] Rotación del secreto de sesiones con ventana doble limitada y reanclaje
-
-### 2.8 Pruebas C2
-- [ ] Clave del sucesor realmente distinta · certificado válido · firma manipulada
-- [ ] Época saltada · repetida · linaje distinto · certificado caducado · origen no autorizado
-- [ ] Activación concurrente · cancelación antes del corte
-- [ ] Caída de A antes del delta final · caída de B durante la importación
-- [ ] A intenta volver a `PRIMARY`
-- [ ] Cliente con clave A valida B por la cadena · cliente nuevo fija B directamente
-- [ ] Mutación contra A devuelve 410 · lectura informa sin exponer datos nuevos
+**Pendiente consciente:** `--promote --force` cubre la muerte del predecesor, pero
+no hay prueba automatizada de "A cae justo entre el recibo y la activación".
 
 ---
 

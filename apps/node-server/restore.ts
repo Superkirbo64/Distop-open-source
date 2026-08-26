@@ -211,6 +211,17 @@ export async function restoreBackup(opts: {
   targetDir: string;
   /** Reemplazar un directorio con datos. Sin esto, se exige que esté vacío. */
   replace?: boolean;
+  /**
+   * Si el bundle debe traer la clave privada de la instancia.
+   *
+   * Una copia de recuperación sí: reconstruye la MISMA instancia. Un relevo no,
+   * y no por descuido — el sucesor genera su clave y el predecesor la autoriza
+   * firmando un certificado, precisamente para que no queden dos máquinas
+   * capaces de firmar como la misma (§5.6). Exigirla aquí haría imposible el
+   * relevo; darla por opcional siempre haría que una copia mutilada pasara por
+   * buena. Por eso lo decide quien llama, y por defecto se exige.
+   */
+  expectIdentityKey?: boolean;
 }): Promise<RestoreReport> {
   if (opts.file.endsWith(PARTIAL_EXTENSION)) {
     throw new BackupError("PARTIAL_BACKUP", "Esa copia se quedó a medias al escribirse; no sirve para restaurar.");
@@ -280,7 +291,15 @@ export async function restoreBackup(opts: {
     });
 
     const missing = manifest.files.map((f) => f.path).filter((path) => !vistos.has(path));
-    const report = verificar({ manifest, staging, missing, corrupt, extra, rejected });
+    const report = verificar({
+      manifest,
+      staging,
+      missing,
+      corrupt,
+      extra,
+      rejected,
+      expectIdentityKey: opts.expectIdentityKey !== false,
+    });
     if (!report.ok) {
       rmSync(staging, { recursive: true, force: true });
       return report;
@@ -303,6 +322,7 @@ function verificar(input: {
   corrupt: string[];
   extra: string[];
   rejected: string[];
+  expectIdentityKey: boolean;
 }): RestoreReport {
   const { manifest, staging } = input;
 
@@ -342,7 +362,9 @@ function verificar(input: {
         identity.instance_id === manifest.instance_id &&
         identity.lineage_id === manifest.lineage_id &&
         identity.epoch === manifest.epoch &&
-        clavePrivadaValida(join(staging, ...RUTA_IDENTIDAD.split("/")));
+        (input.expectIdentityKey
+          ? clavePrivadaValida(join(staging, ...RUTA_IDENTIDAD.split("/")))
+          : !existsSync(join(staging, ...RUTA_IDENTIDAD.split("/"))));
       const declared = new Map(manifest.files.map((file) => [file.path, file]));
       const columns = copia.prepare("PRAGMA table_info(attachments)").all() as Array<{ name: string }>;
       const hasContentHash = columns.some((column) => column.name === "content_hash");

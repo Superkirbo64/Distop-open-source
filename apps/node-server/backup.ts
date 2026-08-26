@@ -19,9 +19,9 @@ import { dirname, join, relative, resolve, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { config } from "./config.ts";
 import { db, INSTANCE_ID } from "./db.ts";
-import { INSTANCE_EPOCH, INSTANCE_ROLE, LINEAGE_ID } from "./identity.ts";
+import { instanceEpoch, instanceRole, LINEAGE_ID } from "./identity.ts";
 import { VERSION } from "./instance.ts";
-import { freezeReason, pauseWrites, waitForWrites } from "./lifecycle.ts";
+import { freezeReason, pauseWrites, waitForWrites, type WriteFreeze } from "./lifecycle.ts";
 import { SCHEMA_VERSION } from "./migrations.ts";
 import { ROOT as STORAGE_ROOT } from "./storage.ts";
 import {
@@ -148,13 +148,17 @@ async function fotografiarBase(destino: string): Promise<SnapshotMeta> {
   return { generation, counts };
 }
 
-function nuevoTrabajo(passphrase: string): { job: BackupJob; filename: string } {
+function nuevoTrabajo(passphrase: string, congelacionPropia: WriteFreeze | null = null): { job: BackupJob; filename: string } {
   if (passphrase.length < 12) {
     throw new BackupError("WEAK_PASSPHRASE", "La frase de la copia necesita al menos 12 caracteres.");
   }
   /* Dos copias a la vez del mismo directorio no son dos copias: son una foto de
-     la base tomada mientras la otra congelaba y descongelaba las escrituras. */
-  if (freezeReason() !== null) {
+     la base tomada mientras la otra congelaba y descongelaba las escrituras.
+     `congelacionPropia` es la excepción justa: la copia final de un relevo se
+     hace CON las escrituras ya congeladas por ese mismo relevo, y sin esta
+     salvedad el guardia se bloqueaba a sí mismo. */
+  const motivo = freezeReason();
+  if (motivo !== null && motivo !== congelacionPropia) {
     throw new BackupError("INSTANCE_BUSY", "La instancia ya está ocupada con otra operación de mantenimiento.");
   }
 
@@ -183,11 +187,31 @@ function nuevoTrabajo(passphrase: string): { job: BackupJob; filename: string } 
  * la lista de ficheros; el cifrado, que es lo lento, corre con la instancia ya
  * funcionando otra vez.
  */
-async function ejecutar(job: BackupJob, filename: string, passphrase: string): Promise<BackupJob> {
+/**
+ * Para qué se arma el bundle. La diferencia no es cosmética.
+ *
+ * Una copia de recuperación reconstruye ESTA instancia, así que lleva su clave
+ * privada. Un relevo entrega la línea a OTRA máquina, que genera la suya: la
+ * clave privada del anfitrión anterior nunca viaja, porque dos máquinas capaces
+ * de firmar como la misma instancia no se pueden separar después (§5.6).
+ */
+export type BundlePurpose = "backup" | "handover";
+
+async function ejecutar(
+  job: BackupJob,
+  filename: string,
+  passphrase: string,
+  purpose: BundlePurpose = "backup",
+  directorio: string = BACKUP_DIR,
+): Promise<BackupJob> {
   const temporal = join(BACKUP_DIR, `snapshot-${job.id}.db`);
 
   try {
-    const soltar = pauseWrites("backup");
+    /* Si ya estamos congelados por el relevo que pidió esta copia, no se vuelve
+       a congelar —ni se descongela al salir, que sería peor: dejaría entrar
+       escrituras justo entre la foto de la base y la copia de los ficheros. */
+    const yaCongelado = freezeReason() !== null;
+    const soltar = yaCongelado ? () => {} : pauseWrites("backup");
     let adjuntos: ReturnType<typeof ficherosDeAdjuntos>;
     let snapshot: SnapshotMeta;
     try {
@@ -200,7 +224,9 @@ async function ejecutar(job: BackupJob, filename: string, passphrase: string): P
 
     const piezas: Array<{ path: string; file: string }> = [{ path: RUTA_DB, file: temporal }];
     const identidad = join(DATA_DIR, "instance.key");
-    if (existsSync(identidad)) piezas.push({ path: RUTA_IDENTIDAD, file: identidad });
+    /* En un relevo, esta línea es la que no se ejecuta. Es todo el diseño de
+       C2 en una condición: el sucesor genera su clave y nosotros la firmamos. */
+    if (purpose === "backup" && existsSync(identidad)) piezas.push({ path: RUTA_IDENTIDAD, file: identidad });
     const secreto = join(DATA_DIR, "secret.key");
     if (existsSync(secreto)) piezas.push({ path: RUTA_SECRETO, file: secreto });
     for (const adjunto of adjuntos) {
@@ -226,8 +252,8 @@ async function ejecutar(job: BackupJob, filename: string, passphrase: string): P
       instance_id: INSTANCE_ID,
       generation: snapshot.generation,
       lineage_id: LINEAGE_ID,
-      epoch: INSTANCE_EPOCH,
-      role: INSTANCE_ROLE,
+      epoch: instanceEpoch(),
+      role: instanceRole(),
       instance_name: config.instanceName,
       server_version: VERSION,
       database_schema: SCHEMA_VERSION,
@@ -237,7 +263,7 @@ async function ejecutar(job: BackupJob, filename: string, passphrase: string): P
     };
 
     const escrito = await writeBackup({
-      destination: join(BACKUP_DIR, filename),
+      destination: join(directorio, filename),
       passphrase,
       manifest,
       entries: entradas,
@@ -285,6 +311,21 @@ export function startBackup(passphrase: string): BackupJob {
 export async function createBackup(opts: { passphrase: string }): Promise<BackupJob> {
   const { job, filename } = nuevoTrabajo(opts.passphrase);
   return ejecutar(job, filename, opts.passphrase);
+}
+
+/**
+ * El bundle que se lleva el sucesor: lo mismo que una copia, menos la clave
+ * privada. Va a un nombre fijo dentro del directorio del relevo para que la
+ * descarga se pueda reanudar por rangos sin llevar la cuenta de nada más.
+ */
+export async function createHandoverBundle(opts: {
+  passphrase: string;
+  directory: string;
+  filename: string;
+}): Promise<BackupJob> {
+  const { job } = nuevoTrabajo(opts.passphrase, "handover");
+  mkdirSync(opts.directory, { recursive: true });
+  return ejecutar(job, opts.filename, opts.passphrase, "handover", opts.directory);
 }
 
 /** Copias que hay ahora mismo en el disco del anfitrión, sin abrirlas. */

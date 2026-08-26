@@ -69,6 +69,28 @@ function loadSecret(databasePath: string): string {
   return generated;
 }
 
+/**
+ * El secreto de sesiones ANTERIOR, mientras dure su ventana.
+ *
+ * Existe por el relevo: el sucesor hereda el secreto del anfitrión anterior
+ * —si no, todo el mundo aparecería desconectado de golpe y quien no tenga
+ * contraseña quedaría fuera— pero no puede quedárselo para siempre, porque el
+ * anfitrión anterior también lo conoce. Genera el suyo y acepta el viejo un
+ * tiempo, reanclando cada sesión la primera vez que la ve (§5.5).
+ */
+function loadPreviousSecret(databasePath: string): { secret: string; expiresAt: number } | null {
+  const file = join(dirname(resolve(databasePath)), "secret.previous.json");
+  if (!existsSync(file)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as { secret?: unknown; expires_at?: unknown };
+    if (typeof parsed.secret !== "string" || parsed.secret.length < 32) return null;
+    if (typeof parsed.expires_at !== "number" || parsed.expires_at < Date.now()) return null;
+    return { secret: parsed.secret, expiresAt: parsed.expires_at };
+  } catch {
+    return null;
+  }
+}
+
 const databasePath = str("DATABASE_PATH", "./data/app.db");
 
 export const config = {
@@ -82,6 +104,7 @@ export const config = {
 
   /** De la variable de entorno, o del fichero que la instancia se crea sola. */
   authSecret: loadSecret(databasePath),
+  authSecretPrevious: loadPreviousSecret(databasePath),
 
   /**
    * Código de un solo uso para reclamar una instancia recién instalada.

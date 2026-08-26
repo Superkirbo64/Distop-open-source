@@ -207,6 +207,12 @@ La frase no se guarda en ningún sitio: si la pierdes, la copia es ruido. Restau
 produce **la misma** instancia, no una sucesora — si la original sigue encendida,
 tendrás dos.
 
+## Cambiar de anfitrión
+
+Otra máquina continúa la comunidad sin heredar la clave privada de la primera:
+**[docs/relevo.md](docs/relevo.md)**. Los miembros no crean nada nuevo ni
+vuelven a entrar; el equipo viejo queda retirado y dice a dónde ir.
+
 ## Lo que esta arquitectura no puede hacer en capas gratuitas
 
 Conviene decirlo antes de que alguien lo descubra desplegando:

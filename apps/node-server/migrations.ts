@@ -305,6 +305,58 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX idx_attachments_missing_hash ON attachments(id)
     WHERE path <> '' AND content_hash IS NULL;
   `,
+
+  /* Relevo planificado (C2).
+
+     La autorizacion es de INSTANCIA, no de comunidad: una instancia aloja
+     varias comunidades, y un sucesor elegido por la comunidad A heredaria
+     tambien los datos de la B. Por la misma razon no es un bit de permiso. */
+  `
+  CREATE TABLE successors (
+    id           TEXT PRIMARY KEY,
+    label        TEXT NOT NULL,
+    created_by   TEXT REFERENCES users(id) ON DELETE SET NULL,
+    enrol_hash   TEXT NOT NULL,
+    transfer_hash TEXT,
+    instance_id  TEXT,
+    fingerprint  TEXT,
+    public_key   TEXT,
+    origin       TEXT,
+    max_epoch    INTEGER NOT NULL,
+    created_at   INTEGER NOT NULL,
+    expires_at   INTEGER NOT NULL,
+    enrolled_at  INTEGER,
+    last_seen    INTEGER,
+    revoked_at   INTEGER
+  );
+  CREATE INDEX idx_successors_vivos ON successors(revoked_at, expires_at);
+
+  CREATE TABLE handovers (
+    id           TEXT PRIMARY KEY,
+    successor_id TEXT NOT NULL REFERENCES successors(id) ON DELETE CASCADE,
+    state        TEXT NOT NULL CHECK (state IN
+                   ('PREPARING','STANDBY_SYNC','READY_TO_ACTIVATE','ACTIVATING','COMPLETED','ABORTED','FAILED')),
+    unplanned    INTEGER NOT NULL DEFAULT 0 CHECK (unplanned IN (0,1)),
+    reason       TEXT,
+    to_epoch     INTEGER NOT NULL,
+    certificate  TEXT,
+    receipt      TEXT,
+    bundle_hash  TEXT,
+    bundle_key   TEXT,
+    announced_at INTEGER,
+    activates_at INTEGER NOT NULL,
+    started_at   INTEGER NOT NULL,
+    finished_at  INTEGER,
+    error_code   TEXT
+  );
+  CREATE INDEX idx_handovers_estado ON handovers(state, started_at DESC);
+
+  /* Un solo mandato vivo por epoca de destino. Firmar dos sucesores para N+1
+     seria fabricar un fork con nuestra propia clave, y ningun cliente podria
+     decidir cual de los dos es el bueno. */
+  CREATE UNIQUE INDEX idx_handover_epoca_viva ON handovers(to_epoch)
+    WHERE state IN ('PREPARING','STANDBY_SYNC','READY_TO_ACTIVATE','ACTIVATING');
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

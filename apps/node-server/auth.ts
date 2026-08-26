@@ -41,8 +41,38 @@ export function verifyPassword(password: string, stored: string): boolean {
 
 /* ── tokens ────────────────────────────────────────────────────────── */
 
+function fingerprintCon(secret: string, token: string): string {
+  return createHmac("sha256", secret).update(token).digest("hex");
+}
+
 function fingerprint(token: string): string {
-  return createHmac("sha256", config.authSecret).update(token).digest("hex");
+  return fingerprintCon(config.authSecret, token);
+}
+
+/**
+ * La huella del token con el secreto ANTERIOR, si su ventana sigue abierta.
+ *
+ * Solo la usa el sucesor de un relevo, y solo hasta que caduque. Devuelve
+ * `null` el resto del tiempo, que es siempre en una instancia normal.
+ */
+function huellaAnterior(token: string): string | null {
+  const previo = config.authSecretPrevious;
+  if (!previo || previo.expiresAt < Date.now()) return null;
+  return fingerprintCon(previo.secret, token);
+}
+
+/**
+ * Busca una sesión y, si aparece con el secreto viejo, la reancla al nuevo.
+ *
+ * Reanclar en el primer uso —y no en bloque al arrancar— tiene una razón: el
+ * almacén nunca se queda indefinidamente en modo doble. Cada sesión que
+ * aparece se pasa al secreto nuevo y ya no vuelve a depender del viejo, así que
+ * al cerrarse la ventana solo caen las que nadie usó.
+ */
+function reanclar(columna: "token_hash" | "refresh_hash", token: string): void {
+  const vieja = huellaAnterior(token);
+  if (!vieja || !writesAccepted()) return;
+  db.prepare(`UPDATE sessions SET ${columna} = ? WHERE ${columna} = ?`).run(fingerprint(token), vieja);
 }
 
 function newToken(): string {
@@ -81,6 +111,7 @@ export function createSession(userId: string): IssuedSession {
 
 /** Rotación estricta: el refresh usado se destruye aunque el cliente no lo confirme. */
 export function rotateSession(refreshToken: string): IssuedSession | null {
+  reanclar("refresh_hash", refreshToken);
   const row = db
     .prepare("SELECT id, user_id, refresh_expires_at FROM sessions WHERE refresh_hash = ?")
     .get(fingerprint(refreshToken)) as { id: string; user_id: string; refresh_expires_at: number } | undefined;
@@ -107,6 +138,10 @@ export interface AuthContext {
 
 export function authenticate(token: string | null): AuthContext | null {
   if (!token) return null;
+
+  /* Barato en una instancia normal: `huellaAnterior` devuelve null y esto no
+     toca la base. Solo cuesta durante la ventana de un relevo. */
+  reanclar("token_hash", token);
 
   const row = db
     .prepare(
