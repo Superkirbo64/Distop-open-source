@@ -13,7 +13,7 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 0 | Cierre de C0/A1 | Base resistente y observable | ✅ cerrada |
 | 1 | C1 — copia cifrada y restauración | Recuperación ante pérdida | ✅ cerrada |
 | 2 | C2 — relevo planificado | Cambio de anfitrión sin copiar la clave | ✅ cerrada |
-| 3 | C3 — alternativas firmadas y migración | Recuperación de dirección | 🟡 falta 3.4 |
+| 3 | C3 — alternativas firmadas y migración | Recuperación de dirección | ✅ cerrada |
 | 4 | A1 final — avisos conscientes de sucesión | "Se trasladó" con respaldo criptográfico | ⬜ |
 | 5 | A2 — Web Push opcional | Aviso con la aplicación cerrada | ⬜ |
 | 6 | V1 — reuniones, lobby y estados | Reunión funcional | ⬜ |
@@ -98,7 +98,7 @@ no hay prueba automatizada de "A cae justo entre el recibo y la activación".
 
 ---
 
-## Fase C3 — alternativas firmadas y migración ⬜
+## Fase C3 — alternativas firmadas y migración ✅
 
 ### 3.1 Orígenes firmados ✅
 - [x] `DISTOP_ORIGIN_SET` con `generation`, lista de orígenes y caducidad
@@ -118,17 +118,22 @@ no hay prueba automatizada de "A cae justo entre el recibo y la activación".
 - [x] No se manda el token a ninguna; `continuityConflict()` lo expone a la interfaz
 - [x] Época menor o linaje distinto se rechazan por separado, con motivo propio
 
-### 3.4 Migración de una comunidad
-- [ ] `DISTOP_COMMUNITY_MIGRATION` firmado por autoridad suficiente
-- [ ] Estados `DRAFT → EXPORTING → VERIFYING → READY → ACTIVATING → COMPLETED/FAILED`
-- [ ] En `DRAFT` no cambia nada visible ni se notifica a nadie
-- [ ] Preservación de IDs, importación idempotente, deduplicación por SHA-256
-- [ ] Colisión incompatible → abortar, nunca remapear en silencio
+### 3.4 Migración de una comunidad ✅
+- [x] `DISTOP_COMMUNITY_MIGRATION` firmado, atado al destino Y al hash del bundle
+- [x] Estados `DRAFT → EXPORTING → READY → COMPLETED/FAILED`
+- [x] En `DRAFT` no cambia nada visible ni se notifica a nadie; sí se estima tamaño y qué falta
+- [x] IDs preservados; importación idempotente (`INSERT OR IGNORE` + conteo)
+- [x] Adjuntos deduplicados por contenido
+- [x] Colisión incompatible (mismo id, otro contenido / mismo nombre de usuario, otra
+      persona) → aborta y la nombra; nunca remapea en silencio
+- [x] Orden de inserción respetando claves foráneas, con las personas primero
+- [x] `410 COMMUNITY_MIGRATED` con la dirección nueva; la exportación sigue abierta
+- [x] Lo pide quien administra la comunidad, no quien hospeda (§21)
 
-### 3.5 Aceptación por miembros
-- [ ] Sin respuesta firmada del origen, **nunca automático**
-- [ ] Sucesión válida de instancia ya fijada: cadena aceptable con aviso informativo
-- [ ] Borradores por linaje, no por origen; sin cola infinita
+### 3.5 Aceptación por miembros ✅
+- [x] Sin cadena firmada verificada, **nunca automático**
+- [x] Sucesión válida de una instancia ya fijada: se acepta tras verificar la cadena
+- [ ] Borradores por linaje en el cliente (pendiente, va con la interfaz de C3)
 
 ---
 

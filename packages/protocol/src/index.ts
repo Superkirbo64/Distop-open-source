@@ -719,6 +719,72 @@ export function compareIdentities(
   return vista.epoch > conocida.epoch ? "successor" : "stale";
 }
 
+export const COMMUNITY_MIGRATION_TYPE = "DISTOP_COMMUNITY_MIGRATION";
+
+/**
+ * Mover UNA comunidad a otra instancia, no la instancia entera.
+ *
+ * Es distinto de un relevo y por eso tiene su propio certificado. Un relevo
+ * entrega la máquina con todo lo que aloja; esto saca una comunidad de una
+ * máquina que sigue funcionando y alojando otras. La firma la pone la instancia
+ * de origen, porque es quien tiene los datos y quien deja de servirlos.
+ */
+export interface CommunityMigrationPayload {
+  t: typeof COMMUNITY_MIGRATION_TYPE;
+  version: 1;
+  community_id: Snowflake;
+  source_instance: Snowflake;
+  source_lineage: Snowflake;
+  destination_instance: Snowflake;
+  destination_origin: string;
+  /** Hash del bundle exportado: el destino comprueba que importa justo eso. */
+  snapshot_hash: string;
+  /** Versión de protocolo del origen, para no importar lo que no se entiende. */
+  protocol: string;
+  issued_at: number;
+  expires_at: number;
+}
+
+export interface CommunityMigrationCert {
+  payload: CommunityMigrationPayload;
+  signature: string;
+  signer_public_key: JsonWebKeyLike;
+  signer_fingerprint: string;
+}
+
+export const MIGRATION_STATES = [
+  "DRAFT",
+  "EXPORTING",
+  "VERIFYING",
+  "READY",
+  "ACTIVATING",
+  "COMPLETED",
+  "FAILED",
+] as const;
+export type MigrationState = (typeof MIGRATION_STATES)[number];
+
+/**
+ * Reglas de un certificado de migración, sin criptografía.
+ *
+ * `destino` es la instancia que va a importar: comprobar que el certificado la
+ * nombra a ELLA evita que un bundle destinado a un sitio se importe en otro,
+ * que es como una comunidad acabaría existiendo dos veces.
+ */
+export function checkMigrationCert(
+  destino: { instance_id: Snowflake; protocol: string },
+  payload: CommunityMigrationPayload,
+  now: number,
+): string | null {
+  if (payload?.t !== COMMUNITY_MIGRATION_TYPE || payload.version !== 1) return "NOT_A_MIGRATION";
+  if (!payload.community_id || !payload.source_instance) return "INCOMPLETE";
+  if (payload.destination_instance !== destino.instance_id) return "WRONG_DESTINATION";
+  if (payload.source_instance === payload.destination_instance) return "SAME_INSTANCE";
+  if (payload.protocol !== destino.protocol) return "PROTOCOL_MISMATCH";
+  if (!/^[0-9a-f]{64}$/.test(payload.snapshot_hash)) return "BAD_SNAPSHOT_HASH";
+  if (!Number.isSafeInteger(payload.expires_at) || now >= payload.expires_at) return "EXPIRED";
+  return null;
+}
+
 /* ─────────────────────────── Estado de instancia (§26) ─────────────────────────── */
 
 export const INSTANCE_STATES = [
@@ -791,6 +857,8 @@ export const CAPABILITIES = [
   "succession_v1",
   /** Direcciones alternativas firmadas, con generación. */
   "signed_origins_v1",
+  /** Migración de una sola comunidad entre instancias. */
+  "community_migration_v1",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];

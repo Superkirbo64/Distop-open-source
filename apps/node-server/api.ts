@@ -6,6 +6,7 @@
 import { randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { join } from "node:path";
+import { createReadStream, existsSync, statSync } from "node:fs";
 import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
@@ -83,6 +84,20 @@ import { BACKUP_DIR, backupJob, listBackupFiles, recentBackupJobs, startBackup }
 import { BackupError } from "./backup-format.ts";
 import { inspectBackup } from "./restore.ts";
 import { successionRecord } from "./succession.ts";
+import { normalizeProofOrigin } from "./identity.ts";
+import {
+  MIGRATION_DIR,
+  MigrationError,
+  activeMigration,
+  cancelMigration,
+  completeMigration,
+  draftMigration,
+  estimateMigration,
+  exportMigration,
+  migratedTo,
+  mintMigrationCert,
+  type MigrationRow,
+} from "./community-migration.ts";
 import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
 import { disconnectSession, disconnectUser, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.ts";
@@ -104,6 +119,18 @@ function requireChannelPerm(channelId: Snowflake, userId: Snowflake, perm: bigin
 function requireMembership(communityId: Snowflake, userId: Snowflake): void {
   const state = memberState(communityId, userId);
   if (!state.isMember || state.banned) throw notFound("Comunidad no encontrada.");
+
+  /* Una comunidad que ya se mudó no se sigue sirviendo aquí, igual que una
+     instancia retirada. Dejarla accesible partiría la comunidad en dos: la
+     mitad hablando en el sitio nuevo y la mitad en el viejo, sin verse. La
+     exportación queda fuera de esta puerta porque es un derecho (§21) y no
+     depende de quién la aloje. */
+  const destino = migratedTo(communityId);
+  if (destino !== null) {
+    throw new HttpError(410, "COMMUNITY_MIGRATED", "Esta comunidad se sirve ahora desde otra instancia.", {
+      destination_origin: destino,
+    });
+  }
 }
 
 const USERNAME = /^[a-z0-9._-]{3,32}$/;
@@ -784,6 +811,138 @@ route("GET", "/api/v1/discovery", (ctx) => {
     )
     .all() as unknown[];
   return rows;
+});
+
+/* ── migración de una comunidad (C3 §3.4) ──────────────────────────────
+ *
+ * Lo pide quien administra la comunidad, no quien hospeda: llevarse los datos
+ * propios es el derecho del §21, y la instancia solo pone la firma que permite
+ * al destino comprobar que el bundle es el que dice ser.
+ */
+
+function requireCommunityAdmin(ctx: Ctx, communityId: string) {
+  const auth = requireAuth(ctx);
+  requireMembership(communityId, auth.user.id);
+  requirePerm(communityId, auth.user.id, PERMISSIONS.ADMINISTRATOR, "mudar la comunidad");
+  return auth;
+}
+
+function migracionComoJson(fila: MigrationRow) {
+  return {
+    id: fila.id,
+    community_id: fila.community_id,
+    state: fila.state,
+    destination_origin: fila.destination_origin,
+    destination_instance: fila.destination_instance,
+    snapshot_hash: fila.snapshot_hash,
+    files: fila.files,
+    bytes: fila.bytes,
+    missing_files: fila.missing_files,
+    created_at: fila.created_at,
+    updated_at: fila.updated_at,
+    error_code: fila.error_code,
+  };
+}
+
+function migracionHttp(error: unknown): never {
+  if (error instanceof MigrationError) {
+    throw new HttpError(error.code === "MIGRATION_IN_PROGRESS" ? 409 : 400, error.code, error.message);
+  }
+  throw error;
+}
+
+route("GET", "/api/v1/communities/:id/migration", (ctx) => {
+  const communityId = ctx.params.id!;
+  requireCommunityAdmin(ctx, communityId);
+  const fila = activeMigration(communityId);
+  /* La estimación se da SIEMPRE, haya borrador o no: saber cuánto pesa y qué
+     falta es justo lo que hace falta para decidir si mudarse. */
+  return { migration: fila ? migracionComoJson(fila) : null, estimate: estimateMigration(communityId) };
+});
+
+route("POST", "/api/v1/communities/:id/migration", async (ctx) => {
+  const communityId = ctx.params.id!;
+  const auth = requireCommunityAdmin(ctx, communityId);
+  rateLimit(`migration:${auth.user.id}`, 10, 60_000);
+  const body = await readJson(ctx);
+
+  try {
+    const fila = draftMigration({
+      communityId,
+      destinationOrigin: normalizeProofOrigin(v.string(body, "destination_origin", { min: 4, max: 300 })),
+      destinationInstance: v.string(body, "destination_instance", { min: 8, max: 64 }),
+      actorId: auth.user.id,
+    });
+    /* Un borrador NO se anuncia. Mientras se pueda cancelar, avisar a los
+       miembros los mandaría a un sitio que quizá nunca llega a existir. */
+    return { migration: migracionComoJson(fila), estimate: estimateMigration(communityId) };
+  } catch (error) {
+    migracionHttp(error);
+  }
+});
+
+route("POST", "/api/v1/communities/:id/migration/export", async (ctx) => {
+  const communityId = ctx.params.id!;
+  const auth = requireCommunityAdmin(ctx, communityId);
+  rateLimit(`migration-export:${auth.user.id}`, 5, 60_000);
+  const fila = activeMigration(communityId);
+  if (!fila) throw notFound("No hay ninguna migración preparada para esta comunidad.");
+
+  const body = await readJson(ctx);
+  const passphrase = typeof body.passphrase === "string" ? body.passphrase : "";
+  if (passphrase.length < 12) throw badRequest("La frase del bundle necesita al menos 12 caracteres.");
+
+  try {
+    const exportada = await exportMigration(fila.id, passphrase);
+    const cert = mintMigrationCert(fila.id);
+    return { migration: migracionComoJson(exportada), certificate: cert };
+  } catch (error) {
+    migracionHttp(error);
+  }
+});
+
+route("GET", "/api/v1/communities/:id/migration/bundle", (ctx) => {
+  const communityId = ctx.params.id!;
+  requireCommunityAdmin(ctx, communityId);
+  const fila = activeMigration(communityId);
+  if (!fila || fila.state !== "READY") throw notFound("Esta comunidad no tiene bundle preparado.");
+  const fichero = join(MIGRATION_DIR, `${fila.id}.distop-backup`);
+  if (!existsSync(fichero)) throw notFound("El bundle ya no está en el disco.");
+
+  const total = statSync(fichero).size;
+  ctx.res.writeHead(200, {
+    "content-type": "application/octet-stream",
+    "content-length": String(total),
+    "cache-control": "no-store",
+  });
+  createReadStream(fichero).pipe(ctx.res);
+  return HANDLED;
+});
+
+route("POST", "/api/v1/communities/:id/migration/complete", (ctx) => {
+  const communityId = ctx.params.id!;
+  const auth = requireCommunityAdmin(ctx, communityId);
+  const fila = activeMigration(communityId);
+  if (!fila) throw notFound("No hay ninguna migración preparada para esta comunidad.");
+  try {
+    return migracionComoJson(completeMigration(fila.id, auth.user.id));
+  } catch (error) {
+    migracionHttp(error);
+  }
+});
+
+route("DELETE", "/api/v1/communities/:id/migration", (ctx) => {
+  const communityId = ctx.params.id!;
+  requireCommunityAdmin(ctx, communityId);
+  const fila = activeMigration(communityId);
+  if (!fila) throw notFound("No hay ninguna migración en marcha.");
+  try {
+    /* Cancelar un borrador no deja rastro en la comunidad porque nunca lo tuvo:
+       nadie llegó a enterarse de que se estaba pensando. */
+    return migracionComoJson(cancelMigration(fila.id));
+  } catch (error) {
+    migracionHttp(error);
+  }
 });
 
 /* ── categorías y canales (§9.2) ───────────────────────────────────── */

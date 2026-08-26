@@ -153,3 +153,62 @@ es real —dejan de servirse y dejan de estar en la base— y se dice tal cual.
 - **Nada impide físicamente que las dos máquinas se enciendan a la vez.** La
   época protege a quien ya vio la nueva, no al mundo. Dos escrituras divergentes
   no se fusionan, y este diseño se niega a fingir que sí.
+
+---
+
+# Mudar una sola comunidad
+
+Distinto de un relevo: aquí la máquina de origen sigue funcionando y alojando
+otras comunidades. Se mueve una, y su gente con ella.
+
+```bash
+# 1. Borrador: dice cuánto pesa y qué falta. No cambia nada ni avisa a nadie.
+POST /api/v1/communities/:id/migration
+     {"destination_origin":"https://otra-casa.example","destination_instance":"<id>"}
+
+# 2. Exportar: bundle cifrado + certificado atado a ESE destino y ESE bundle.
+POST /api/v1/communities/:id/migration/export   {"passphrase":"..."}
+GET  /api/v1/communities/:id/migration/bundle
+
+# 3. En el destino, importar (con su instancia parada).
+# 4. De vuelta en el origen, activar.
+POST /api/v1/communities/:id/migration/complete
+```
+
+Lo pide **quien administra la comunidad**, no quien hospeda: llevarse los datos
+propios es el derecho del §21. La instancia solo pone la firma que permite al
+destino comprobar que el bundle es el que dice ser.
+
+## Los ids se conservan, y no es un detalle
+
+Un mensaje que responde a otro guarda su id. Una mención guarda el id de quien
+menciona. Un overwrite guarda el id del rol. Remapear ids al importar rompería
+todo eso en silencio: el mensaje seguiría ahí, contestando a nada.
+
+Por eso, si en el destino ya existe algo con el mismo id **y contenido
+distinto**, la importación **aborta y lo nombra**. Lo mismo si dos personas
+distintas comparten nombre de usuario en las dos instancias: renombrar a una
+sería cambiarle el nombre a alguien sin decírselo.
+
+Coincidir consigo mismo, en cambio, es reintentar: importar dos veces el mismo
+bundle deja exactamente lo mismo que importarlo una. Una migración que se corta
+a mitad es normal, y reintentar tiene que ser seguro.
+
+## Quién viaja
+
+Todos los miembros **y todo el que escribió**, aunque ya no sea miembro: si no,
+su mensaje llegaría sin autor. Eso incluye **sus hashes de contraseña**, con la
+misma advertencia que en una copia o un relevo.
+
+No viajan: el estado de lectura —es de cada persona, y decidir por alguien qué
+ha leído en una instancia donde quizá ni tiene cuenta no le corresponde a
+nadie— ni las invitaciones, porque un enlace repartido apunta a la dirección
+vieja y revivirlo convertiría un enlace caducado en una puerta que alguien creía
+cerrada.
+
+## Después
+
+La comunidad **no se borra** del origen: se marca. Borrarla sería irreversible
+justo cuando alguien acaba de descubrir que el destino no funciona. Deja de
+servirse con `410 COMMUNITY_MIGRATED` y la dirección nueva, y su exportación
+sigue disponible.

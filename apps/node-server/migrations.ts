@@ -357,6 +357,34 @@ export const MIGRATIONS: string[] = [
   CREATE UNIQUE INDEX idx_handover_epoca_viva ON handovers(to_epoch)
     WHERE state IN ('PREPARING','STANDBY_SYNC','READY_TO_ACTIVATE','ACTIVATING');
   `,
+
+  /* Migracion de una sola comunidad entre instancias (C3).
+
+     `migrated_to` no borra la comunidad: la marca. Borrarla seria irreversible
+     justo cuando alguien acaba de descubrir que el destino no funciona, y la
+     exportacion del §21 tiene que seguir existiendo. */
+  `
+  ALTER TABLE communities ADD COLUMN migrated_to TEXT;
+
+  CREATE TABLE community_migrations (
+    id                   TEXT PRIMARY KEY,
+    community_id         TEXT NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    state                TEXT NOT NULL CHECK (state IN
+                           ('DRAFT','EXPORTING','VERIFYING','READY','ACTIVATING','COMPLETED','FAILED')),
+    destination_origin   TEXT NOT NULL,
+    destination_instance TEXT NOT NULL,
+    snapshot_hash        TEXT,
+    certificate          TEXT,
+    bundle_key           TEXT,
+    files                INTEGER NOT NULL DEFAULT 0,
+    bytes                INTEGER NOT NULL DEFAULT 0,
+    missing_files        INTEGER NOT NULL DEFAULT 0,
+    created_at           INTEGER NOT NULL,
+    updated_at           INTEGER NOT NULL,
+    error_code           TEXT
+  );
+  CREATE INDEX idx_migraciones_comunidad ON community_migrations(community_id, created_at DESC);
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un
