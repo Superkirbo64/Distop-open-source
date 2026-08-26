@@ -16,7 +16,7 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 3 | C3 — alternativas firmadas y migración | Recuperación de dirección | ✅ cerrada |
 | 4 | A1 final — avisos conscientes de sucesión | "Se trasladó" con respaldo criptográfico | ✅ |
 | 5 | A2 — Web Push opcional | Aviso con la aplicación cerrada | ✅ |
-| 6 | V1 — reuniones, lobby y estados | Reunión funcional | ⬜ |
+| 6 | V1 — reuniones, lobby y estados | Reunión funcional | ✅ |
 | 7 | V2 — invitados, admisión y asistencia | Reunión con gente de fuera | ⬜ |
 | 8 | V3 — presupuesto de vídeo y grabación | Reunión dentro de límites reales | ⬜ |
 | 9 | V4 — calendario, ICS y push-to-talk | Agenda y pulido de voz | ⬜ |
@@ -210,18 +210,35 @@ entero, porque la clave vive ahí al lado.
 
 ---
 
-## Fase V1 — reuniones, lobby y estados ⬜
+## Fase V1 — reuniones, lobby y estados ✅
 
-- [ ] Tablas `meetings`, `meeting_roles`, `meeting_attendance` con `CHECK` en estados
-- [ ] Canal con `kind='meeting'`, filtrado de la barra lateral
-- [ ] Estados `DRAFT · SCHEDULED · LOBBY · LIVE · ENDED · CANCELLED` con transiciones explícitas
-- [ ] Permiso `MANAGE_MEETINGS`
-- [ ] Roles de reunión efímeros: `host · cohost · speaker/presenter · attendee · viewer`
-- [ ] La comunidad conserva poderes de seguridad, auditados
-- [ ] Lobby: `VOICE_JOIN` no mete en `rooms`, así `relayMedia` descarta por construcción
-- [ ] Mano levantada con cola por orden de llegada
-- [ ] Eventos de gateway con revalidación de permisos en servidor
-- [ ] Política si no queda ningún host
+Documentado en [reuniones.md](reuniones.md).
+
+- [x] Tablas `meetings`, `meeting_roles`, `meeting_attendance` con `CHECK` en estados y banderas
+- [x] Canal con `kind='meeting'`; la barra lateral lo aparta en su propia sección
+- [x] Estados `DRAFT · SCHEDULED · LOBBY · LIVE · ENDED · CANCELLED`, con la tabla de
+      transiciones en el protocolo — compartida con el cliente, para que la interfaz
+      no enseñe botones que fallan
+- [x] `ENDED` no vuelve a abrir: reabrir falsearía asistencia y duración
+- [x] Permiso `MANAGE_MEETINGS` (bit 33; las columnas son cadenas de BigInt, sin migración)
+- [x] Roles efímeros `host · cohost · presenter · attendee · viewer`, sin relación con
+      los roles de la comunidad
+- [x] Nadie reparte un papel igual o superior al suyo; no se destituye al último anfitrión
+- [x] La comunidad conserva poderes de seguridad, auditados: puede cerrar, no apropiarse
+- [x] **Lobby estructural**: quien espera no entra en el registro de voz, así que
+      `relayMedia` no tiene a dónde mandarle nada. Probado byte a byte en las dos
+      direcciones, con el anfitrión sin silenciar para que la aserción pruebe la sala
+      de espera y no el silencio
+- [x] La lista de quién espera solo llega a quien puede abrir; denegar no dice quién decidió
+- [x] Mano levantada con marca de tiempo y cola por orden de llegada; insistir no adelanta
+- [x] Cada comando del gateway revalida el permiso en el servidor, y está probado que
+      un asistente que lo manda a mano no admite a nadie
+- [x] Sin moderador presente no se cierra ni se promociona a nadie; sala vacía sí termina
+- [x] 16 pruebas propias, contra el gateway real con WebSockets
+
+**Deuda consciente:** la interfaz de la reunión (sala de espera, manos, papeles)
+todavía no está pintada más allá de la sección en la barra lateral; el protocolo,
+las rutas y los eventos están completos y probados.
 
 ---
 

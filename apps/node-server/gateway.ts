@@ -15,6 +15,7 @@ import { channelPermissions, memberState } from "./permissions.ts";
 import { instanceHealth } from "./instance.ts";
 import { rateLimit } from "./http.ts";
 import * as voice from "./voice.ts";
+import * as meetings from "./meetings.ts";
 import * as race from "./race.ts";
 import { getEmoji } from "./expressions.ts";
 import { writesAccepted } from "./lifecycle.ts";
@@ -180,6 +181,28 @@ function handleCommand(client: Client, raw: string): void {
     case "VOICE_JOIN": {
       const channelId = cmd.d?.channel_id;
       if (typeof channelId !== "string") return;
+
+      /* Una reunión con sala de espera no se entra: se llama a la puerta. Y
+         mientras se espera NO se entra en el registro de voz, así que
+         `relayMedia` descarta cualquier paquete por construcción — ni audio ni
+         vídeo escapan antes de la admisión, sin una comprobación aparte que
+         alguien pueda olvidarse de poner. */
+      if (meetings.meetingOf(channelId)) {
+        const salida = meetings.joinMeeting(channelId, client.userId);
+        if (salida === "waiting") {
+          send(client, {
+            t: "MEETING_WAITING",
+            d: { meeting_id: meetings.meetingOf(channelId)!.id, channel_id: channelId, admitted: false },
+          });
+          announceLobby(channelId);
+          return;
+        }
+        if (salida !== "joined") return;
+        announceVoice(channelId);
+        announceMeeting(channelId);
+        return;
+      }
+
       const result = voice.join(channelId, client.userId);
       if (!result) return;
       if (result.left) {
@@ -196,8 +219,72 @@ function handleCommand(client: Client, raw: string): void {
     case "VOICE_LEAVE": {
       const channelId = cmd.d?.channel_id;
       if (typeof channelId !== "string") return;
-      if (voice.leave(channelId, client.userId)) announceVoice(channelId);
+      const salido = voice.leave(channelId, client.userId);
+      if (salido) announceVoice(channelId);
       if (race.leave(channelId, client.userId)) announceRace(channelId);
+      if (meetings.meetingOf(channelId)) {
+        const terminada = meetings.leaveMeeting(channelId, client.userId);
+        announceLobby(channelId);
+        if (terminada) publish(terminada.community_id, { t: "MEETING_UPDATE", d: terminada });
+        else announceMeeting(channelId);
+      }
+      return;
+    }
+
+    /* ── reuniones (V1) ────────────────────────────────────────────────
+       El permiso se revalida aquí en cada comando. Que el cliente haya
+       enseñado el botón no autoriza nada: la interfaz es una sugerencia. */
+
+    case "MEETING_ADMIT": {
+      const { channel_id: channelId, user_id: target } = cmd.d ?? {};
+      if (typeof channelId !== "string" || typeof target !== "string") return;
+      if (!meetings.admit(channelId, client.userId, target)) return;
+      publishToUser(target, {
+        t: "MEETING_WAITING",
+        d: { meeting_id: meetings.meetingOf(channelId)!.id, channel_id: channelId, admitted: true },
+      });
+      announceVoice(channelId);
+      announceLobby(channelId);
+      return;
+    }
+
+    case "MEETING_ADMIT_ALL": {
+      const channelId = cmd.d?.channel_id;
+      if (typeof channelId !== "string") return;
+      const esperando = meetings.waitingOf(channelId).map((quien) => quien.user_id);
+      if (meetings.admitAll(channelId, client.userId) === 0) return;
+      const reunion = meetings.meetingOf(channelId)!;
+      for (const userId of esperando) {
+        publishToUser(userId, {
+          t: "MEETING_WAITING",
+          d: { meeting_id: reunion.id, channel_id: channelId, admitted: true },
+        });
+      }
+      announceVoice(channelId);
+      announceLobby(channelId);
+      return;
+    }
+
+    case "MEETING_DENY": {
+      const { channel_id: channelId, user_id: target } = cmd.d ?? {};
+      if (typeof channelId !== "string" || typeof target !== "string") return;
+      const reunion = meetings.meetingOf(channelId);
+      if (!reunion || !meetings.deny(channelId, client.userId, target)) return;
+      /* Se le dice que no está admitido, sin explicar quién lo decidió: la
+         alternativa es una lista de a quién culpar dentro de la comunidad. */
+      publishToUser(target, {
+        t: "MEETING_WAITING",
+        d: { meeting_id: reunion.id, channel_id: channelId, admitted: false },
+      });
+      announceLobby(channelId);
+      return;
+    }
+
+    case "MEETING_HAND": {
+      const { channel_id: channelId, raised } = cmd.d ?? {};
+      if (typeof channelId !== "string" || typeof raised !== "boolean") return;
+      /* Solo desde dentro: la mano se levanta en la sala, no desde la puerta. */
+      if (voice.setHand(channelId, client.userId, raised)) announceVoice(channelId);
       return;
     }
 
@@ -429,6 +516,29 @@ export function announceRace(channelId: Snowflake): void {
     t: "RACE_UPDATE",
     d: { channel_id: channelId, lobby: race.lobbyOf(channelId) },
   });
+}
+
+/**
+ * La sala de espera va SOLO a quien puede admitir.
+ *
+ * Publicarla a la reunión entera convertiría "esperar" en "que te miren
+ * esperar", y además diría a todo el mundo quién intentó entrar y no pudo.
+ */
+export function announceLobby(channelId: Snowflake): void {
+  const reunion = meetings.meetingOf(channelId);
+  if (!reunion) return;
+  const waiting = meetings.waitingOf(channelId);
+  for (const client of clients) {
+    if (!client.subs.has(reunion.community_id)) continue;
+    if (!meetings.canModerate(reunion, client.userId)) continue;
+    send(client, { t: "MEETING_LOBBY", d: { meeting_id: reunion.id, channel_id: channelId, waiting } });
+  }
+}
+
+/** La reunión entera, a su comunidad. */
+export function announceMeeting(channelId: Snowflake): void {
+  const reunion = meetings.meetingOf(channelId);
+  if (reunion) publish(reunion.community_id, { t: "MEETING_UPDATE", d: reunion });
 }
 
 export function announceVoice(channelId: Snowflake): void {

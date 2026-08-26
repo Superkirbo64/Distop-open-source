@@ -7,8 +7,8 @@ import { randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
-import type { Snowflake } from "@distop/protocol";
+import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, MEETING_ROLES, MEETING_STATES, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
+import type { MeetingRole, MeetingState, Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import { fixedPublicUrl, setFixedPublicUrl, setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
 import { iceServers, relayState, setRelay, videoMode } from "./ice.ts";
@@ -93,6 +93,21 @@ import {
   subscriptionCount,
   vapidPublicKey,
 } from "./push.ts";
+import {
+  MeetingError,
+  attendanceOf,
+  attendanceSummary,
+  canModerate,
+  createMeeting,
+  hasModeratorPresent,
+  meetingById,
+  meetingsOf,
+  roleOf,
+  rolesOf as meetingRolesOf,
+  setMeetingRole,
+  transitionMeeting,
+  waitingOf,
+} from "./meetings.ts";
 import {
   MIGRATION_DIR,
   MigrationError,
@@ -819,6 +834,129 @@ route("GET", "/api/v1/discovery", (ctx) => {
     )
     .all() as unknown[];
   return rows;
+});
+
+/* ── reuniones (V1 §8) ─────────────────────────────────────────────────
+ *
+ * Convocar es un permiso propio, `MANAGE_MEETINGS`, y no `MANAGE_CHANNELS`:
+ * programar una reunión y reordenar la barra lateral no son la misma
+ * responsabilidad, y en una comunidad real convoca mucha más gente de la que
+ * toca la estructura.
+ */
+
+function meetingHttp(error: unknown): never {
+  if (error instanceof MeetingError) {
+    const estado = error.code === "MEETING_NOT_FOUND" ? 404 : error.code === "MEETING_FORBIDDEN" ? 403 : 409;
+    throw new HttpError(estado, error.code, error.message);
+  }
+  throw error;
+}
+
+/** La reunión y quién manda en ella, o 404 si no la puedes ver siquiera. */
+function requireMeeting(ctx: Ctx, meetingId: string) {
+  const auth = requireAuth(ctx);
+  const reunion = meetingById(meetingId);
+  if (!reunion) throw notFound("Reunión no encontrada.");
+  requireMembership(reunion.community_id, auth.user.id);
+  if (!has(channelPermissions(reunion.channel_id, auth.user.id), PERMISSIONS.VIEW_CHANNEL)) {
+    throw notFound("Reunión no encontrada.");
+  }
+  return { auth, reunion };
+}
+
+route("GET", "/api/v1/communities/:id/meetings", (ctx) => {
+  const communityId = ctx.params.id!;
+  const { user } = requireAuth(ctx);
+  requireMembership(communityId, user.id);
+  /* Solo las que puedes ver: una reunión vive en un canal, y un canal que no
+     ves no debe aparecer en una lista lateral. */
+  return meetingsOf(communityId).filter((reunion) =>
+    has(channelPermissions(reunion.channel_id, user.id), PERMISSIONS.VIEW_CHANNEL),
+  );
+});
+
+route("POST", "/api/v1/communities/:id/meetings", async (ctx) => {
+  const communityId = ctx.params.id!;
+  const { user } = requireAuth(ctx);
+  requireMembership(communityId, user.id);
+  requirePerm(communityId, user.id, PERMISSIONS.MANAGE_MEETINGS, "convocar reuniones");
+  rateLimit(`meeting-create:${user.id}`, 20, 60_000);
+
+  const body = await readJson(ctx);
+  try {
+    return createMeeting({
+      communityId,
+      organizerId: user.id,
+      title: v.string(body, "title", { min: 1, max: 120 }),
+      agenda: typeof body.agenda === "string" ? body.agenda.slice(0, 2000) : null,
+      startsAt: typeof body.starts_at === "number" ? body.starts_at : null,
+      endsAt: typeof body.ends_at === "number" ? body.ends_at : null,
+      lobby: body.lobby !== false,
+      muteOnEntry: body.mute_on_entry !== false,
+      categoryId: typeof body.category_id === "string" ? body.category_id : null,
+    });
+  } catch (error) {
+    meetingHttp(error);
+  }
+});
+
+route("GET", "/api/v1/meetings/:id", (ctx) => {
+  const { auth, reunion } = requireMeeting(ctx, ctx.params.id!);
+  return {
+    meeting: reunion,
+    my_role: roleOf(reunion.id, auth.user.id),
+    roles: meetingRolesOf(reunion.id),
+    /* La sala de espera solo la ve quien puede abrirla. */
+    waiting: canModerate(reunion, auth.user.id) ? waitingOf(reunion.channel_id) : [],
+    moderator_present: hasModeratorPresent(reunion.channel_id),
+  };
+});
+
+route("POST", "/api/v1/meetings/:id/state", async (ctx) => {
+  const { auth, reunion } = requireMeeting(ctx, ctx.params.id!);
+  const body = await readJson(ctx);
+  const to = v.string(body, "state", { min: 3, max: 12 }) as MeetingState;
+  if (!MEETING_STATES.includes(to)) throw badRequest("Ese estado no existe.");
+
+  /* Abrir y cerrar es de quien modera; terminar una reunión abusiva, también de
+     quien administra la comunidad. Las dos cosas quedan en la auditoría con su
+     nombre: un poder de seguridad invisible no es un poder de seguridad. */
+  if (!canModerate(reunion, auth.user.id)) throw forbidden("No puedes cambiar el estado de esta reunión.");
+  try {
+    const actualizada = transitionMeeting(reunion.id, to, auth.user.id);
+    publish(actualizada.community_id, { t: "MEETING_UPDATE", d: actualizada });
+    return actualizada;
+  } catch (error) {
+    meetingHttp(error);
+  }
+});
+
+route("PUT", "/api/v1/meetings/:id/roles", async (ctx) => {
+  const { auth, reunion } = requireMeeting(ctx, ctx.params.id!);
+  const body = await readJson(ctx);
+  const target = v.string(body, "user_id", { min: 1, max: 64 });
+  const role = v.string(body, "role", { min: 4, max: 10 }) as MeetingRole;
+  if (!MEETING_ROLES.includes(role)) throw badRequest("Ese papel no existe.");
+  requireMembership(reunion.community_id, target);
+
+  try {
+    setMeetingRole(reunion.id, auth.user.id, target, role);
+  } catch (error) {
+    meetingHttp(error);
+  }
+  publishToUser(target, {
+    t: "MEETING_ROLE",
+    d: { meeting_id: reunion.id, channel_id: reunion.channel_id, user_id: target, role },
+  });
+  return { roles: meetingRolesOf(reunion.id) };
+});
+
+route("GET", "/api/v1/meetings/:id/attendance", (ctx) => {
+  const { auth, reunion } = requireMeeting(ctx, ctx.params.id!);
+  /* Quién estuvo y cuánto no es información de la sala: es un registro sobre
+     personas. Lo ve quien modera la reunión o quien administra la comunidad. */
+  if (!canModerate(reunion, auth.user.id)) throw forbidden("La asistencia la ve quien organiza la reunión.");
+  return { sessions: attendanceOf(reunion.id), totals: attendanceSummary(reunion.id) };
 });
 
 /* ── Web Push (A2) ─────────────────────────────────────────────────────

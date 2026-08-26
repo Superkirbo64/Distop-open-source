@@ -666,6 +666,7 @@ export const es = {
   "settings.desktopHint": "Solo aparecen con la ventana en segundo plano.",
   "settings.availabilityWatch": "Avisarme cuando esta comunidad vuelva",
   "settings.availabilityWatchHint": "Distop la comprueba desde la bandeja. Tras 15 minutos sin respuesta, reduce la frecuencia para ahorrar batería.",
+  "meeting.section": "Reuniones",
   "settings.push": "Avisarme aunque tenga Distop cerrado",
   "settings.pushHint": "El navegador enseña el aviso aunque no haya ninguna pestaña abierta. Lo manda tu propia instancia, sin intermediarios de pago.",
   "settings.pushPrivacy": "El aviso va cifrado y no lleva nombres ni mensajes, solo de qué tipo es. Aun así, el servicio de notificaciones de tu navegador sabe cuándo y cada cuánto te llega uno.",

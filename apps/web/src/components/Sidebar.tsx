@@ -4,7 +4,7 @@
  * simplemente no llega desde la instancia.
  */
 import { useState } from "react";
-import { ChevronDown, Settings, UserPlus } from "lucide-react";
+import { CalendarClock, ChevronDown, Settings, UserPlus } from "lucide-react";
 import { Announcement, ChannelHash, Cross, Speaker } from "./icons.tsx";
 import { PERMISSIONS, has, toBits, type Channel } from "@distop/protocol";
 import { useStore } from "../store.ts";
@@ -13,7 +13,17 @@ import { Button, ErrorNote, Field, Menu, MenuItem, Modal, Select, useConfirm, us
 import { VoiceParticipants } from "./Voice.tsx";
 import { joinVoice } from "../lib/voice.ts";
 
-const ICONS = { text: ChannelHash, voice: Speaker, announcement: Announcement } as const;
+/* Una reunión lleva reloj y no altavoz: el altavoz ya significa "sala de voz
+   de siempre", y confundir las dos es confundir "esto está abierto todo el día"
+   con "esto empieza a las seis y termina". */
+const ICONS = {
+  text: ChannelHash,
+  voice: Speaker,
+  announcement: Announcement,
+  meeting: ({ size, className }: { size?: number; className?: string }) => (
+    <CalendarClock size={size ?? 16} className={className} />
+  ),
+} as const;
 
 export function Sidebar({
   onOpenManage,
@@ -49,11 +59,19 @@ export function Sidebar({
   const canInvite = has(permissions, PERMISSIONS.CREATE_INVITE);
   const canManage = has(permissions, PERMISSIONS.MANAGE_COMMUNITY) || has(permissions, PERMISSIONS.MANAGE_ROLES);
 
-  const uncategorised = data.channels.filter((channel) => !channel.category_id);
+  /* Las reuniones se apartan de la lista de canales y viven en su propia
+     sección. Una reunión empieza y termina; un canal está siempre. Mezclarlas
+     dejaría la barra lateral llena de reuniones de la semana pasada, y hay que
+     poder mirar los canales sin ver una agenda. */
+  const esReunion = (channel: Channel) => channel.kind === "meeting";
+  const conversacion = data.channels.filter((channel) => !esReunion(channel));
+  const reuniones = data.channels.filter(esReunion);
+
+  const uncategorised = conversacion.filter((channel) => !channel.category_id);
   const grouped = data.categories
     .slice()
     .sort((a, b) => a.position - b.position)
-    .map((category) => ({ category, channels: data.channels.filter((c) => c.category_id === category.id) }))
+    .map((category) => ({ category, channels: conversacion.filter((c) => c.category_id === category.id) }))
     .filter((group) => group.channels.length > 0 || canManageChannels);
 
   async function leave() {
@@ -222,6 +240,16 @@ export function Sidebar({
             {collapsed[category.id] ? null : <ul className="flex flex-col gap-0.5">{channels.map(renderChannel)}</ul>}
           </section>
         ))}
+
+        {reuniones.length > 0 ? (
+          <section className="mb-2">
+            <p className="flex items-center gap-1 px-2 py-1 text-[0.72rem] font-semibold tracking-wide text-muted">
+              <CalendarClock size={12} className="shrink-0" />
+              <span className="truncate">{t("meeting.section")}</span>
+            </p>
+            <ul className="flex flex-col gap-0.5">{reuniones.map(renderChannel)}</ul>
+          </section>
+        ) : null}
 
         {canManageChannels ? (
           <button

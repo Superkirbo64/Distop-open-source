@@ -650,6 +650,7 @@ export const en: Record<keyof typeof es, string> = {
     "They only appear while the window is in the background.",
   "settings.availabilityWatch": "Tell me when this community comes back",
   "settings.availabilityWatchHint": "Distop checks it from the tray. After 15 minutes offline, it checks less often to save battery.",
+  "meeting.section": "Meetings",
   "settings.push": "Notify me even with Distop closed",
   "settings.pushHint": "Your browser shows the notice even with no tab open. Your own instance sends it — no paid middleman.",
   "settings.pushPrivacy": "The notice is encrypted and carries no names or messages, only what kind it is. Even so, your browser's notification service knows when and how often one reaches you.",

@@ -213,6 +213,14 @@ Otra máquina continúa la comunidad sin heredar la clave privada de la primera:
 **[docs/relevo.md](docs/relevo.md)**. Los miembros no crean nada nuevo ni
 vuelven a entrar; el equipo viejo queda retirado y dice a dónde ir.
 
+## Reuniones
+
+Una sala de voz está siempre abierta; una reunión empieza y termina, con sala de
+espera, papeles, manos y registro de quién estuvo:
+**[docs/reuniones.md](docs/reuniones.md)**. Quien espera fuera no recibe ni un
+paquete — no por una comprobación, sino porque no está en el registro al que se
+reenvía el audio.
+
 ## Avisar cuando la comunidad vuelve
 
 Con la aplicación de escritorio en la bandeja, Distop comprueba la instancia y

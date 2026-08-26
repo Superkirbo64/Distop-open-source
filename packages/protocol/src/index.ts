@@ -45,6 +45,10 @@ export const PERMISSIONS = {
   VIEW_AUDIT_LOG: 1n << 30n,
   CREATE_INVITE: 1n << 31n,
   MANAGE_INVITES: 1n << 32n,
+  /* Quién puede convocar. Va aparte de MANAGE_CHANNELS porque programar una
+     reunión y reordenar la barra lateral no son la misma responsabilidad: en
+     una comunidad real convoca mucha más gente de la que toca la estructura. */
+  MANAGE_MEETINGS: 1n << 33n,
 } as const;
 
 export type PermissionName = keyof typeof PERMISSIONS;
@@ -309,7 +313,14 @@ export interface Category {
   position: number;
 }
 
-export type ChannelKind = "text" | "voice" | "announcement";
+/**
+ * `meeting` es un canal como los demás —con sus mensajes, sus adjuntos, sus
+ * permisos y sus overwrites— que además tiene una fila en `meetings`. No es un
+ * tipo de sala de voz: las salas de voz siguen siendo `voice` y no cambian.
+ * La barra lateral lo aparta en su propia sección; el resto del sistema no
+ * necesita enterarse.
+ */
+export type ChannelKind = "text" | "voice" | "announcement" | "meeting";
 
 export interface Channel {
   id: Snowflake;
@@ -493,6 +504,113 @@ export interface VoiceState {
   force_deafened: boolean;
   video: VideoSource | null;
   joined_at: number;
+  /**
+   * Cuándo levantó la mano, o null si no la tiene levantada.
+   *
+   * Es una marca de tiempo y no un booleano porque lo que hace falta enseñar es
+   * la COLA: saber quién pidió primero es la mitad del valor de levantar la
+   * mano, y con un booleano el orden lo decidiría el orden de la lista, que no
+   * significa nada.
+   */
+  hand_raised_at: number | null;
+}
+
+/* ─────────────────────────── Reuniones (V1, §8) ───────────────────────────
+ *
+ * Una reunión NO es un tipo de sala de voz nuevo: es un canal con
+ * `kind="meeting"` más una fila en `meetings`. Mensajes, adjuntos, permisos,
+ * overwrites, búsqueda, fijados, el registro de salas y el relay binario
+ * funcionan sin una línea de cambio, y las salas de voz de siempre quedan
+ * intactas.
+ *
+ * La diferencia con una sala de voz es que una reunión **termina**: tiene
+ * principio, final, quién estuvo y cuánto.
+ */
+
+/**
+ * El ciclo de vida, y no hay más estados.
+ *
+ * `LOBBY` y `LIVE` son distintos a propósito: en `LOBBY` la gente puede llegar
+ * y esperar, pero **nadie transmite nada**. La reunión la abre una persona, no
+ * el primer invitado que llama a la puerta — si no, cualquiera podría empezar
+ * la reunión de otro por el simple hecho de llegar pronto.
+ */
+export const MEETING_STATES = ["DRAFT", "SCHEDULED", "LOBBY", "LIVE", "ENDED", "CANCELLED"] as const;
+export type MeetingState = (typeof MEETING_STATES)[number];
+
+/** Qué transiciones existen. Lo que no está aquí, no pasa. */
+export const MEETING_TRANSITIONS: Record<MeetingState, readonly MeetingState[]> = {
+  DRAFT: ["SCHEDULED", "LOBBY", "LIVE", "CANCELLED"],
+  SCHEDULED: ["LOBBY", "LIVE", "CANCELLED"],
+  LOBBY: ["LIVE", "ENDED", "CANCELLED"],
+  LIVE: ["ENDED"],
+  /* Terminada es terminada. Reabrir una reunión cerrada falsearía su asistencia
+     —dos tramos distintos contados como uno— y su duración. Se convoca otra. */
+  ENDED: [],
+  CANCELLED: [],
+};
+
+export function canTransition(from: MeetingState, to: MeetingState): boolean {
+  return MEETING_TRANSITIONS[from].includes(to);
+}
+
+/** Una reunión ha empezado de verdad: aquí sí puede viajar media. */
+export function meetingIsOpen(state: MeetingState): boolean {
+  return state === "LOBBY" || state === "LIVE";
+}
+
+/**
+ * Papeles dentro de una reunión, efímeros y sin relación con los roles de la
+ * comunidad: quien organiza una reunión no gana ningún poder sobre el servidor,
+ * y quien administra el servidor no se convierte en organizador en silencio.
+ */
+export const MEETING_ROLES = ["host", "cohost", "presenter", "attendee", "viewer"] as const;
+export type MeetingRole = (typeof MEETING_ROLES)[number];
+
+/** Mayor manda. Sirve para comparar, no para almacenar. */
+export const MEETING_RANK: Record<MeetingRole, number> = {
+  host: 4,
+  cohost: 3,
+  presenter: 2,
+  attendee: 1,
+  viewer: 0,
+};
+
+/** Quién puede admitir, expulsar y cerrar: de coanfitrión para arriba. */
+export function meetingCanModerate(role: MeetingRole): boolean {
+  return MEETING_RANK[role] >= MEETING_RANK.cohost;
+}
+
+/** Quién puede transmitir. Un asistente escucha; un espectador ni eso. */
+export function meetingCanSpeak(role: MeetingRole): boolean {
+  return MEETING_RANK[role] >= MEETING_RANK.attendee;
+}
+
+export interface Meeting {
+  id: Snowflake;
+  channel_id: Snowflake;
+  community_id: Snowflake;
+  title: string;
+  agenda: string | null;
+  organizer_id: Snowflake;
+  state: MeetingState;
+  starts_at: number | null;
+  ends_at: number | null;
+  opened_at: number | null;
+  closed_at: number | null;
+  /** Sala de espera: sin ella, entrar es entrar. */
+  lobby: boolean;
+  mute_on_entry: boolean;
+  /** Invitados de fuera de la comunidad. Se implementa en V2. */
+  guests_allowed: boolean;
+  created_at: number;
+}
+
+/** Quién espera fuera, en orden de llegada. */
+export interface MeetingWaiting {
+  user_id: Snowflake;
+  display_name: string;
+  since: number;
 }
 
 /** SDP e ICE viajan opacos: la instancia los reenvía sin leerlos. */
@@ -861,6 +979,8 @@ export const CAPABILITIES = [
   "community_migration_v1",
   /** Web Push propio de la instancia (RFC 8291/8292), opcional y sin terceros. */
   "web_push_v1",
+  /** Reuniones: sala de espera, roles efímeros, manos y asistencia. */
+  "meetings_v1",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -974,6 +1094,17 @@ export type ServerEvent =
      Sin este aviso, los demás clientes enseñarían una conversación que ya no
      existe hasta la próxima recarga. */
   | { t: "MESSAGES_PURGED"; d: { community_id: Snowflake } }
+  /* Reuniones (V1). La reunión entera y no el campo que cambió: son pocos
+     campos y así no hay dos maneras de tenerla desincronizada. */
+  | { t: "MEETING_UPDATE"; d: Meeting }
+  /* Solo a quien espera: "estás fuera, todavía". Va a esa persona y a nadie
+     más, porque el resto no tiene por qué saber quién llamó a la puerta. */
+  | { t: "MEETING_WAITING"; d: { meeting_id: Snowflake; channel_id: Snowflake; admitted: boolean } }
+  /* Solo a quien puede admitir. La sala de espera no se publica a la reunión:
+     enseñarla a todo el mundo convertiría "esperar" en "que te miren esperar". */
+  | { t: "MEETING_LOBBY"; d: { meeting_id: Snowflake; channel_id: Snowflake; waiting: MeetingWaiting[] } }
+  /* Tu papel cambió: te hicieron presentador, o te lo quitaron. */
+  | { t: "MEETING_ROLE"; d: { meeting_id: Snowflake; channel_id: Snowflake; user_id: Snowflake; role: MeetingRole } }
   | { t: "ERROR"; d: ApiError }
   | { t: "PONG"; d: { at: number } };
 
@@ -1026,6 +1157,12 @@ export type ClientCommand =
   | { t: "RACE_LEAVE"; d: { channel_id: Snowflake } }
   | { t: "RACE_WORLD"; d: { channel_id: Snowflake; world: number } }
   | { t: "RACE_START"; d: { channel_id: Snowflake } }
+  /* Reuniones (V1). El servidor revalida el permiso en cada uno: que el cliente
+     haya enseñado el botón no es autorización de nada. */
+  | { t: "MEETING_ADMIT"; d: { channel_id: Snowflake; user_id: Snowflake } }
+  | { t: "MEETING_DENY"; d: { channel_id: Snowflake; user_id: Snowflake } }
+  | { t: "MEETING_ADMIT_ALL"; d: { channel_id: Snowflake } }
+  | { t: "MEETING_HAND"; d: { channel_id: Snowflake; raised: boolean } }
   | { t: "PING"; d?: undefined };
 
 /* ─────────────────────────── Errores tipados (§30) ─────────────────────────── */

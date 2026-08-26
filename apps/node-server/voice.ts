@@ -30,6 +30,8 @@ interface Participant {
    */
   forceMuted: boolean;
   forceDeafened: boolean;
+  /** Cuándo levantó la mano, o null. Marca de tiempo para poder ordenar la cola. */
+  handRaisedAt: number | null;
 }
 
 /** canal → participantes. Vive en memoria: si la instancia cae, la llamada también. */
@@ -62,6 +64,7 @@ export function statesOf(channelId: Snowflake): VoiceState[] {
     force_deafened: p.forceDeafened,
     video: p.video,
     joined_at: p.joinedAt,
+    hand_raised_at: p.handRaisedAt,
   }));
 }
 
@@ -98,7 +101,11 @@ export interface JoinResult {
 
 export function join(channelId: Snowflake, userId: Snowflake): JoinResult | null {
   const channel = getChannel(channelId);
-  if (!channel || channel.kind !== "voice") return null;
+  /* Una reunión es un canal más, con su propia sala. Quien decide si alguien
+     entra AQUÍ o se queda en la sala de espera es meetings.ts: mientras no
+     entre en este registro, `relayMedia` le descarta cualquier paquete por
+     construcción, sin una comprobación que se pueda olvidar. */
+  if (!channel || (channel.kind !== "voice" && channel.kind !== "meeting")) return null;
   if (!has(channelPermissions(channelId, userId), PERMISSIONS.CONNECT_VOICE)) return null;
 
   // Una persona, una llamada: entrar en otra sala saca de la anterior.
@@ -121,10 +128,33 @@ export function join(channelId: Snowflake, userId: Snowflake): JoinResult | null
     joinedAt: Date.now(),
     forceMuted: false,
     forceDeafened: false,
+    handRaisedAt: null,
   });
   rooms.set(channelId, room);
 
   return { ok: true, channelId, communityId: channel.community_id, left: previous === channelId ? null : previous };
+}
+
+/**
+ * Levanta o baja la mano. La marca de tiempo NO se refresca al volver a
+ * levantarla estando ya levantada: si lo hiciera, insistir te adelantaría en la
+ * cola, y una cola en la que insistir funciona deja de ser una cola.
+ */
+export function setHand(channelId: Snowflake, userId: Snowflake, raised: boolean): boolean {
+  const participante = rooms.get(channelId)?.get(userId);
+  if (!participante) return false;
+  if (raised && participante.handRaisedAt !== null) return false;
+  if (!raised && participante.handRaisedAt === null) return false;
+  participante.handRaisedAt = raised ? Date.now() : null;
+  return true;
+}
+
+/** Quién tiene la mano levantada, en orden de llegada. */
+export function raisedHands(channelId: Snowflake): Snowflake[] {
+  return [...(rooms.get(channelId)?.values() ?? [])]
+    .filter((p) => p.handRaisedAt !== null)
+    .sort((a, b) => a.handRaisedAt! - b.handRaisedAt!)
+    .map((p) => p.userId);
 }
 
 export function leave(channelId: Snowflake, userId: Snowflake): boolean {

@@ -4,7 +4,7 @@
  * larga no sea una lista plana de bloques repetidos.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, CornerUpLeft, Hash, Megaphone, MessageSquareText, MonitorUp, MoreVertical, Paperclip, PhoneOff, Pin, Search, Smile, VideoOff, Volume2, X } from "lucide-react";
+import { CalendarClock, ChevronDown, CornerUpLeft, Hash, Megaphone, MessageSquareText, MonitorUp, MoreVertical, Paperclip, PhoneOff, Pin, Search, Smile, VideoOff, Volume2, X } from "lucide-react";
 import { People, Send, Upload } from "./icons.tsx";
 import { PERMISSIONS, has, isJumbo, toBits, type Attachment, type Channel, type Member, type Message } from "@distop/protocol";
 import { useStore } from "../store.ts";
@@ -16,7 +16,7 @@ import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
 import { formatBytes, formatDayHeading, formatTime } from "../i18n.ts";
 import { Avatar, Button, EmptyState, ErrorNote, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, Spinner, useConfirm, useLocale, useT, useErrorText } from "./ui.tsx";
 
-const ICONS = { text: Hash, voice: Volume2, announcement: Megaphone } as const;
+const ICONS = { text: Hash, voice: Volume2, announcement: Megaphone, meeting: CalendarClock } as const;
 const QUICK_REACTIONS = ["👍", "🎉", "❤️", "😄", "👀", "🚀"];
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 

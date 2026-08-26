@@ -412,6 +412,62 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX idx_push_usuario ON push_subscriptions(user_id);
   CREATE INDEX idx_push_reintento ON push_subscriptions(next_attempt);
   `,
+
+  /* Reuniones (V1).
+
+     Una reunion es un canal con kind='meeting' MAS una fila aqui. El canal
+     aporta mensajes, adjuntos, permisos, overwrites, busqueda y fijados sin
+     una linea de codigo nueva; esta tabla aporta lo unico que un canal no
+     tiene: principio, final, quien mandaba y quien estuvo.
+
+     Los estados y las banderas llevan CHECK y no texto libre: un estado
+     invalido escrito por un bug se descubre meses despues, cuando alguien
+     intenta cerrar una reunion que ya no sabe en que estado esta. */
+  `
+  CREATE TABLE meetings (
+    id            TEXT PRIMARY KEY,
+    channel_id    TEXT NOT NULL UNIQUE REFERENCES channels(id) ON DELETE CASCADE,
+    community_id  TEXT NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    title         TEXT NOT NULL,
+    agenda        TEXT,
+    organizer_id  TEXT NOT NULL REFERENCES users(id),
+    state         TEXT NOT NULL CHECK (state IN ('DRAFT','SCHEDULED','LOBBY','LIVE','ENDED','CANCELLED')),
+    starts_at     INTEGER,
+    ends_at       INTEGER,
+    opened_at     INTEGER,
+    closed_at     INTEGER,
+    lobby         INTEGER NOT NULL CHECK (lobby IN (0,1)) DEFAULT 1,
+    mute_on_entry INTEGER NOT NULL CHECK (mute_on_entry IN (0,1)) DEFAULT 1,
+    guests_allowed INTEGER NOT NULL CHECK (guests_allowed IN (0,1)) DEFAULT 0,
+    created_at    INTEGER NOT NULL
+  );
+  CREATE INDEX idx_reuniones_comunidad ON meetings(community_id, starts_at);
+
+  /* Papeles DENTRO de la reunion, sin relacion con los roles de la comunidad:
+     organizar una reunion no da poder sobre el servidor, y administrar el
+     servidor no convierte a nadie en organizador en silencio. */
+  CREATE TABLE meeting_roles (
+    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role       TEXT NOT NULL CHECK (role IN ('host','cohost','presenter','attendee','viewer')),
+    PRIMARY KEY (meeting_id, user_id)
+  );
+
+  /* Sin esto no se puede cumplir la promesa de decir quien estuvo y cuanto.
+     La clave incluye joined_at porque entrar, salir y volver son dos tramos:
+     un unico left_at por persona perderia el segundo y mentiria sobre el
+     primero. */
+  CREATE TABLE meeting_attendance (
+    meeting_id   TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    user_id      TEXT NOT NULL,
+    joined_at    INTEGER NOT NULL,
+    left_at      INTEGER,
+    admitted_by  TEXT,
+    role_at_join TEXT NOT NULL,
+    PRIMARY KEY (meeting_id, user_id, joined_at)
+  );
+  CREATE INDEX idx_asistencia_reunion ON meeting_attendance(meeting_id, joined_at);
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un
