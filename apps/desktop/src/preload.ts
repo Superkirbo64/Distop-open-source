@@ -8,6 +8,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type { GameScan } from "./games";
 // Solo el tipo: se borra al compilar y el preload no arrastra nada de host.ts.
 import type { HostStatus } from "./host";
+import type { WatchAlert as AvailabilityAlert } from "./availability-watcher";
 
 const api = {
   platform: process.platform as string,
@@ -30,10 +31,19 @@ const api = {
       ipcRenderer.invoke("availability:replace", items) as Promise<boolean>,
     status: (url: string, connected: boolean): void =>
       ipcRenderer.send("availability:status", url, connected),
+    /** Ya no eres miembro: fuera vigilancia y fuera el nombre guardado. */
+    forget: (url: string): Promise<boolean> =>
+      ipcRenderer.invoke("availability:forget", url) as Promise<boolean>,
     onOpen: (callback: (url: string) => void): (() => void) => {
       const listener = (_event: unknown, url: string) => callback(url);
       ipcRenderer.on("availability:open", listener);
       return () => ipcRenderer.removeListener("availability:open", listener);
+    },
+    /** Lo que el vigilante vio y no interrumpe: conflicto o protocolo. */
+    onAlert: (callback: (alert: AvailabilityAlert) => void): (() => void) => {
+      const listener = (_event: unknown, alert: AvailabilityAlert) => callback(alert);
+      ipcRenderer.on("availability:alert", listener);
+      return () => ipcRenderer.removeListener("availability:alert", listener);
     },
   },
 

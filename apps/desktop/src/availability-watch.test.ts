@@ -4,7 +4,9 @@
  * availability.test.ts prueba las reglas sueltas; esto prueba que enganchan:
  * dos fallos, una ausencia larga, la instancia que vuelve, la prueba firmada
  * pedida de verdad por la red, exactamente un aviso, la dirección correcta al
- * pulsarlo, y ni un aviso más dentro del silencio.
+ * pulsarlo, y ni un aviso más dentro del silencio. Desde A1 final también los
+ * dos caminos de una sucesión: el sucesor que contesta en la misma dirección y
+ * la máquina retirada que solo sabe decir a dónde se fue.
  *
  * Sobre TLS: la vigilancia solo acepta direcciones https —eso lo comprueba
  * `stableWatchUrl`— pero el servidor de este archivo habla http en 127.0.0.1 y
@@ -23,17 +25,32 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { canonicalJson } from "./availability-policy.ts";
-import { MAX_AVAILABILITY_WATCHES, createAvailabilityWatcher, type AvailabilityWatchInput } from "./availability-watcher.ts";
+import {
+  MAX_AVAILABILITY_WATCHES,
+  createAvailabilityWatcher,
+  type AvailabilityWatchInput,
+  type WatchAlert,
+  type WatchNotice,
+} from "./availability-watcher.ts";
 
 const ORIGEN = "https://equipo.tailnet.ts.net";
+const DESTINO = "https://el-portatil-de-ana.tailnet.ts.net";
 const INSTANCIA = "instancia-de-prueba";
+const SUCESORA = "instancia-sucesora";
 const LINAJE = "linaje-de-prueba";
 const EPOCA = 3;
 
 const claves = generateKeyPairSync("ec", { namedCurve: "P-256" });
 const impostor = generateKeyPairSync("ec", { namedCurve: "P-256" });
-const jwk = claves.publicKey.export({ format: "jwk" }) as JsonWebKey;
-const huella = createHash("sha256").update(canonicalJson(jwk)).digest("base64url");
+const heredera = generateKeyPairSync("ec", { namedCurve: "P-256" });
+
+const huellaDe = (jwk: unknown): string => createHash("sha256").update(canonicalJson(jwk)).digest("base64url");
+const jwkDe = (par: typeof claves): JsonWebKey => par.publicKey.export({ format: "jwk" }) as JsonWebKey;
+
+const jwk = jwkDe(claves);
+const huella = huellaDe(jwk);
+const jwkHeredera = jwkDe(heredera);
+const huellaHeredera = huellaDe(jwkHeredera);
 
 /* ── la instancia de mentira, que responde como la de verdad ─────────── */
 
@@ -41,18 +58,62 @@ let server: Server;
 let puerto = 0;
 /** Apagada: deja de contestar, como un PC que se durmió. */
 let viva = true;
-/** Firma con otra clave: el impostor que se pone en la misma dirección. */
-let suplanta = false;
+
+/**
+ * Qué está pasando ahora mismo en esa dirección.
+ *
+ * - `normal`      la de siempre, firmando con su clave.
+ * - `impostor`    otra clave declarando la huella buena.
+ * - `fork`        otra clave honesta con la misma época: dos que parecen la misma.
+ * - `sucesora`    la máquina nueva, con la cadena que lo demuestra.
+ * - `sin_cadena`  la máquina nueva… sin nada que lo demuestre.
+ * - `retirada`    la vieja: ya no firma, pero dice a dónde se fue la línea.
+ * - `mal_destino` la vieja, apuntando a una dirección que nadie firmó.
+ * - `protocolo`   habla otra versión.
+ */
+type Modo = "normal" | "impostor" | "fork" | "sucesora" | "sin_cadena" | "retirada" | "mal_destino" | "protocolo";
+let modo: Modo = "normal";
 const peticiones: string[] = [];
 
 let ahora = 1_756_100_000_000;
 
+/** El certificado que ata la clave fijada con la de la máquina nueva. */
+function certificado(): unknown {
+  const payload = {
+    t: "DISTOP_SUCCESSION_CERT",
+    version: 1,
+    lineage_id: LINAJE,
+    from_instance_id: INSTANCIA,
+    from_epoch: EPOCA,
+    from_fingerprint: huella,
+    to_instance_id: SUCESORA,
+    to_epoch: EPOCA + 1,
+    to_fingerprint: huellaHeredera,
+    to_public_key: jwkHeredera,
+    allowed_origins: [DESTINO],
+    issued_at: ahora - 10_000,
+    not_before: ahora - 10_000,
+    expires_at: ahora + 30 * 86_400_000,
+    handover_id: "relevo-de-prueba",
+  };
+  return {
+    payload,
+    signature: sign("sha256", Buffer.from(canonicalJson(payload)), {
+      key: claves.privateKey,
+      dsaEncoding: "ieee-p1363",
+    }).toString("base64url"),
+    signer_public_key: jwk,
+    signer_fingerprint: huella,
+  };
+}
+
 function firmar(nonce: string): unknown {
+  const sucede = modo === "sucesora" || modo === "sin_cadena";
   const payload = {
     t: "DISTOP_INSTANCE_PROOF",
-    instance_id: INSTANCIA,
+    instance_id: sucede ? SUCESORA : INSTANCIA,
     lineage_id: LINAJE,
-    epoch: EPOCA,
+    epoch: sucede ? EPOCA + 1 : EPOCA,
     role: "PRIMARY",
     origin: ORIGEN,
     nonce,
@@ -60,17 +121,18 @@ function firmar(nonce: string): unknown {
     expires_at: ahora + 60_000,
     protocol: "v1",
   };
-  const par = suplanta ? impostor : claves;
+  const par = modo === "impostor" || modo === "fork" ? impostor : sucede ? heredera : claves;
   return {
     payload,
     signature: sign("sha256", Buffer.from(canonicalJson(payload)), {
       key: par.privateKey,
       dsaEncoding: "ieee-p1363",
     }).toString("base64url"),
-    public_key: par.publicKey.export({ format: "jwk" }) as JsonWebKey,
+    public_key: jwkDe(par),
     /* El impostor declara la huella buena: es lo que haría de verdad, y es
-       exactamente lo que no se le puede permitir que cuele. */
-    fingerprint: huella,
+       exactamente lo que no se le puede permitir que cuele. El fork, en cambio,
+       es honesto sobre su clave — y por eso es el caso difícil. */
+    fingerprint: modo === "impostor" ? huella : huellaDe(jwkDe(par)),
   };
 }
 
@@ -81,19 +143,40 @@ async function levantar(): Promise<void> {
       res.socket?.destroy();
       return;
     }
-    const responder = (body: unknown): void => {
+    const responder = (body: unknown, status = 200): void => {
       const texto = JSON.stringify(body);
-      res.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(texto) });
+      res.writeHead(status, { "content-type": "application/json", "content-length": Buffer.byteLength(texto) });
       res.end(texto);
     };
     if (req.url === "/health") {
-      responder({ status: "ONLINE", instance_id: INSTANCIA });
+      responder({
+        status: "ONLINE",
+        protocol: modo === "protocolo" ? "v2" : "v1",
+        instance_id: modo === "sucesora" || modo === "sin_cadena" ? SUCESORA : INSTANCIA,
+      });
       return;
     }
     if (req.url === "/api/v1/instance/challenge") {
+      /* Una instancia retirada ya no firma nada: la ruta está cerrada. */
+      if (modo === "retirada" || modo === "mal_destino") {
+        responder({ error: { code: "INSTANCE_SUPERSEDED" } }, 410);
+        return;
+      }
       let crudo = "";
       req.on("data", (trozo: Buffer) => (crudo += trozo));
       req.on("end", () => responder(firmar((JSON.parse(crudo) as { nonce: string }).nonce)));
+      return;
+    }
+    if (req.url === "/api/v1/succession/chain") {
+      const retirada = modo === "retirada" || modo === "mal_destino";
+      responder({
+        lineage_id: LINAJE,
+        instance_id: retirada ? INSTANCIA : SUCESORA,
+        inbound_chain: modo === "sucesora" ? [certificado()] : [],
+        superseded: retirada,
+        successor_origin: modo === "mal_destino" ? "https://el-sitio-del-atacante.example" : DESTINO,
+        chain: retirada ? [certificado()] : [],
+      });
       return;
     }
     res.writeHead(404).end();
@@ -115,14 +198,16 @@ const fetchLocal = ((entrada: unknown, opciones: RequestInit = {}) => {
 
 const workdir = mkdtempSync(join(tmpdir(), "distop-watch-"));
 const statePath = join(workdir, "availability-watch.json");
-const avisos: Array<{ body: string; url: string }> = [];
+const avisos: WatchNotice[] = [];
+const alertas: WatchAlert[] = [];
 
 const vigilante = () =>
   createAvailabilityWatcher({
     statePath,
     now: () => ahora,
     fetch: fetchLocal,
-    notify: (body, url) => avisos.push({ body, url }),
+    notify: (notice) => avisos.push(notice),
+    alert: (alert) => alertas.push(alert),
   });
 
 const vigilancia: AvailabilityWatchInput = {
@@ -138,11 +223,24 @@ const vigilancia: AvailabilityWatchInput = {
 };
 
 /** Deja pasar el tiempo suficiente para que toque otro sondeo. */
-async function sondear(watcher: ReturnType<typeof vigilante>, veces = 1): Promise<void> {
+async function sondear(watcher: ReturnType<typeof vigilante>, veces = 1, saltoMs = 61_000 + 15_000): Promise<void> {
   for (let i = 0; i < veces; i++) {
-    ahora += 61_000 + 15_000;
+    ahora += saltoMs;
     await watcher.tick();
   }
+}
+
+/** Los resultados que se espacian a cinco minutos necesitan más margen. */
+const sondearLargo = (watcher: ReturnType<typeof vigilante>, veces = 1) =>
+  sondear(watcher, veces, 5 * 60_000 + 20_000);
+
+/** Empezar de cero: sin avisos, sin alertas y fuera del silencio anterior. */
+function limpiar(): void {
+  avisos.length = 0;
+  alertas.length = 0;
+  ahora += 60 * 60_000;
+  modo = "normal";
+  viva = true;
 }
 
 before(levantar);
@@ -172,7 +270,8 @@ test("una ausencia real produce exactamente un aviso, y ninguno más dentro del 
   viva = true;
   await sondear(watcher);
   assert.equal(avisos.length, 1, "un solo aviso");
-  assert.match(avisos[0]!.body, /La Casa/);
+  assert.equal(avisos[0]!.kind, "back");
+  assert.equal(avisos[0]!.name, "La Casa");
   assert.equal(avisos[0]!.url, ORIGEN, "y al pulsarlo lleva a la dirección fijada, no a otra");
 
   // 4. La conexión parpadea otra vez dentro de la media hora: no se repite.
@@ -186,9 +285,7 @@ test("una ausencia real produce exactamente un aviso, y ninguno más dentro del 
 });
 
 test("un impostor en la misma dirección no consigue que se avise de nada", async () => {
-  avisos.length = 0;
-  // Muy por delante del último aviso: el silencio de media hora ya no tapa nada.
-  ahora += 60 * 60_000;
+  limpiar();
   const watcher = vigilante();
   watcher.replace([vigilancia]);
 
@@ -197,12 +294,12 @@ test("un impostor en la misma dirección no consigue que se avise de nada", asyn
   await sondear(watcher, 2);
 
   viva = true;
-  suplanta = true;
+  modo = "impostor";
   await sondear(watcher);
   assert.deepEqual(avisos, [], "responder en la dirección buena no basta: hay que firmar con la clave buena");
 
   // Con la clave de verdad, el mismo momento sí avisa: la diferencia era la firma.
-  suplanta = false;
+  modo = "normal";
   await sondear(watcher);
   assert.equal(avisos.length, 1);
 
@@ -210,8 +307,7 @@ test("un impostor en la misma dirección no consigue que se avise de nada", asyn
 });
 
 test("un WebSocket que dice estar conectado no produce avisos por sí solo", async () => {
-  avisos.length = 0;
-  ahora += 60 * 60_000;
+  limpiar();
   const watcher = vigilante();
   watcher.replace([vigilancia]);
 
@@ -228,8 +324,7 @@ test("un WebSocket que dice estar conectado no produce avisos por sí solo", asy
 });
 
 test("el estado sobrevive a cerrar y volver a abrir la aplicación", async () => {
-  avisos.length = 0;
-  ahora += 60 * 60_000;
+  limpiar();
   viva = false;
 
   const primero = vigilante();
@@ -250,6 +345,138 @@ test("el estado sobrevive a cerrar y volver a abrir la aplicación", async () =>
   await sondear(segundo);
   assert.equal(avisos.length, 1, "la aplicación recuerda que la comunidad estaba caída");
   segundo.stop();
+});
+
+/* ── sucesión: los dos caminos por los que se descubre una mudanza ──── */
+
+test("el sucesor contesta en la misma dirección y lo demuestra: se trasladó, no volvió", async () => {
+  limpiar();
+  const watcher = vigilante();
+  watcher.replace([vigilancia]);
+
+  modo = "sucesora";
+  await sondear(watcher);
+
+  assert.equal(avisos.length, 1, "una mudanza es noticia aunque nadie la echara de menos");
+  assert.equal(avisos[0]!.kind, "moved", "la palabra importa: cambió de máquina, no volvió la de siempre");
+  assert.equal(avisos[0]!.kind === "moved" && avisos[0]!.origin, ORIGEN);
+  assert.deepEqual(alertas, [], "un relevo demostrado no es un problema de seguridad");
+
+  // Y no se repite cada cinco minutos: es un hecho, no una novedad.
+  await sondearLargo(watcher);
+  assert.equal(avisos.length, 1);
+  watcher.stop();
+});
+
+test("la máquina retirada dice a dónde se fue la línea, y la firma lo respalda", async () => {
+  limpiar();
+  const watcher = vigilante();
+  watcher.replace([vigilancia]);
+
+  modo = "retirada";
+  await sondear(watcher);
+
+  assert.equal(avisos.length, 1);
+  assert.equal(avisos[0]!.kind, "moved");
+  assert.equal(
+    avisos[0]!.kind === "moved" && avisos[0]!.origin,
+    DESTINO,
+    "y lleva a la dirección nueva, no a la que ya no sirve",
+  );
+  assert.deepEqual(alertas, []);
+  watcher.stop();
+});
+
+test("un destino que no está en el certificado no se ofrece a nadie", async () => {
+  limpiar();
+  const watcher = vigilante();
+  watcher.replace([vigilancia]);
+
+  /* La cadena es buena —la firmó la clave fijada— pero el campo que dice a
+     dónde ir no está firmado por nadie. Es exactamente el sitio por donde se
+     envenenaría una redirección. */
+  modo = "mal_destino";
+  await sondear(watcher);
+  assert.deepEqual(avisos, [], "cadena válida y destino sin firmar: no se manda a nadie");
+  watcher.stop();
+});
+
+test("afirmar ser la continuación sin cadena es un conflicto, y detiene el sondeo", async () => {
+  limpiar();
+  const watcher = vigilante();
+  watcher.replace([vigilancia]);
+
+  modo = "sin_cadena";
+  await sondear(watcher);
+  assert.deepEqual(avisos, [], "nadie se entera de una mudanza que no se demostró");
+  assert.deepEqual(
+    alertas,
+    [{ kind: "identity_conflict", url: ORIGEN, fingerprint: huellaHeredera }],
+    "pero sí se guarda para contarlo al abrir, con la clave que contestó",
+  );
+
+  // Bloqueada: no se sigue llamando a una puerta que ya dio esa respuesta.
+  const antes = peticiones.length;
+  await sondearLargo(watcher, 2);
+  assert.equal(peticiones.length, antes, "un conflicto lo desbloquea una persona, no un temporizador");
+  assert.equal(alertas.length, 1, "y la alerta no se repite en bucle");
+  watcher.stop();
+});
+
+test("dos instancias con la misma época y claves distintas: fork, y ninguna gana", async () => {
+  limpiar();
+  const watcher = vigilante();
+  /* Fijar de nuevo desbloquea lo anterior: la interfaz llegó con una identidad,
+     y bloquear por un conflicto viejo sería desautorizar a quien ya decidió. */
+  watcher.replace([vigilancia]);
+
+  modo = "fork";
+  await sondear(watcher);
+  assert.deepEqual(avisos, []);
+  assert.deepEqual(alertas, [{ kind: "identity_conflict", url: ORIGEN, fingerprint: huellaDe(jwkDe(impostor)) }]);
+  watcher.stop();
+});
+
+test("una instancia que habla otro protocolo no es una impostora ni una ausencia", async () => {
+  limpiar();
+  const watcher = vigilante();
+  watcher.replace([vigilancia]);
+
+  modo = "protocolo";
+  await sondear(watcher);
+  assert.deepEqual(avisos, [], "no se anuncia como vuelta algo con lo que no podemos hablar");
+  assert.deepEqual(alertas, [{ kind: "protocol_incompatible", url: ORIGEN, protocol: "v2" }]);
+
+  const guardado = JSON.parse(readFileSync(statePath, "utf8")) as Array<{ offline_since: number | null; blocked: boolean }>;
+  assert.equal(guardado[0]!.offline_since, null, "contesta: no está caída");
+  assert.equal(guardado[0]!.blocked, false, "y se sigue mirando por si su anfitrión la actualiza");
+
+  // Se actualiza y vuelve a hablar nuestro idioma: se recupera sola.
+  modo = "normal";
+  await sondearLargo(watcher);
+  assert.equal(alertas.length, 1, "y no se alerta dos veces del mismo problema");
+  watcher.stop();
+});
+
+/* ── membresía revocada ─────────────────────────────────────────────── */
+
+test("perder la membresía borra la vigilancia y el nombre guardado", async () => {
+  limpiar();
+  const watcher = vigilante();
+  watcher.replace([vigilancia]);
+  await watcher.tick();
+
+  assert.equal(watcher.forget(ORIGEN), true);
+  const guardado = JSON.parse(readFileSync(statePath, "utf8")) as unknown[];
+  assert.deepEqual(guardado, [], "ni la dirección ni el nombre de una comunidad de la que te echaron");
+
+  const antes = peticiones.length;
+  await sondear(watcher, 2);
+  assert.equal(peticiones.length, antes, "y deja de sondearse en el acto");
+
+  assert.equal(watcher.forget(ORIGEN), false, "olvidar lo ya olvidado no es un error, es un no");
+  assert.equal(watcher.forget("no es una url"), false);
+  watcher.stop();
 });
 
 test("la frontera limita, deduplica y descarta vigilancias mal formadas", () => {

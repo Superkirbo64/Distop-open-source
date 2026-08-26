@@ -41,6 +41,13 @@ export interface KnownInstance {
    * entregarle la sesión a quien no es.
    */
   conflict?: { seen_fingerprint: string; seen_at: number; reason: string };
+  /**
+   * Lo que vio el vigilante de la bandeja mientras la aplicación no estaba
+   * delante. No interrumpe con una ventana emergente —un conflicto de
+   * identidad no se mira de reojo a mitad de otra cosa—: se guarda y se enseña
+   * al abrir, que es cuando se puede hacer algo al respecto.
+   */
+  watch_alert?: { kind: "identity_conflict" | "protocol_incompatible"; at: number; detail: string };
 }
 
 
@@ -86,7 +93,15 @@ declare global {
       availability: {
         replace: (items: unknown[]) => Promise<boolean>;
         status: (url: string, connected: boolean) => void;
+        forget: (url: string) => Promise<boolean>;
         onOpen: (callback: (url: string) => void) => () => void;
+        onAlert: (
+          callback: (
+            alert:
+              | { kind: "identity_conflict"; url: string; fingerprint: string }
+              | { kind: "protocol_incompatible"; url: string; protocol: string },
+          ) => void,
+        ) => () => void;
       };
       games: {
         current: () => Promise<string | null>;
@@ -333,6 +348,23 @@ export function rememberCommunities(url: string, communities: Community[]): void
   if (!url) return;
   const list = knownInstances();
   const previous = list.find((known) => known.url === url);
+
+  /**
+   * Tenías comunidades aquí y ahora no tienes ninguna: te fuiste o te echaron.
+   *
+   * Es la única forma fiable que tiene el cliente de saberlo. El servidor no lo
+   * dice —`requireMembership` devuelve "no encontrada" a propósito, porque
+   * distinguir "te echaron" de "no existe" filtraría quién está dentro— y el
+   * vigilante sondea sin credenciales, así que tampoco puede preguntarlo.
+   *
+   * Se compara contra lo que había justamente para no confundirlo con una
+   * cuenta recién creada, que también tiene la lista vacía y no ha perdido nada.
+   */
+  if (communities.length === 0 && (previous?.communities?.length ?? 0) > 0) {
+    forgetInstance(url);
+    return;
+  }
+
   const cached = communities.map(({ id, name, icon_url, accent_color }) => ({ id, name, icon_url, accent_color }));
   const entry: KnownInstance = {
     ...previous,
@@ -358,8 +390,18 @@ export function forgetKnownCommunity(url: string, communityId: string): void {
   );
 }
 
+/**
+ * Fuera del todo: nombre, comunidades en caché, identidad fijada y vigilancia.
+ *
+ * `syncDesktopAvailability` ya dejaría de vigilarla por omisión, pero se pide
+ * además el olvido explícito: la lista solo llega si esta pestaña alcanza a
+ * enviarla, y una comunidad de la que te fuiste no debería seguir apareciendo
+ * en tu bandeja —ni recibiendo un sondeo tuyo cada minuto— porque un `replace`
+ * se quedó por el camino.
+ */
 export function forgetInstance(url: string): void {
   localStorage.setItem(LIST_KEY, JSON.stringify(knownInstances().filter((known) => known.url !== url)));
+  void window.distop?.availability.forget(url);
   syncDesktopAvailability();
 }
 
@@ -625,8 +667,49 @@ export async function setDesktopAvailabilityStatus(connected: boolean): Promise<
   if (current?.watch_url) window.distop?.availability.status(current.watch_url, connected);
 }
 
+/** Lo que el vigilante vio con la aplicación cerrada, si vio algo. */
+export function watchAlert(url = instanceBase): KnownInstance["watch_alert"] {
+  return knownInstances().find((known) => known.url === url)?.watch_alert;
+}
+
+export function clearWatchAlert(url = instanceBase): void {
+  localStorage.setItem(
+    LIST_KEY,
+    JSON.stringify(
+      knownInstances().map((known) => {
+        if (known.url !== url) return known;
+        const { watch_alert: _descartado, ...resto } = known;
+        return resto;
+      }),
+    ),
+  );
+}
+
 if (typeof window !== "undefined") {
   window.distop?.availability.onOpen((url) => { localStorage.setItem(ACTIVE_KEY, url); location.reload(); });
+
+  /* El vigilante llega por `watch_url`, que puede no ser la misma cadena que la
+     dirección con la que se guardó la instancia (una acaba en barra, la otra
+     no). Se casa por las dos. */
+  window.distop?.availability.onAlert((alert) => {
+    const ahora = Date.now();
+    localStorage.setItem(
+      LIST_KEY,
+      JSON.stringify(
+        knownInstances().map((known) => {
+          if (known.url !== alert.url && known.watch_url !== alert.url) return known;
+          const detalle = alert.kind === "identity_conflict" ? alert.fingerprint : alert.protocol;
+          const marcada = { ...known, watch_alert: { kind: alert.kind, at: ahora, detail: detalle } };
+          /* Un conflicto visto por el vigilante es el mismo conflicto que
+             detecta el cliente al conectar: se anota donde ya lo lee la
+             interfaz, para que no haya dos verdades sobre lo mismo. */
+          return alert.kind === "identity_conflict"
+            ? { ...marcada, conflict: { seen_fingerprint: alert.fingerprint, seen_at: ahora, reason: "WATCH_IDENTITY_CONFLICT" } }
+            : marcada;
+        }),
+      ),
+    );
+  });
 }
 
 /* ── URLs de media en la frontera ──────────────────────────────────────

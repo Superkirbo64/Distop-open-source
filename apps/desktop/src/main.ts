@@ -18,7 +18,13 @@ import { setupTray } from "./tray";
 import { setupUpdates } from "./updates";
 import { type VoiceOverlayHandle, createVoiceOverlay } from "./voice-overlay";
 import { type DesktopPrefs, loadDesktopPrefs, saveDesktopPrefs } from "./desktop-prefs";
-import { replaceAvailabilityWatches, setAvailabilityConnection, setupAvailability, type AvailabilityWatchInput } from "./availability";
+import {
+  forgetAvailabilityWatch,
+  replaceAvailabilityWatches,
+  setAvailabilityConnection,
+  setupAvailability,
+  type AvailabilityWatchInput,
+} from "./availability";
 
 // La presentación completa acompaña el reveal de Universfield sin cortarlo.
 const MIN_SPLASH_MS = 3_050;
@@ -225,6 +231,11 @@ if (!app.requestSingleInstanceLock()) {
       if (typeof url !== "string" || typeof connected !== "boolean") return;
       setAvailabilityConnection(url, connected);
     });
+    /* La instancia dejó de reconocer a esta persona como miembro. Eso solo lo
+       ve la interfaz —el vigilante sondea sin credenciales, y sin ellas no hay
+       forma de preguntarlo—, así que es la interfaz quien lo dice. */
+    ipcMain.handle("availability:forget", (_event, url: unknown) =>
+      typeof url === "string" && forgetAvailabilityWatch(url));
 
     /* Vigilancia de juegos bajo demanda: el toggle de Ajustes apaga el sondeo
        local entero (tasklist + registro), no solo el reporte al servidor. */

@@ -213,6 +213,14 @@ Otra máquina continúa la comunidad sin heredar la clave privada de la primera:
 **[docs/relevo.md](docs/relevo.md)**. Los miembros no crean nada nuevo ni
 vuelven a entrar; el equipo viejo queda retirado y dice a dónde ir.
 
+## Avisar cuando la comunidad vuelve
+
+Con la aplicación de escritorio en la bandeja, Distop comprueba la instancia y
+te avisa cuando vuelve: **[docs/aviso-de-vuelta.md](docs/aviso-de-vuelta.md)**.
+Dice *"volvió"* solo si es la misma de siempre y *"se trasladó"* solo con una
+cadena de sucesión verificada — nunca las confunde, y no basta con que alguien
+conteste en esa dirección.
+
 ## Lo que esta arquitectura no puede hacer en capas gratuitas
 
 Conviene decirlo antes de que alguien lo descubra desplegando:

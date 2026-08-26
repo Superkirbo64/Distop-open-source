@@ -14,6 +14,13 @@ files:
   - src/voice-overlay.html
   - src/assets/**
   - package.json
+  # El proceso principal verifica cadenas de sucesión desde A1 final (el aviso
+  # que distingue "volvió" de "se trasladó"), y esas reglas viven en
+  # @distop/protocol — copiarlas aquí sería la duplicación que C3 quitó. tsc
+  # compila este proceso a CommonJS, así que necesita la copia CJS: la ESM de
+  # abajo es del node-server embebido, que es `type: module`.
+  - from: staging/protocol-cjs
+    to: node_modules/@distop/protocol
 
 extraResources:
   - from: ../web/dist

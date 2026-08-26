@@ -14,7 +14,7 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 1 | C1 — copia cifrada y restauración | Recuperación ante pérdida | ✅ cerrada |
 | 2 | C2 — relevo planificado | Cambio de anfitrión sin copiar la clave | ✅ cerrada |
 | 3 | C3 — alternativas firmadas y migración | Recuperación de dirección | ✅ cerrada |
-| 4 | A1 final — avisos conscientes de sucesión | "Se trasladó" con respaldo criptográfico | ⬜ |
+| 4 | A1 final — avisos conscientes de sucesión | "Se trasladó" con respaldo criptográfico | ✅ |
 | 5 | A2 — Web Push opcional | Aviso con la aplicación cerrada | ⬜ |
 | 6 | V1 — reuniones, lobby y estados | Reunión funcional | ⬜ |
 | 7 | V2 — invitados, admisión y asistencia | Reunión con gente de fuera | ⬜ |
@@ -137,14 +137,33 @@ no hay prueba automatizada de "A cae justo entre el recibo y la activación".
 
 ---
 
-## Fase A1 final — avisos conscientes de sucesión ⬜
+## Fase A1 final — avisos conscientes de sucesión ✅
 
-- [ ] Resultados: `available_same · available_successor · unavailable · identity_conflict · membership_revoked · protocol_incompatible`
-- [ ] "La comunidad volvió" solo para `available_same`
-- [ ] "La comunidad se trasladó" solo con cadena de sucesión válida
-- [ ] `identity_conflict` no notifica vuelta: alerta de seguridad al abrir
-- [ ] `membership_revoked`: quitar vigilancia, no mostrar el nombre, limpiar caché
-- [ ] `protocol_incompatible`: aviso opcional, sin mandar tokens
+Documentado en [aviso-de-vuelta.md](aviso-de-vuelta.md).
+
+- [x] Resultados: `available_same · available_successor · unavailable · identity_conflict · membership_revoked · protocol_incompatible`
+- [x] "La comunidad volvió" solo para `available_same`
+- [x] "La comunidad se trasladó" solo con cadena de sucesión válida
+- [x] Dos caminos hasta esa cadena: el sucesor que firma aquí (`inbound_chain`)
+      y la máquina retirada que dice a dónde se fue (`chain` + `superseded`)
+- [x] El destino sale de `allowed_origins` **firmado**, no de `successor_origin`
+- [x] `identity_conflict` no notifica vuelta: se guarda y se cuenta al abrir
+- [x] Un conflicto **detiene el sondeo**; lo desbloquea una persona, no un temporizador
+- [x] La alerta lleva la huella que contestó, para poder comprobarla por otro canal
+- [x] `membership_revoked`: quitar vigilancia, no mostrar el nombre, limpiar caché
+- [x] Detectado por el cliente (el vigilante sondea sin credenciales) comparando
+      con lo que había: una cuenta nueva sin comunidades no ha perdido nada
+- [x] `protocol_incompatible`: no cuenta como ausencia, no se le manda nada,
+      se reintenta espaciado por si su anfitrión la actualiza
+- [x] Cada alerta se emite **al cambiar**, no en bucle cada cinco minutos
+- [x] Las reglas de sucesión vienen de `@distop/protocol`, no copiadas: el
+      escritorio empaqueta una copia CommonJS del paquete (`stage-protocol.mjs`)
+- [x] Pruebas: 60 en escritorio (reglas + vigilante contra servidor real) y 12
+      en el cliente (frontera con el escritorio)
+
+**Pendiente consciente:** la interfaz que enseña la alerta al abrir todavía no
+está pintada; el dato se guarda en `watch_alert` y `conflict`, y `Settings.tsx`
+ya lee `continuityConflict`.
 
 ---
 
