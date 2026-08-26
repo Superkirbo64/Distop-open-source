@@ -225,6 +225,24 @@ de datos entero, porque la clave está ahí al lado. Decir otra cosa sería ment
 - `apps/desktop/src/availability-watcher.ts` — el motor: sondear, seguir la
   cadena, decidir.
 - `apps/desktop/src/availability.ts` — lo único que necesita Electron.
+- `apps/desktop-tauri/src-tauri/watcher/main.ts` — el mismo motor como sidecar
+  de Node, hablando por líneas JSON.
+- `apps/desktop-tauri/src-tauri/src/availability.rs` — lo único que necesita
+  Tauri: arranca y para el sidecar, y convierte lo que dice en avisos.
+
+## Por qué Tauri no lo reescribe en Rust
+
+Verificar que una comunidad se trasladó son firmas ES256 sobre JSON canónico,
+con la época, el linaje y la cadena de certificados. Un segundo juego de esas
+reglas en otro lenguaje daría dos jueces para la misma pregunta, y el día que
+uno se corrigiera sin el otro, un cascarón diría «volvió» donde el otro dice
+«se trasladó» — y el que se equivocara mandaría a su gente a un servidor que ya
+no es el suyo.
+
+El precio es un `node.exe` vivo mientras hay algo que vigilar, y por eso el
+proceso solo existe mientras haya vigilancias: quien no usa la función no paga
+la memoria. Una prueba comprueba que los ficheros escenificados son byte a byte
+los de Electron, para que nadie los copie a mano por comodidad.
 
 Las reglas de sucesión **no** están copiadas ahí: vienen de
 `@distop/protocol`, las mismas que aplican el servidor y el navegador. Una

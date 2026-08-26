@@ -4,5 +4,5 @@
   "description": "Franja, cliente Distop y overlay de llamada: invoke y eventos. Los huéspedes (WhatsApp/Telegram) quedan fuera a propósito: contenido remoto sin acceso al puente.",
   "windows": ["main", "voice-overlay"],
   "webviews": ["strip", "distop", "voice-overlay"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "notification:default"]
 }

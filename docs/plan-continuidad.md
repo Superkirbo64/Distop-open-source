@@ -21,15 +21,25 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 8 | V3 — presupuesto de vídeo y grabación | Reunión dentro de límites reales | ✅ |
 | 9 | V4 — calendario, ICS y push-to-talk | Agenda y pulido de voz | ✅ |
 
-**Estado: las diez fases están cerradas, verdes y commiteadas.** Lo que queda
-por hacer no es plan pendiente sino deuda consciente, y está anotada al final de
-cada fase con su motivo. La lista corta:
+**Estado: las diez fases están cerradas, verdes y commiteadas, y la interfaz
+también.** Durante un tiempo este documento dio por cerradas las fases V1–V4
+teniendo solo el servidor, y llamó «deuda consciente» a la mitad del trabajo que
+faltaba. No lo era: una función que solo se puede usar por API no está hecha.
+Ya está.
 
-- La interfaz de la reunión (sala de espera, manos, papeles, presupuesto) más
-  allá de la sección en la barra lateral.
-- La escritura progresiva de la grabación en el cliente.
+Lo que ahora sí es deuda, con su motivo:
+
+- La escritura progresiva de la grabación en el cliente (puente de escritorio,
+  File System Access API, trozos en IndexedDB). Hoy el aviso, el consentimiento
+  y la máquina de estados funcionan; lo que falta es el volcado a disco.
 - Los borradores por linaje del cliente (C3 §3.5).
 - Una prueba automatizada de "A cae justo entre el recibo y la activación" (C2).
+
+Y una limitación que no es deuda sino falta de una llave: **el instalador Tauri
+se construye pero no se firma en este entorno**, porque la clave privada del
+updater no está aquí. El `.exe` sale correcto; el `.sig` y el `latest.json` hay
+que generarlos en una máquina que tenga la clave, y **no deben publicarse los
+antiguos junto a un `.exe` nuevo**.
 
 **Fuera de alcance, explícitamente:** Android, Capacitor, Java, servidor
 embebido móvil · promoción automática de sucesores · sincronización continua
@@ -246,9 +256,10 @@ Documentado en [reuniones.md](reuniones.md).
 - [x] Sin moderador presente no se cierra ni se promociona a nadie; sala vacía sí termina
 - [x] 16 pruebas propias, contra el gateway real con WebSockets
 
-**Deuda consciente:** la interfaz de la reunión (sala de espera, manos, papeles)
-todavía no está pintada más allá de la sección en la barra lateral; el protocolo,
-las rutas y los eventos están completos y probados.
+**Interfaz:** `apps/web/src/components/Meeting.tsx`. Sala de espera por los dos
+lados, cola de manos por hora de llegada, papeles con la jerarquía aplicada al
+desplegable —no se ofrece lo que la instancia va a rechazar—, invitaciones y
+asistencia. Convocar vive en la barra lateral, tras `MANAGE_MEETINGS`.
 
 ---
 
@@ -321,9 +332,15 @@ Documentado en [reuniones.md](reuniones.md).
       cerrar la reunión queda `FAILED`, nunca `AVAILABLE`
 - [x] 15 pruebas propias
 
+**Interfaz:** el aviso de grabación es permanente mientras dura, lleva el nombre
+de quien graba —uno anónimo no deja decidir si te quedas—, y también se enseña en
+la puerta a quien espera fuera. La nota del reparto de vídeo aparece solo cuando
+hay cola; en modo directo no se inventa un número que el servidor no mide.
+
 **Deuda consciente:** la escritura progresiva en el cliente (puente de escritorio,
 File System Access API, fragmentos en IndexedDB) está diseñada en el documento y
-no implementada; el servidor ya lleva el estado, el aviso y la auditoría.
+no implementada; el servidor ya lleva el estado, el aviso y la auditoría, y el
+cliente ya pide empezar y parar.
 
 ---
 

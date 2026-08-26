@@ -101,4 +101,24 @@ if (!existsSync(curated)) {
 }
 cpSync(curated, join(webOut, "emoji-animated"), { recursive: true });
 
+/* ── 6. El vigilante de instancias (A1), con el MISMO motor que Electron ──
+   No es una copia del código: son los mismos dos ficheros del cascarón
+   Electron, puestos donde el sidecar pueda ejecutarlos. Si se tocan allí, aquí
+   cambian solos — que es justo lo que impide que los dos cascarones acaben
+   opinando distinto sobre si una comunidad volvió o se trasladó. */
+const watcherOut = join(staging, "watcher");
+rmSync(watcherOut, { recursive: true, force: true });
+mkdirSync(watcherOut, { recursive: true });
+const desktopSrc = join(root, "apps", "desktop", "src");
+for (const file of ["availability-policy.ts", "availability-watcher.ts"]) {
+  cpSync(join(desktopSrc, file), join(watcherOut, file));
+}
+cpSync(join(srcTauri, "watcher", "main.ts"), join(watcherOut, "main.ts"));
+// El protocolo otra vez: el motor lo importa para verificar la sucesión.
+cpSync(protoOut, join(watcherOut, "node_modules", "@distop", "protocol"), { recursive: true });
+writeFileSync(
+  join(watcherOut, "package.json"),
+  `${JSON.stringify({ name: "@distop/watcher", version: "0.1.0", private: true, type: "module" }, null, 2)}\n`,
+);
+
 console.log(`staging del sidecar listo en ${staging}`);

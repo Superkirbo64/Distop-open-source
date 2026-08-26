@@ -33,6 +33,7 @@
     "externalBin": ["binaries/node"],
     "resources": {
       "staging/node-server": "node-server",
+      "staging/watcher": "watcher",
       "staging/web/dist": "web/dist"
     },
     "icon": [

@@ -17,6 +17,7 @@
 // usuarios sigue siendo Electron.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod availability;
 mod games;
 mod host;
 mod overlay;
@@ -434,6 +435,7 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .register_uri_scheme_protocol("strip", |_ctx, _request| {
@@ -460,7 +462,10 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             shell_tabs, shell_switch, apps_prefs, apps_set, host_start, host_stop, host_status,
             overlay_update, games_current, games_scan, games_watch, games_set_watch,
-            toggle_fullscreen
+            toggle_fullscreen,
+            availability::availability_replace,
+            availability::availability_status,
+            availability::availability_forget
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -472,6 +477,7 @@ fn main() {
             app.manage(host::HostRuntime::default());
             app.manage(overlay::OverlayRuntime::default());
             app.manage(games::GamesRuntime::default());
+            app.manage(availability::AvailabilityRuntime::default());
             app.manage(splash::SplashState::default());
             app.manage(updates::PendingUpdate::default());
 
@@ -496,10 +502,9 @@ fn main() {
 
             // El MISMO cliente de apps/web/dist. El puente window.distop se
             // inyecta ANTES de que corra el cliente, con la MISMA superficie
-            // tipada que declara apps/web/src/lib/instance.ts: `apps` (los
-            // toggles de Ajustes) y `host` (hospedar aquí — B3.1). Los grupos
-            // que aún no existen (games, overlay) siguen fuera a propósito:
-            // el cliente los trata como opcionales y no promete lo que no hay.
+            // tipada que declara apps/web/src/lib/instance.ts. `availability` corre
+            // sobre el MISMO motor que Electron (staging/watcher), no sobre una
+            // copia de las reglas en Rust: ver src/availability.rs.
             window.add_child(
                 WebviewBuilder::new("distop", WebviewUrl::App("index.html".into()))
                     .initialization_script(
@@ -525,6 +530,30 @@ fn main() {
                              apps: {
                                prefs: () => window.__TAURI__.core.invoke("apps_prefs"),
                                set: (id, enabled) => window.__TAURI__.core.invoke("apps_set", { id, enabled }),
+                             },
+                             availability: {
+                               replace: (items) => window.__TAURI__.core.invoke("availability_replace", { items }),
+                               status: (url, connected) => { window.__TAURI__.core.invoke("availability_status", { url, connected }); },
+                               forget: (url) => window.__TAURI__.core.invoke("availability_forget", { url }),
+                               /* Mismo contrato que Electron: el des-suscriptor
+                                  se devuelve en el acto aunque listen() aún no
+                                  haya resuelto. */
+                               onOpen: (callback) => {
+                                 let cancelled = false;
+                                 let unlisten = null;
+                                 window.__TAURI__.event
+                                   .listen("availability:open", (event) => callback(event.payload))
+                                   .then((stop) => { if (cancelled) stop(); else unlisten = stop; });
+                                 return () => { cancelled = true; if (unlisten) unlisten(); };
+                               },
+                               onAlert: (callback) => {
+                                 let cancelled = false;
+                                 let unlisten = null;
+                                 window.__TAURI__.event
+                                   .listen("availability:alert", (event) => callback(event.payload))
+                                   .then((stop) => { if (cancelled) stop(); else unlisten = stop; });
+                                 return () => { cancelled = true; if (unlisten) unlisten(); };
+                               },
                              },
                              games: {
                                current: () => window.__TAURI__.core.invoke("games_current"),
