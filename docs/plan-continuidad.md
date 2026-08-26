@@ -21,9 +21,19 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 8 | V3 — presupuesto de vídeo y grabación | Reunión dentro de límites reales | ✅ |
 | 9 | V4 — calendario, ICS y push-to-talk | Agenda y pulido de voz | ✅ |
 
+**Estado: las diez fases están cerradas, verdes y commiteadas.** Lo que queda
+por hacer no es plan pendiente sino deuda consciente, y está anotada al final de
+cada fase con su motivo. La lista corta:
+
+- La interfaz de la reunión (sala de espera, manos, papeles, presupuesto) más
+  allá de la sección en la barra lateral.
+- La escritura progresiva de la grabación en el cliente.
+- Los borradores por linaje del cliente (C3 §3.5).
+- Una prueba automatizada de "A cae justo entre el recibo y la activación" (C2).
+
 **Fuera de alcance, explícitamente:** Android, Capacitor, Java, servidor
 embebido móvil · promoción automática de sucesores · sincronización continua
-anfitrión↔sucesor · plataforma central obligatoria · SFU.
+anfitrión↔sucesor · plataforma central obligatoria · SFU · push-to-talk global.
 
 **Regla dura de coste:** ni quien hospeda ni quien participa paga nada. Ningún
 camino recomendado puede terminar en "compra esto" o "contrata aquello".
