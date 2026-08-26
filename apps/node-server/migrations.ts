@@ -385,6 +385,33 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_migraciones_comunidad ON community_migrations(community_id, created_at DESC);
   `,
+
+  /* Web Push opcional (A2).
+
+     Ni el endpoint ni las claves se guardan en claro: `sealed` es AES-256-GCM
+     con una clave que vive en push.key. Un endpoint es una URL capaz de
+     despertar el navegador de una persona, y auth+p256dh cifran lo que se le
+     manda; los tres juntos, en un app.db que alguien comparte, son el juego
+     completo. Esto protege la base por su cuenta, no al que tiene el
+     directorio de datos entero.
+
+     `endpoint_hash` existe para poder deduplicar y dar de baja sin guardar la
+     direccion. Es UNIQUE porque el navegador renueva la misma suscripcion y
+     eso tiene que actualizar, no acumular. */
+  `
+  CREATE TABLE push_subscriptions (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint_hash TEXT NOT NULL UNIQUE,
+    sealed        TEXT NOT NULL,
+    created_at    INTEGER NOT NULL,
+    last_success  INTEGER,
+    failures      INTEGER NOT NULL DEFAULT 0,
+    next_attempt  INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX idx_push_usuario ON push_subscriptions(user_id);
+  CREATE INDEX idx_push_reintento ON push_subscriptions(next_attempt);
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

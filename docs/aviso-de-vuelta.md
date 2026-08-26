@@ -97,6 +97,109 @@ comunidades produce **un** aviso, no uno por comunidad. Un traslado se anuncia
 **una vez por destino**: es un hecho permanente, no una novedad que se repite
 cada cinco minutos.
 
+---
+
+# Con Distop cerrado del todo: Web Push
+
+Lo de arriba necesita que Distop esté abierto en algún sitio —en la bandeja, en
+una pestaña—. Web Push no: el navegador enseña el aviso aunque no haya ninguna
+pestaña, y aunque la aplicación esté cerrada.
+
+Se activa en Ajustes, y es opcional por los dos lados: quien hospeda no tiene
+que configurar nada y quien participa tiene que pedirlo.
+
+```text
+Avisarme aunque tenga Distop cerrado
+```
+
+## Sin intermediarios de pago
+
+Lo manda **tu propia instancia**. No hay Firebase, ni OneSignal, ni una cuenta
+que registrar: los servicios de push de los navegadores no le cobran a quien
+envía, y las claves (VAPID) se las genera la instancia sola la primera vez.
+
+El precio es que está escrito a mano. Web Push sin dependencias significa
+implementar dos RFC de criptografía:
+
+- **RFC 8291** — el mensaje va cifrado de extremo a extremo: ECDH P-256, HKDF
+  con SHA-256 y AES-128-GCM. Ni el servicio de push del navegador puede leerlo.
+- **RFC 8292** — la instancia firma cada envío con un JWT ES256, para que el
+  servicio de push sepa que viene de quien dice.
+
+Todo eso está en `node:crypto`, así que la regla de "solo `ws`" se mantiene.
+Que sea correcto no es opinable: la prueba reproduce **byte a byte** el ejemplo
+publicado en el RFC 8291 §5.
+
+## Qué viaja dentro del aviso
+
+Un código y, como mucho, un número:
+
+```json
+{"v":1,"t":"mention"}
+```
+
+Ni nombre de comunidad, ni de canal, ni el texto, ni quién escribió, ni
+direcciones. El texto que ves lo escribe el service worker en tu idioma. Lo que
+no viaja no se puede filtrar.
+
+Y todos los avisos **pesan exactamente lo mismo**: van rellenados a un tamaño
+fijo. El contenido va cifrado, pero el tamaño no, y un aviso de 12 bytes y otro
+de 90 no dicen lo mismo.
+
+## Cuándo llega
+
+- **La instancia volvió**, al arrancar, si estuvo caída más de 90 segundos — el
+  mismo umbral que el vigilante de escritorio, para que quien tenga los dos no
+  reciba dos versiones distintas de la misma verdad.
+- **Te mencionaron**, y solo si no tenías la aplicación abierta. Una mención
+  cada dos minutos como mucho: veinte menciones en una conversación animada son
+  un aviso, no veinte.
+
+`@everyone` **no** manda push a nadie. Despertar los móviles de una comunidad
+entera porque alguien escribió dos palabras es exactamente cómo se consigue que
+la gente apague los avisos para siempre.
+
+## Cómo se mide "estuvo caída"
+
+Con un latido que la instancia escribe cada 30 segundos, no con una marca al
+apagarse limpiamente. La diferencia importa: el escenario de este producto es
+"apagué el PC", y un corte de luz o un cierre a lo bruto no dejan escribir
+nada. Con una marca de apagado, el único caso que de verdad hace falta cubrir
+sería justo el que se pierde.
+
+## Cuando una suscripción muere
+
+Un `404` o un `410` del servicio de push son definitivos: esa suscripción ya no
+existe y se borra. Un fallo pasajero espacia el siguiente intento —1 minuto, 5,
+30, 2 horas, 12— y al quinto se abandona. Insistir para siempre contra un
+endpoint muerto es tráfico contra un servicio ajeno que además nunca va a
+funcionar.
+
+## Lo que se guarda aquí, y cómo
+
+El `endpoint` de una suscripción es una URL capaz de despertar el navegador de
+una persona, y sus claves cifran lo que se le manda. En la base se guardan
+**cifrados**, con una clave que vive en `data/push.key`.
+
+Que quede claro qué protege eso: **la base por su cuenta** — un `app.db` que
+alguien comparte, una copia suelta. No protege contra quien tiene el directorio
+de datos entero, porque la clave está ahí al lado. Decir otra cosa sería mentir.
+
+## Lo que Web Push no puede hacer
+
+- **No funciona en la aplicación de escritorio empaquetada.** Electron no trae
+  servicio de push y el origen es `app://distop`. Ahí el aviso lo da el
+  vigilante de la bandeja, que además no depende de ningún tercero.
+- **El proveedor de push de tu navegador sabe cuándo y cada cuánto te llega un
+  aviso**, aunque no pueda leer ninguno. Eso es inherente a Web Push y no hay
+  forma de evitarlo. Se dice antes de activarlo, no después.
+- **Hace falta una dirección pública** por la que el servicio de push pueda
+  llegar a la instancia. Sin ella, el interruptor ni aparece.
+- **Las claves de push viajan en las copias y en un relevo.** Quien restaure una
+  copia puede mandar notificaciones a los navegadores de tus miembros. Está
+  dicho también en [copias-de-seguridad.md](copias-de-seguridad.md) y en
+  [relevo.md](relevo.md).
+
 ## Lo que esto no puede hacer
 
 - **En el navegador no hay intervalo garantizado.** `setInterval` solo corre

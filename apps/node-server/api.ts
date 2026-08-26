@@ -86,6 +86,14 @@ import { inspectBackup } from "./restore.ts";
 import { successionRecord } from "./succession.ts";
 import { normalizeProofOrigin } from "./identity.ts";
 import {
+  PushError,
+  dropSubscription,
+  pushMention,
+  registerSubscription,
+  subscriptionCount,
+  vapidPublicKey,
+} from "./push.ts";
+import {
   MIGRATION_DIR,
   MigrationError,
   activeMigration,
@@ -99,7 +107,7 @@ import {
   type MigrationRow,
 } from "./community-migration.ts";
 import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
-import { disconnectSession, disconnectUser, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
+import { disconnectSession, disconnectUser, hasOpenSocket, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.ts";
 import { statesOfCommunity } from "./voice.ts";
 import { advanceTailscale, stopTailscale, tailscaleState } from "./tailscale.ts";
@@ -813,6 +821,59 @@ route("GET", "/api/v1/discovery", (ctx) => {
   return rows;
 });
 
+/* ── Web Push (A2) ─────────────────────────────────────────────────────
+ *
+ * La instancia manda sus propias notificaciones: es su clave VAPID, su
+ * criptografía y su decisión. No hay servicio de terceros de por medio y no
+ * cuesta nada — los servicios de push de los navegadores no cobran al emisor.
+ *
+ * Todo esto es **opcional** por los dos lados: quien hospeda no tiene que
+ * configurar nada, y quien participa tiene que pedirlo expresamente. Y aunque
+ * el contenido va cifrado de extremo a extremo, el proveedor de push del
+ * navegador ve el momento, la frecuencia y el tamaño: se explica antes de
+ * activarlo, no después.
+ */
+
+/** La clave pública que el navegador necesita para suscribirse. */
+route("GET", "/api/v1/push/key", (ctx) => {
+  requireAuth(ctx);
+  /* Sin dirección pública estable no hay push posible: el servicio de push del
+     navegador tendría que poder llegar aquí, y no podría. Se dice tal cual en
+     vez de aceptar una suscripción que nunca va a entregar nada. */
+  return { public_key: vapidPublicKey(), available: publicUrl() !== "" || config.pushContact !== "" };
+});
+
+route("POST", "/api/v1/push/subscriptions", async (ctx) => {
+  const auth = requireAuth(ctx);
+  rateLimit(`push-sub:${auth.user.id}`, 20, 60_000);
+  const body = await readJson(ctx);
+  const keys = (body.keys ?? {}) as { p256dh?: unknown; auth?: unknown };
+  if (typeof keys.p256dh !== "string" || typeof keys.auth !== "string") {
+    throw badRequest("Faltan las claves de la suscripción.");
+  }
+  try {
+    const guardada = registerSubscription({
+      userId: auth.user.id,
+      endpoint: v.string(body, "endpoint", { min: 8, max: 1000 }),
+      keys: { p256dh: keys.p256dh, auth: keys.auth },
+    });
+    return { id: guardada.id, count: subscriptionCount(auth.user.id) };
+  } catch (error) {
+    if (error instanceof PushError) throw new HttpError(400, error.code, error.message);
+    throw error;
+  }
+});
+
+route("DELETE", "/api/v1/push/subscriptions", async (ctx) => {
+  const auth = requireAuth(ctx);
+  const body = await readJson(ctx);
+  /* Darse de baja no dice si existía: quien tiene el endpoint es quien lo
+     tiene, y responder distinto convertiría esto en una forma de preguntar
+     "¿está esta persona suscrita desde este navegador?". */
+  dropSubscription(auth.user.id, v.string(body, "endpoint", { min: 8, max: 1000 }));
+  return { count: subscriptionCount(auth.user.id) };
+});
+
 /* ── migración de una comunidad (C3 §3.4) ──────────────────────────────
  *
  * Lo pide quien administra la comunidad, no quien hospeda: llevarse los datos
@@ -1184,6 +1245,20 @@ route("POST", "/api/v1/channels/:id/messages", async (ctx) => {
 
   const message = getMessage(id)!;
   publishToChannel(channel.community_id, channel.id, { t: "MESSAGE_CREATE", d: message });
+
+  /* Avisar por Web Push a quien fue mencionado y no está delante (A2).
+     Va después de publicar y sin esperarlo: un servicio de push lento no puede
+     retrasar el mensaje de nadie, y que el aviso falle no invalida el envío. */
+  const mencionados = [...new Set(content.match(/<@([0-9A-Za-z-]{1,64})>/g) ?? [])]
+    .map((etiqueta) => etiqueta.slice(2, -1))
+    .filter((id) => id !== user.id && !hasOpenSocket(id))
+    /* Solo a quien de verdad puede leer ese canal: mencionar a alguien en un
+       canal que no ve no debe servir para averiguar si existe. */
+    .filter((id) => memberState(channel.community_id, id).isMember)
+    .filter((id) => has(channelPermissions(channel.id, id), PERMISSIONS.VIEW_CHANNEL))
+    .slice(0, 32);
+  if (mencionados.length > 0) void pushMention(mencionados).catch(() => {});
+
   return message;
 });
 

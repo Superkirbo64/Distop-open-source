@@ -767,18 +767,23 @@ export function Toggle({
   onChange,
   label,
   hint,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
   label: string;
   hint?: string;
+  /** Para interruptores que tardan: activar un aviso del navegador abre un
+      diálogo del sistema, y volver a pulsar mientras tanto pide dos veces. */
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-start gap-3">
+    <label className={`flex items-start gap-3 ${disabled ? "cursor-wait opacity-60" : "cursor-pointer"}`}>
       <button
         type="button"
         role="switch"
         aria-checked={checked}
+        disabled={disabled}
         onClick={() => {
           const next = !checked;
           // Al apagar, el sonido debe arrancar antes de que la preferencia lo

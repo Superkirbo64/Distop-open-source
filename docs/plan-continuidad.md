@@ -15,7 +15,7 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 2 | C2 — relevo planificado | Cambio de anfitrión sin copiar la clave | ✅ cerrada |
 | 3 | C3 — alternativas firmadas y migración | Recuperación de dirección | ✅ cerrada |
 | 4 | A1 final — avisos conscientes de sucesión | "Se trasladó" con respaldo criptográfico | ✅ |
-| 5 | A2 — Web Push opcional | Aviso con la aplicación cerrada | ⬜ |
+| 5 | A2 — Web Push opcional | Aviso con la aplicación cerrada | ✅ |
 | 6 | V1 — reuniones, lobby y estados | Reunión funcional | ⬜ |
 | 7 | V2 — invitados, admisión y asistencia | Reunión con gente de fuera | ⬜ |
 | 8 | V3 — presupuesto de vídeo y grabación | Reunión dentro de límites reales | ⬜ |
@@ -167,15 +167,46 @@ ya lee `continuityConflict`.
 
 ---
 
-## Fase A2 — Web Push opcional ⬜
+## Fase A2 — Web Push opcional ✅
 
-- [ ] Tabla `push_subscriptions` con endpoint y claves **cifradas en reposo**
-- [ ] VAPID propio de la instancia; la privada entra en la copia C1
-- [ ] RFC 8291 (ECDH P-256 + HKDF + AES-128-GCM) y RFC 8292 (JWT ES256) a mano
-- [ ] Payload mínimo: ni nombre de comunidad, ni mensajes, ni usuarios, ni URL privada
-- [ ] Eventos: instancia disponible, mención, reunión próxima, invitación, admisión
-- [ ] 404/410 → revocar; fallos temporales → backoff; nunca bucle
-- [ ] Cooldown compartido con A1; no sustituye al vigilante de escritorio
+Documentado en [aviso-de-vuelta.md](aviso-de-vuelta.md).
+
+- [x] Tabla `push_subscriptions` con endpoint **y** claves cifradas en reposo
+      (AES-256-GCM, clave en `data/push.key`); solo se guarda en claro el hash
+      del endpoint, para deduplicar y dar de baja sin conservar la dirección
+- [x] VAPID propio de la instancia, generado solo; viaja en la copia C1 y en el
+      relevo C2, con la advertencia escrita en las tres documentaciones
+- [x] RFC 8291 (ECDH P-256 + HKDF-SHA256 + AES-128-GCM) y RFC 8292 (JWT ES256)
+      a mano con `node:crypto`, sin dependencias nuevas
+- [x] **El vector del RFC 8291 §5 se reproduce byte a byte** — la prueba que
+      hace que "está bien" no sea una opinión
+- [x] Relleno a tamaño fijo: el proveedor ve el tamaño aunque no el contenido
+- [x] Payload mínimo `{v,t,n?}`: ni comunidad, ni canal, ni texto, ni quién, ni URL
+- [x] Eventos hoy: instancia disponible y mención. `@everyone` **no** manda push
+- [x] Mención solo a quien no tiene la aplicación abierta, es miembro y ve el
+      canal; una cada dos minutos por persona
+- [x] Caída medida con latido de 30 s, no con marca de apagado limpio (un corte
+      de luz no deja escribir nada, y es justo el caso que hay que cubrir)
+- [x] 404/410 → revocar; fallos temporales → 1 m · 5 m · 30 m · 2 h · 12 h y al
+      quinto se borra; nunca bucle
+- [x] Umbral de 90 s compartido con A1: quien tenga los dos no recibe dos
+      versiones distintas de la misma verdad
+- [x] Solo https y sin credenciales en el endpoint (protección SSRF, §22);
+      tope de 8 suscripciones por persona
+- [x] Service worker con `push` y `notificationclick`, textos en los tres
+      idiomas, una sola notificación por tipo
+- [x] Interruptor en Ajustes que solo aparece donde puede funcionar, con la
+      contrapartida de privacidad escrita **antes** de activarlo
+- [x] 23 pruebas propias
+
+**Fuera de alcance por orden, no por olvido:** "reunión próxima" y "admisión"
+son eventos de V1 y V2 — no existen todavía las reuniones. La invitación tiene
+su código de aviso reservado y no está cableada: un enlace de invitación se
+comparte por fuera, así que no hay un momento claro en el que avisar.
+
+**Límite consciente:** el cifrado en reposo protege la base por su cuenta —un
+`app.db` compartido, una copia suelta—, no a quien tiene el directorio de datos
+entero, porque la clave vive ahí al lado.
 
 ---
 

@@ -14,6 +14,7 @@ import { handleRequest } from "./http.ts";
 import { closeGateway, handleUpgrade } from "./gateway.ts";
 import { setState, VERSION } from "./instance.ts";
 import { startIntegrityWork, stopIntegrityWork } from "./integrity.ts";
+import { announceStartup, startPushHeartbeat } from "./push.ts";
 import { freezeWrites, registerShutdownHandler, waitForRequests } from "./lifecycle.ts";
 import { sweepIncoming } from "./storage.ts";
 import { autostartTunnel } from "./tunnel.ts";
@@ -110,6 +111,18 @@ server.listen(config.port, config.host, () => {
   const barrido = sweepIncoming();
   if (barrido.removed > 0) console.log(`Limpiadas ${barrido.removed} subidas a medias del arranque anterior.`);
   startIntegrityWork();
+
+  /* "Tu comunidad volvió", con la aplicación cerrada (A2).
+     Va aquí y no antes: solo cuando ya se escucha es verdad que volvió. Si no
+     hay suscripciones —lo normal, porque hay que pedirlo— no manda nada. */
+  void announceStartup()
+    .then((enviados) => {
+      if (enviados > 0) console.log(`Aviso de vuelta enviado a ${enviados} navegador(es).`);
+    })
+    .catch(() => {
+      /* Que falle el aviso no puede impedir que la instancia sirva. */
+    });
+  startPushHeartbeat();
   console.log(
     [
       `Distop instancia ${VERSION} — ${config.instanceName}`,

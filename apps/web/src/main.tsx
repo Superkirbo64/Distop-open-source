@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
+import { detectLocale } from "./i18n.ts";
 import { watchGameActivity } from "./lib/gameActivity.ts";
 import { watchVoiceOverlay } from "./lib/voiceOverlay.ts";
 // Tipografías autoalojadas (§8): cero peticiones a Google en cada carga.
@@ -26,6 +27,10 @@ watchVoiceOverlay();
 // versiones cacheadas del cascarón durante el desarrollo.
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    void navigator.serviceWorker.register("/sw.js");
+    /* El idioma va en la URL: cuando llega un aviso de Web Push puede no haber
+       ninguna pestaña abierta a la que preguntárselo, y el service worker no
+       ve localStorage. Registrar con otro idioma reemplaza el registro
+       anterior para el mismo ámbito, así que cambiar de idioma no acumula. */
+    void navigator.serviceWorker.register(`/sw.js?lang=${encodeURIComponent(detectLocale())}`);
   });
 }

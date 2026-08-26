@@ -39,6 +39,7 @@ import {
 } from "../components/ProfileStyle.tsx";
 import { askNotifyPermission, notifyPermission, type NotifyLevel } from "../lib/notify.ts";
 import { activeAvailabilityWatch, setActiveAvailabilityWatch } from "../lib/instance.ts";
+import { disablePush, enablePush, pushState, type PushFailure, type PushState } from "../lib/push.ts";
 
 /** Paleta de partida. Cualquier otro color sale del selector, sin cortapisas. */
 const ACCENTS = ["#4059e0", "#7b5cff", "#c2389c", "#d94f43", "#e08c2f", "#2f9e6f", "#2f8fd6", "#5b6472"];
@@ -598,6 +599,69 @@ function AlertsTab() {
           hint={t("settings.availabilityWatchHint")}
         />
       ) : null}
+
+      <PushToggle />
+    </div>
+  );
+}
+
+/**
+ * Avisos con la aplicación cerrada (A2).
+ *
+ * Solo aparece donde puede funcionar: en el navegador, y si la instancia tiene
+ * una dirección pública por la que el servicio de push pueda llegar. En la
+ * aplicación de escritorio no existe —Electron no trae servicio de push— y
+ * ofrecerlo ahí sería prometer algo que nunca llegaría.
+ *
+ * La contrapartida se dice **antes** de activarlo, no después: aunque el
+ * contenido va cifrado y no lleva ni nombres ni texto, el proveedor de push
+ * del navegador ve el momento, la frecuencia y el tamaño.
+ */
+function PushToggle() {
+  const t = useT();
+  const [state, setState] = useState<PushState | null>(null);
+  const [error, setError] = useState<PushFailure | null>(null);
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    let vivo = true;
+    void pushState().then((next) => { if (vivo) setState(next); });
+    return () => { vivo = false; };
+  }, []);
+
+  if (!state?.supported || !state.available) return null;
+
+  const cambiar = (enabled: boolean): void => {
+    setWorking(true);
+    setError(null);
+    const accion = enabled ? enablePush() : disablePush().then(() => null);
+    void accion
+      .then((fallo) => {
+        setError(fallo ?? null);
+        return pushState();
+      })
+      .then(setState)
+      .finally(() => setWorking(false));
+  };
+
+  const motivo: Record<PushFailure, string> = {
+    unsupported: t("settings.pushUnsupported"),
+    unavailable: t("settings.pushUnavailable"),
+    denied: t("settings.pushDenied"),
+    failed: t("settings.pushFailed"),
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Toggle
+        checked={state.enabled}
+        disabled={working}
+        onChange={cambiar}
+        label={t("settings.push")}
+        hint={t("settings.pushHint")}
+      />
+      <p className="text-xs text-muted">{t("settings.pushPrivacy")}</p>
+      {error ? <p className="text-xs text-warn">{motivo[error]}</p> : null}
     </div>
   );
 }

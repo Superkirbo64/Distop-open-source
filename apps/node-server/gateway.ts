@@ -54,6 +54,19 @@ export function onlineCount(): number {
 }
 
 /**
+ * ¿Tiene esta persona la aplicación abierta ahora mismo?
+ *
+ * Distinto de `onlineIn`: aquí no se filtra por "invisible". Quien eligió no
+ * aparecer en la lista sigue teniendo Distop delante, y mandarle una
+ * notificación al móvil por algo que acaba de ver en pantalla es justo el ruido
+ * que hace que la gente apague los avisos.
+ */
+export function hasOpenSocket(userId: Snowflake): boolean {
+  for (const client of clients) if (client.userId === userId) return true;
+  return false;
+}
+
+/**
  * Quién figura conectado en una comunidad.
  *
  * Tener el socket abierto no basta: quien eligió `invisible` queda fuera de la

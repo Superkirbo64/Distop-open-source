@@ -37,12 +37,17 @@ import { SCHEMA_VERSION } from "./migrations.ts";
 const RUTA_DB = "database/app.db";
 const RUTA_IDENTIDAD = "identity/instance.key";
 const RUTA_SECRETO = "secrets/auth-secret";
+const RUTA_PUSH = "secrets/push";
 
-/** Dónde acaba cada pieza dentro del directorio de datos. */
+/** Dónde acaba cada pieza dentro del directorio de datos.
+    Una copia anterior a A2 no trae `secrets/push`, y eso no es un fallo: se
+    restaura igual y la instancia genera un par nuevo. Lo único que se pierde
+    son las suscripciones de push, que hay que volver a activar. */
 const DESTINOS: Record<string, string> = {
   [RUTA_DB]: "app.db",
   [RUTA_IDENTIDAD]: "instance.key",
   [RUTA_SECRETO]: "secret.key",
+  [RUTA_PUSH]: "push.key",
 };
 
 export interface RestoreReport {

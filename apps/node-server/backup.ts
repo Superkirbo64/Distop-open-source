@@ -18,6 +18,7 @@ import { rm } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 import { config } from "./config.ts";
+import { pushSecretFile } from "./push.ts";
 import { db, INSTANCE_ID } from "./db.ts";
 import { instanceEpoch, instanceRole, LINEAGE_ID } from "./identity.ts";
 import { VERSION } from "./instance.ts";
@@ -42,6 +43,7 @@ export const BACKUP_DIR = join(DATA_DIR, "backups");
 export const RUTA_DB = "database/app.db";
 export const RUTA_IDENTIDAD = "identity/instance.key";
 export const RUTA_SECRETO = "secrets/auth-secret";
+export const RUTA_PUSH = "secrets/push";
 export const PREFIJO_ADJUNTOS = "uploads/";
 
 /**
@@ -229,6 +231,14 @@ async function ejecutar(
     if (purpose === "backup" && existsSync(identidad)) piezas.push({ path: RUTA_IDENTIDAD, file: identidad });
     const secreto = join(DATA_DIR, "secret.key");
     if (existsSync(secreto)) piezas.push({ path: RUTA_SECRETO, file: secreto });
+    /* Las claves de Web Push viajan en los dos casos, copia y relevo (§5.6): si
+       no viajaran, la suscripción del navegador de cada miembro moriría al
+       restaurar o al cambiar de anfitrión y habría que pedirle a todo el mundo
+       que volviera a activarlo.
+       El precio se dice en voz alta en la documentación: quien restaura esta
+       copia puede mandar notificaciones a los navegadores de tus miembros. */
+    const push = pushSecretFile();
+    if (existsSync(push)) piezas.push({ path: RUTA_PUSH, file: push });
     for (const adjunto of adjuntos) {
       piezas.push({ path: `${PREFIJO_ADJUNTOS}${adjunto.relative}`, file: adjunto.absolute });
     }

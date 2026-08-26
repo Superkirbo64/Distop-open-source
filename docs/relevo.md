@@ -111,6 +111,12 @@ aparezca desconectado de golpe ni quede fuera por no tener contraseña.
 También, y conviene saberlo: **los hashes de contraseña** de tus miembros.
 scrypt retrasa un ataque contra ellos, no lo impide.
 
+También se lleva las **claves de Web Push**, y por la misma razón: sin ellas,
+la suscripción del navegador de cada miembro moriría con el cambio de
+anfitrión. La contrapartida es que quien toma el relevo puede mandar
+notificaciones a los navegadores de tus miembros — junto a los mensajes y los
+hashes, es parte de lo que recibe.
+
 No se lleva: la clave privada del equipo viejo, las credenciales del TURN de
 pago, ni la dirección pública fijada del equipo anterior.
 

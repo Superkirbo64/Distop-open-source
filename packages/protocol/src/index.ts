@@ -859,6 +859,8 @@ export const CAPABILITIES = [
   "signed_origins_v1",
   /** Migración de una sola comunidad entre instancias. */
   "community_migration_v1",
+  /** Web Push propio de la instancia (RFC 8291/8292), opcional y sin terceros. */
+  "web_push_v1",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];

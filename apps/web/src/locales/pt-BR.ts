@@ -658,6 +658,13 @@ export const ptBR: Record<keyof typeof es, string> = {
   "settings.desktopHint": "Só aparecem com a janela em segundo plano.",
   "settings.availabilityWatch": "Avisar quando esta comunidade voltar",
   "settings.availabilityWatchHint": "O Distop verifica pela bandeja. Após 15 minutos offline, reduz a frequência para economizar bateria.",
+  "settings.push": "Avisar mesmo com o Distop fechado",
+  "settings.pushHint": "O navegador mostra o aviso mesmo sem nenhuma aba aberta. Quem envia é a sua própria instância, sem intermediário pago.",
+  "settings.pushPrivacy": "O aviso vai criptografado e não leva nomes nem mensagens, só de que tipo é. Ainda assim, o serviço de notificações do seu navegador sabe quando e com que frequência um chega até você.",
+  "settings.pushUnsupported": "Este navegador não aceita avisos em segundo plano.",
+  "settings.pushUnavailable": "Esta instância ainda não tem um endereço público por onde os avisos possam chegar.",
+  "settings.pushDenied": "O navegador bloqueou as notificações. Isso se muda nas permissões do site.",
+  "settings.pushFailed": "Não foi possível ativar. Tente de novo.",
   "settings.notifyAsk": "Permitir notificações",
   "settings.notifyGranted": "Permitidas pelo navegador.",
   "settings.notifyDenied":

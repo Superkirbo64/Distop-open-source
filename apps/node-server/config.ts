@@ -99,6 +99,13 @@ export const config = {
   instanceName: str("INSTANCE_NAME", "Instancia Distop"),
   publicUrl: str("PUBLIC_URL", ""),
 
+  /**
+   * Con quién se queja el servicio de push si algo va mal (RFC 8292, `sub`).
+   * Vacío = la dirección pública de la instancia, que ya conoce quien se
+   * suscribió. Un `mailto:` sirve si prefieres que te escriban.
+   */
+  pushContact: str("PUSH_CONTACT", ""),
+
   databasePath,
   storagePath: str("DEFAULT_STORAGE_PATH", "./data/uploads"),
 

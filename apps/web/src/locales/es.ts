@@ -666,6 +666,13 @@ export const es = {
   "settings.desktopHint": "Solo aparecen con la ventana en segundo plano.",
   "settings.availabilityWatch": "Avisarme cuando esta comunidad vuelva",
   "settings.availabilityWatchHint": "Distop la comprueba desde la bandeja. Tras 15 minutos sin respuesta, reduce la frecuencia para ahorrar batería.",
+  "settings.push": "Avisarme aunque tenga Distop cerrado",
+  "settings.pushHint": "El navegador enseña el aviso aunque no haya ninguna pestaña abierta. Lo manda tu propia instancia, sin intermediarios de pago.",
+  "settings.pushPrivacy": "El aviso va cifrado y no lleva nombres ni mensajes, solo de qué tipo es. Aun así, el servicio de notificaciones de tu navegador sabe cuándo y cada cuánto te llega uno.",
+  "settings.pushUnsupported": "Este navegador no admite avisos en segundo plano.",
+  "settings.pushUnavailable": "Esta instancia todavía no tiene una dirección pública por la que puedan llegarte.",
+  "settings.pushDenied": "El navegador bloqueó las notificaciones. Se cambia en los permisos del sitio.",
+  "settings.pushFailed": "No se pudo activar. Inténtalo otra vez.",
   "settings.notifyAsk": "Permitir notificaciones",
   "settings.notifyGranted": "Permitidas por el navegador.",
   "settings.notifyDenied":

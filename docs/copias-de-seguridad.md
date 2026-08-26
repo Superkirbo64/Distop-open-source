@@ -37,6 +37,7 @@ de ruido. Es el precio de que, si alguien la encuentra, también lo sea para él
 | `database/app.db` | la base entera: mensajes, miembros, roles, invitaciones, sesiones |
 | `identity/instance.key` | la clave privada de la instancia |
 | `secrets/auth-secret` | el secreto con el que se reconocen las sesiones |
+| `secrets/push` | las claves de Web Push de la instancia |
 | `uploads/…` | los adjuntos, sin las subidas a medias |
 
 Se quedan fuera, y constan explícitamente en el manifiesto como redacciones:
@@ -48,9 +49,21 @@ La primera puede acabar en un disco externo o en el correo de alguien; la segund
 podría publicar por error el equipo anterior. Tras restaurar hay que configurarlas
 de nuevo en Ajustes.
 
-Lo que sí viaja y conviene saber: **los hashes de contraseña de tus miembros**.
-scrypt retrasa un ataque contra ellos, no lo impide. Quien tenga la copia y la
-frase tiene eso.
+Lo que sí viaja y conviene saber son dos cosas:
+
+**Los hashes de contraseña de tus miembros.** scrypt retrasa un ataque contra
+ellos, no lo impide. Quien tenga la copia y la frase tiene eso.
+
+**Las claves de Web Push.** Viajan porque si no viajaran, la suscripción del
+navegador de cada miembro moriría al restaurar y habría que pedirle a todo el
+mundo que volviera a activarlo. El precio es directo: **quien restaure esta
+copia puede mandar notificaciones a los navegadores de tus miembros.** No
+puede leer nada suyo ni entrar en sus cuentas, pero puede hacerles sonar el
+móvil.
+
+Una copia anterior a que existiera Web Push no trae esa pieza, y eso no es un
+fallo: restaura igual y la instancia genera un par nuevo. Lo único que se
+pierde son las suscripciones, que se vuelven a activar en Ajustes.
 
 ## Mirar dentro sin restaurar
 
