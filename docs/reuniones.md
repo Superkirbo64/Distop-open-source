@@ -146,10 +146,73 @@ todos, levantar la mano— **revalida el permiso en el servidor**. Que el client
 haya enseñado el botón no autoriza nada: la interfaz es una sugerencia, y está
 probado que un asistente que manda el comando a mano no admite a nadie.
 
+## Invitados de fuera de la comunidad
+
+Entrar por un enlace **sin instalar nada, sin crear cuenta y sin aguantar un
+botón que pide descargar la aplicación**. Es la ventaja real frente a las
+alternativas, y las dos piezas ya existían: canales con permisos y sesiones
+revocables.
+
+```bash
+POST /api/v1/meetings/:id/invites      # quien organiza reparte el enlace
+POST /api/v1/meetings/guest            # {token, display_name}
+```
+
+El token va en el **cuerpo** y no en la ruta. Una ruta acaba en los registros de
+acceso de cualquier proxy y en la cabecera `Referer` del navegador, y en este
+proyecto los tokens no se registran en logs.
+
+### Primero se comprueba, después se crea
+
+El orden es la mitad del diseño: enlace, reunión, invitados permitidos,
+caducidad, usos y aforo. **Solo si todo eso pasa** se crea la identidad. Al
+revés, cualquiera probando enlaces al azar dejaría un rastro de cuentas basura
+en la instancia de otra persona.
+
+Un enlace que no vale y un enlace que no existe dan **el mismo error**:
+distinguirlos convertiría esto en una forma de averiguar qué enlaces hay vivos.
+Lo que sí se dice es que la reunión está cerrada o llena — quien tiene un enlace
+legítimo merece saber que llegó pronto o tarde.
+
+De la invitación solo se guarda el **hash**. El enlace es el secreto: se enseña
+una vez al crearlo, y si se pierde se revoca y se hace otro.
+
+### Un invitado no es miembro
+
+Meterlo en `members` sería lo fácil y sería lo peor: le daría acceso a todo lo
+demás y lo pondría en la lista de miembros de todo el mundo. En su lugar queda
+atado a **una** reunión, y de ahí salen sus permisos:
+
+> ver, escribir, reaccionar, entrar, hablar y encender la cámara —
+> **en el canal de su reunión, y solo mientras siga abierta**
+
+Ni adjuntar ficheros al disco de quien hospeda, ni mencionar a la comunidad, ni
+gestionar nada. Terminada la reunión, no se queda con un canal ajeno.
+
+### La sesión no sirve para nada más
+
+Su sesión nace acotada (`sessions.meeting_id`) y se comprueba en **una sola
+puerta**, con lista blanca. Una lista negra envejece mal: cada ruta nueva
+quedaría permitida por omisión, y bastaría con que alguien añadiera un endpoint
+sin acordarse para que un invitado de media hora pudiera leer la comunidad
+entera.
+
+Y el id de la ruta tiene que ser **el suyo**: que la forma encaje no basta.
+`/api/v1/meetings/<otra>` encaja igual de bien y no es su reunión.
+
+Por el gateway pasa lo mismo: `SUBSCRIBE` lo rechaza porque no es miembro, así
+que no recibe nada de la comunidad. Lo de su propia reunión le llega por un
+camino explícito y estrecho, no por la suscripción general.
+
+### Cuando no llegan a entrar
+
+Alguien que abrió el enlace, escribió su nombre y se fue sin que le admitieran
+deja una cuenta que no pertenece a ninguna comunidad y a la que nadie va a
+volver. Se limpian cada hora. Quien sí estuvo se queda —su asistencia es un
+registro real— y quien convirtió su paso en una cuenta de la comunidad no la
+pierde por una limpieza.
+
 ## Lo que todavía no hay
 
-- **Invitados de fuera de la comunidad** (V2). El campo `guests_allowed` existe
-  y está en `0`; el endpoint de invitado y las sesiones limitadas a una reunión
-  llegan en su fase.
 - **Presupuesto de vídeo y grabación** (V3).
 - **Calendario `.ics` y push-to-talk** (V4).

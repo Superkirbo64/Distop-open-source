@@ -102,6 +102,11 @@ import {
   hasModeratorPresent,
   meetingById,
   meetingsOf,
+  bindGuest,
+  checkMeetingInvite,
+  createMeetingInvite,
+  invitesOf,
+  revokeMeetingInvite,
   roleOf,
   rolesOf as meetingRolesOf,
   setMeetingRole,
@@ -857,7 +862,14 @@ function requireMeeting(ctx: Ctx, meetingId: string) {
   const auth = requireAuth(ctx);
   const reunion = meetingById(meetingId);
   if (!reunion) throw notFound("Reunión no encontrada.");
-  requireMembership(reunion.community_id, auth.user.id);
+
+  /* Un invitado no es miembro de la comunidad a propósito (V2), y aun así esta
+     reunión es suya. La puerta de http.ts ya comprobó que su sesión está
+     acotada a ESTA; aquí solo se salta el requisito de membresía, nunca el de
+     permiso: VIEW_CHANNEL se sigue exigiendo abajo, y para un invitado sale de
+     su vínculo con la reunión, no de la comunidad. */
+  if (auth.meetingId !== reunion.id) requireMembership(reunion.community_id, auth.user.id);
+
   if (!has(channelPermissions(reunion.channel_id, auth.user.id), PERMISSIONS.VIEW_CHANNEL)) {
     throw notFound("Reunión no encontrada.");
   }
@@ -957,6 +969,100 @@ route("GET", "/api/v1/meetings/:id/attendance", (ctx) => {
      personas. Lo ve quien modera la reunión o quien administra la comunidad. */
   if (!canModerate(reunion, auth.user.id)) throw forbidden("La asistencia la ve quien organiza la reunión.");
   return { sessions: attendanceOf(reunion.id), totals: attendanceSummary(reunion.id) };
+});
+
+/* ── invitados de reunión (V2 §8.6) ────────────────────────────────────
+ *
+ * Entrar por un enlace sin instalar nada, sin crear cuenta y sin aguantar un
+ * botón que pide descargar la aplicación es la ventaja real de esto, y las dos
+ * piezas ya existían.
+ *
+ * Lo que NO se usa es el endpoint general de invitado: crearía la cuenta antes
+ * de comprobar nada, y probar enlaces al azar dejaría un rastro de cuentas
+ * basura en la instancia de otra persona.
+ */
+
+route("GET", "/api/v1/meetings/:id/invites", (ctx) => {
+  const { auth, reunion } = requireMeeting(ctx, ctx.params.id!);
+  if (!canModerate(reunion, auth.user.id)) throw forbidden("Las invitaciones las reparte quien organiza.");
+  /* Nunca el token: de él solo existe el hash. Se enseña una vez, al crearlo. */
+  return { guests_allowed: reunion.guests_allowed, invites: invitesOf(reunion.id) };
+});
+
+route("POST", "/api/v1/meetings/:id/invites", async (ctx) => {
+  const { auth, reunion } = requireMeeting(ctx, ctx.params.id!);
+  if (!canModerate(reunion, auth.user.id)) throw forbidden("Las invitaciones las reparte quien organiza.");
+  rateLimit(`meeting-invite:${auth.user.id}`, 20, 60_000);
+
+  const body = await readJson(ctx);
+  const creada = createMeetingInvite({
+    meetingId: reunion.id,
+    creatorId: auth.user.id,
+    label: typeof body.label === "string" ? body.label.slice(0, 60) : null,
+    maxUses: typeof body.max_uses === "number" && body.max_uses > 0 ? Math.min(500, Math.floor(body.max_uses)) : null,
+    expiresAt: typeof body.expires_at === "number" ? body.expires_at : null,
+  });
+
+  /* Admitir invitados es una decisión aparte de crear el enlace, pero crear un
+     enlace sin poder usarlo no le sirve a nadie: se activa aquí y se audita. */
+  if (!reunion.guests_allowed) {
+    db.prepare("UPDATE meetings SET guests_allowed = 1 WHERE id = ?").run(reunion.id);
+    audit(reunion.community_id, auth.user.id, "MEETING_GUESTS_ON", reunion.id, {});
+  }
+  audit(reunion.community_id, auth.user.id, "MEETING_INVITE_CREATE", reunion.id, { invite_id: creada.invite.id });
+
+  /* El token se enseña UNA vez. Si se pierde, se revoca y se hace otro. */
+  return { invite: creada.invite, token: creada.token };
+});
+
+route("DELETE", "/api/v1/meetings/:id/invites/:inviteId", (ctx) => {
+  const { auth, reunion } = requireMeeting(ctx, ctx.params.id!);
+  if (!canModerate(reunion, auth.user.id)) throw forbidden("Las invitaciones las reparte quien organiza.");
+  if (!revokeMeetingInvite(ctx.params.inviteId!)) throw notFound("Esa invitación no existe o ya estaba revocada.");
+  audit(reunion.community_id, auth.user.id, "MEETING_INVITE_REVOKE", reunion.id, { invite_id: ctx.params.inviteId });
+  return { invites: invitesOf(reunion.id) };
+});
+
+/**
+ * Entrar a una reunión como invitado.
+ *
+ * El token va en el CUERPO y no en la ruta a propósito: una ruta acaba en los
+ * registros de acceso de cualquier proxy y en la cabecera `Referer` del
+ * navegador, y el §22 del proyecto dice que los tokens no se registran en logs.
+ * El enlace que se comparte lo lee el cliente y lo manda aquí.
+ */
+route("POST", "/api/v1/meetings/guest", async (ctx) => {
+  rateLimit(`meeting-guest:${ctx.ip}`, 10, 60_000);
+  const body = await readJson(ctx);
+  const token = v.string(body, "token", { min: 10, max: 128 });
+
+  /* Primero se comprueba TODO, y solo después se crea la identidad. */
+  const comprobada = checkMeetingInvite(token);
+  if (!comprobada.ok) {
+    /* Un solo código para "no existe" y "no vale": distinguirlos convertiría
+       esto en una forma de averiguar qué enlaces existen. Los estados que sí
+       dependen de la reunión y no del enlace sí se dicen, porque quien tiene un
+       enlace legítimo necesita saber que llegó pronto o tarde. */
+    const publico = comprobada.reason === "MEETING_CLOSED" || comprobada.reason === "MEETING_FULL";
+    throw new HttpError(publico ? 409 : 404, publico ? comprobada.reason : "INVITE_INVALID", publico
+      ? "Esta reunión no admite entradas ahora mismo."
+      : "Ese enlace de reunión no vale.");
+  }
+
+  const nombre = v.string(body, "display_name", { min: 1, max: 32 }).replace(/\s+/g, " ");
+  const invitada = createGuest(nombre);
+  bindGuest(comprobada.meeting.id, comprobada.invite.id, invitada.id);
+
+  /* Sesión corta y acotada: el segundo argumento es lo que la ata a esa
+     reunión y solo a ella. Se puede revocar como cualquier otra. */
+  const sesion = createSession(invitada.id, comprobada.meeting.id);
+  return {
+    access_token: sesion.accessToken,
+    refresh_token: sesion.refreshToken,
+    expires_in: sesion.expiresIn,
+    user: toSelfUser(invitada),
+    meeting: comprobada.meeting,
+  };
 });
 
 /* ── Web Push (A2) ─────────────────────────────────────────────────────

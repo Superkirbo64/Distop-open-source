@@ -17,7 +17,7 @@ Se hace un commit al cerrar cada fase real, nunca a mitad.
 | 4 | A1 final — avisos conscientes de sucesión | "Se trasladó" con respaldo criptográfico | ✅ |
 | 5 | A2 — Web Push opcional | Aviso con la aplicación cerrada | ✅ |
 | 6 | V1 — reuniones, lobby y estados | Reunión funcional | ✅ |
-| 7 | V2 — invitados, admisión y asistencia | Reunión con gente de fuera | ⬜ |
+| 7 | V2 — invitados, admisión y asistencia | Reunión con gente de fuera | ✅ |
 | 8 | V3 — presupuesto de vídeo y grabación | Reunión dentro de límites reales | ⬜ |
 | 9 | V4 — calendario, ICS y push-to-talk | Agenda y pulido de voz | ⬜ |
 
@@ -242,15 +242,40 @@ las rutas y los eventos están completos y probados.
 
 ---
 
-## Fase V2 — invitados, admisión y asistencia ⬜
+## Fase V2 — invitados, admisión y asistencia ✅
 
-- [ ] `meeting_invites` con `token_hash`, `max_uses`, `expires_at`, `revoked_at`
-- [ ] `POST /api/v1/meetings/:code/guest` que valida **antes** de crear identidad
-- [ ] Sesión de invitado limitada a la reunión, TTL corto, revocable, nombre saneado
-- [ ] Sin enumeración de miembros fuera de la reunión
-- [ ] Asistencia por eventos, no por un único `left`
-- [ ] Visible solo para roles autorizados; retención definida; exportable
-- [ ] Limpieza de invitados nunca admitidos
+Documentado en [reuniones.md](reuniones.md).
+
+- [x] `meeting_invites` con `token_hash`, `max_uses`, `expires_at`, `revoked_at`;
+      el token se enseña una sola vez y en la base solo vive su hash
+- [x] La comprobación ocurre **antes** de crear identidad: enlace, reunión,
+      invitados permitidos, caducidad, usos y aforo. Probado que un enlace
+      inventado no deja ni una cuenta basura
+- [x] Un solo código de error para "no existe" y "no vale": distinguirlos sería
+      un oráculo de qué enlaces existen. Los estados de la reunión sí se dicen,
+      porque quien llega pronto merece saber que llegó pronto
+- [x] Sesión acotada a UNA reunión (`sessions.meeting_id`), revocable como
+      cualquier otra, con el nombre saneado
+- [x] **Lista blanca en una sola puerta** (`http.ts`): lo que no está, no pasa.
+      Una lista negra dejaría permitida por omisión cualquier ruta futura
+- [x] El id de la ruta tiene que ser el suyo: que la *forma* encaje no basta,
+      y está probado contra otra reunión de la misma comunidad
+- [x] Un invitado **no entra en `members`**: no aparece en ninguna lista de
+      miembros y `SUBSCRIBE` lo rechaza por no serlo
+- [x] Recibe lo de su propio canal por un camino explícito (`guestChannel`),
+      no por la suscripción de comunidad
+- [x] Permisos fijos y mínimos: ver, escribir, reaccionar, entrar, hablar y
+      cámara — **en su canal y solo mientras la reunión siga abierta**. Sin
+      adjuntar ficheros al disco de quien hospeda
+- [x] Asistencia por tramos (hecho en V1), visible solo para quien modera
+- [x] Limpieza de invitados que nunca entraron, sin tocar a quien sí estuvo ni a
+      quien convirtió su paso en una cuenta de la comunidad
+- [x] 16 pruebas propias, la mayoría negativas
+
+**Desviación consciente del boceto del plan:** el token va en el **cuerpo** de
+`POST /api/v1/meetings/guest`, no en la ruta `/:code/`. Una ruta acaba en los
+registros de acceso de cualquier proxy y en la cabecera `Referer`; el §22 del
+proyecto dice que los tokens no se registran en logs.
 
 ---
 

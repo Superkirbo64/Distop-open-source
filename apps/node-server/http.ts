@@ -10,6 +10,7 @@ import { authenticate } from "./auth.ts";
 import { beginRequest, freezeReason, writesAccepted, type WriteFreeze } from "./lifecycle.ts";
 import { isSuperseded } from "./identity.ts";
 import { successionRecord } from "./succession.ts";
+import { guestChannelOf } from "./meetings.ts";
 
 export class HttpError extends Error {
   status: number;
@@ -336,6 +337,33 @@ function permitidoDuranteCongelacion(pathname: string, motivo: WriteFreeze): boo
   return pathname.startsWith("/api/v1/succession/") || pathname === "/api/v1/instance/handover";
 }
 
+/**
+ * Por dónde puede pasar una sesión acotada a una reunión (V2).
+ *
+ * Lista blanca, no lista negra. Una lista negra envejece mal: cada ruta nueva
+ * queda permitida por omisión, y basta con que alguien añada un endpoint sin
+ * acordarse de esto para que un invitado de una reunión de media hora pueda
+ * leer la comunidad entera.
+ *
+ * El id que lleve la ruta tiene que ser el suyo: no basta con que la FORMA
+ * encaje. `/api/v1/meetings/<otra>` encaja igual de bien y no es su reunión.
+ */
+function permitidoParaInvitado(pathname: string, meetingId: string, userId: string): boolean {
+  if (pathname === "/health" || pathname === "/api/v1/health" || pathname === "/api/v1/info") return true;
+  if (pathname === "/api/v1/auth/me" || pathname === "/api/v1/auth/logout" || pathname === "/api/v1/auth/refresh") {
+    return true;
+  }
+  if (pathname === `/api/v1/meetings/${meetingId}`) return true;
+
+  /* Su canal, y solo el suyo: mensajes y lectura del chat de la reunión. */
+  const canal = guestChannelOf(userId);
+  if (canal) {
+    if (pathname === `/api/v1/channels/${canal}/messages`) return true;
+    if (pathname === `/api/v1/channels/${canal}/read`) return true;
+  }
+  return false;
+}
+
 export async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const method = req.method ?? "GET";
   /* OPTIONS no muta: si contara, un preflight durante una copia mantendría
@@ -380,6 +408,13 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
 
     const header = req.headers.authorization;
     ctx.auth = authenticate(header?.startsWith("Bearer ") ? header.slice(7) : null);
+
+    /* Una sesión de invitado de reunión no vale para nada más que esa reunión,
+       y eso se comprueba AQUÍ: una sola puerta, en vez de confiar en que cada
+       ruta futura se acuerde de mirarlo. Lo que no está en la lista, no pasa. */
+    if (ctx.auth?.meetingId && !permitidoParaInvitado(url.pathname, ctx.auth.meetingId, ctx.auth.user.id)) {
+      throw new HttpError(403, "GUEST_SCOPED", "Esta sesión solo sirve para la reunión a la que te invitaron.");
+    }
 
     const found = match(req.method ?? "GET", url.pathname);
     if (!found) throw notFound(`Ruta desconocida: ${req.method} ${url.pathname}`);

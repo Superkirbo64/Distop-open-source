@@ -86,15 +86,15 @@ export interface IssuedSession {
   expiresIn: number;
 }
 
-export function createSession(userId: string): IssuedSession {
+export function createSession(userId: string, meetingId: string | null = null): IssuedSession {
   const now = Date.now();
   const sessionId = uuidv7();
   const accessToken = newToken();
   const refreshToken = newToken();
 
   db.prepare(
-    `INSERT INTO sessions (id, user_id, token_hash, refresh_hash, created_at, expires_at, refresh_expires_at, last_seen)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO sessions (id, user_id, token_hash, refresh_hash, created_at, expires_at, refresh_expires_at, last_seen, meeting_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     sessionId,
     userId,
@@ -104,6 +104,7 @@ export function createSession(userId: string): IssuedSession {
     now + config.accessTokenTtlS * 1000,
     now + config.refreshTokenTtlS * 1000,
     now,
+    meetingId,
   );
 
   return { sessionId, accessToken, refreshToken, expiresIn: config.accessTokenTtlS };
@@ -134,6 +135,14 @@ export function revokeAllSessions(userId: string): void {
 export interface AuthContext {
   user: SelfUser;
   sessionId: string;
+  /**
+   * Sesion acotada a UNA reunion, o null si es una sesion normal.
+   *
+   * Existe porque un invitado de reunion no es miembro de la comunidad: su
+   * sesion no debe servir para nada mas que esa reunion, y eso se comprueba en
+   * una sola puerta (http.ts) en vez de en cada ruta.
+   */
+  meetingId: string | null;
 }
 
 export function authenticate(token: string | null): AuthContext | null {
@@ -145,11 +154,13 @@ export function authenticate(token: string | null): AuthContext | null {
 
   const row = db
     .prepare(
-      `SELECT s.id AS session_id, s.expires_at, u.*
+      `SELECT s.id AS session_id, s.expires_at, s.meeting_id, u.*
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ?`,
     )
-    .get(fingerprint(token)) as (UserRow & { session_id: string; expires_at: number }) | undefined;
+    .get(fingerprint(token)) as
+    | (UserRow & { session_id: string; expires_at: number; meeting_id: string | null })
+    | undefined;
 
   if (!row) return null;
   if (row.expires_at < Date.now()) {
@@ -158,7 +169,7 @@ export function authenticate(token: string | null): AuthContext | null {
   }
 
   if (writesAccepted()) db.prepare("UPDATE sessions SET last_seen = ? WHERE id = ?").run(Date.now(), row.session_id);
-  return { user: toSelfUser(row), sessionId: row.session_id };
+  return { user: toSelfUser(row), sessionId: row.session_id, meetingId: row.meeting_id ?? null };
 }
 
 /** Limpia sesiones caducadas; se llama periódicamente desde server.ts. */

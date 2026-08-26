@@ -468,6 +468,48 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_asistencia_reunion ON meeting_attendance(meeting_id, joined_at);
   `,
+
+  /* Invitados de reunion (V2).
+
+     Entrar por un enlace sin instalar nada, sin crear cuenta y sin aguantar un
+     boton que pide descargar la aplicacion es la ventaja real frente a las
+     alternativas, y las dos piezas ya existian: canales con permisos y sesiones
+     revocables.
+
+     Lo que NO se hace: meter al invitado en `members`. Un invitado de una
+     reunion no es miembro de la comunidad, y anadirlo le daria acceso a todo lo
+     demas y le pondria en la lista de miembros de todo el mundo. En su lugar
+     `meeting_guests` lo ata a UNA reunion, y los permisos se calculan a partir
+     de ahi.
+
+     De la invitacion solo se guarda el hash: el enlace es el secreto, y una
+     base robada no debe entregar las invitaciones vivas. */
+  `
+  ALTER TABLE sessions ADD COLUMN meeting_id TEXT;
+
+  CREATE TABLE meeting_invites (
+    id          TEXT PRIMARY KEY,
+    meeting_id  TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    token_hash  TEXT NOT NULL UNIQUE,
+    creator_id  TEXT NOT NULL,
+    label       TEXT,
+    uses        INTEGER NOT NULL DEFAULT 0,
+    max_uses    INTEGER,
+    expires_at  INTEGER,
+    revoked_at  INTEGER,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX idx_invitaciones_reunion ON meeting_invites(meeting_id);
+
+  CREATE TABLE meeting_guests (
+    user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    invite_id  TEXT,
+    created_at INTEGER NOT NULL,
+    admitted_at INTEGER
+  );
+  CREATE INDEX idx_invitados_reunion ON meeting_guests(meeting_id);
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

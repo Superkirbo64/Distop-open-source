@@ -25,6 +25,15 @@ interface Client {
   userId: Snowflake;
   sessionId: string;
   subs: Set<Snowflake>;
+  /**
+   * Canal de la reunión a la que está invitada esta sesión, o null.
+   *
+   * Un invitado no es miembro, así que `SUBSCRIBE` lo rechaza —y debe
+   * rechazarlo—. Sin esto no recibiría nada, ni siquiera de la reunión a la que
+   * le invitaron. Este campo es su única puerta de entrada a eventos, y solo
+   * para ese canal.
+   */
+  guestChannel: Snowflake | null;
   alive: boolean;
   /** Cuota de paquetes multimedia del segundo en curso. */
   media: { frames: number; bytes: number; since: number };
@@ -103,7 +112,11 @@ export function publish(communityId: Snowflake, event: ServerEvent): void {
 /** Emite solo a quien puede ver ese canal. */
 export function publishToChannel(communityId: Snowflake, channelId: Snowflake, event: ServerEvent): void {
   for (const client of clients) {
-    if (!client.subs.has(communityId)) continue;
+    /* Miembro suscrito a la comunidad, o invitado de ESE canal. En los dos
+       casos se comprueba VIEW_CHANNEL después: la suscripción dice a qué
+       escuchas, el permiso dice qué puedes oír. */
+    const alcance = client.subs.has(communityId) || client.guestChannel === channelId;
+    if (!alcance) continue;
     if (!has(channelPermissions(channelId, client.userId), PERMISSIONS.VIEW_CHANNEL)) continue;
     send(client, event);
   }
@@ -545,7 +558,16 @@ export function announceVoice(channelId: Snowflake): void {
   const states = voice.statesOf(channelId);
   const communityId = states[0]?.community_id ?? getChannel(channelId)?.community_id;
   if (!communityId) return;
-  publish(communityId, { t: "VOICE_STATE_UPDATE", d: { channel_id: channelId, community_id: communityId, states } });
+  const evento: ServerEvent = {
+    t: "VOICE_STATE_UPDATE",
+    d: { channel_id: channelId, community_id: communityId, states },
+  };
+  /* A la comunidad —la barra lateral enseña quién está en cada sala— y además a
+     los invitados de ESTE canal, que no están suscritos a nada porque no son
+     miembros y aun así tienen que ver con quién están hablando. */
+  for (const client of clients) {
+    if (client.subs.has(communityId) || client.guestChannel === channelId) send(client, evento);
+  }
 }
 
 /**
@@ -596,6 +618,9 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
       userId: auth.user.id,
       sessionId: auth.sessionId,
       subs: new Set(),
+      /* Solo si la sesión viene acotada a una reunión. Se resuelve una vez, al
+         conectar: preguntarlo en cada evento sería una consulta por mensaje. */
+      guestChannel: auth.meetingId ? meetings.guestChannelOf(auth.user.id) : null,
       alive: true,
       media: { frames: 0, bytes: 0, since: 0 },
     };

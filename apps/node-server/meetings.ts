@@ -35,6 +35,7 @@ import {
   type MeetingWaiting,
   type Snowflake,
 } from "@distop/protocol";
+import { createHash, randomBytes } from "node:crypto";
 import { audit, db } from "./db.ts";
 import { getChannel } from "./entities.ts";
 import { channelPermissions, communityPermissions, memberState } from "./permissions.ts";
@@ -377,6 +378,8 @@ function entrar(reunion: Meeting, userId: Snowflake, admittedBy: Snowflake | nul
   db.prepare(
     "INSERT OR IGNORE INTO meeting_attendance (meeting_id, user_id, joined_at, admitted_by, role_at_join) VALUES (?, ?, ?, ?, ?)",
   ).run(reunion.id, userId, now, admittedBy, roleOf(reunion.id, userId));
+  /* Entró de verdad: la limpieza de invitados no admitidos ya no se lo lleva. */
+  db.prepare("UPDATE meeting_guests SET admitted_at = COALESCE(admitted_at, ?) WHERE user_id = ?").run(now, userId);
   return true;
 }
 
@@ -466,6 +469,194 @@ export function attendanceSummary(meetingId: Snowflake, now = Date.now()): Array
     total.set(tramo.user_id, (total.get(tramo.user_id) ?? 0) + Math.max(0, Math.round((fin - tramo.joined_at) / 1000)));
   }
   return [...total.entries()].map(([user_id, seconds]) => ({ user_id, seconds }));
+}
+
+/* ── invitados (V2) ────────────────────────────────────────────────────
+ *
+ * Entrar por un enlace sin instalar nada y sin crear cuenta es la ventaja real
+ * frente a las alternativas, y las dos piezas ya existían: canales con permisos
+ * y sesiones revocables.
+ *
+ * Un invitado **no es miembro de la comunidad**. Meterlo en `members` sería lo
+ * fácil y sería lo peor: le daría acceso a todo lo demás y lo pondría en la
+ * lista de miembros de todo el mundo. Se ata a UNA reunión, y de ahí salen sus
+ * permisos.
+ */
+
+const hashInvitacion = (token: string): string => createHash("sha256").update(token).digest("base64url");
+
+export interface MeetingInvite {
+  id: string;
+  meeting_id: string;
+  label: string | null;
+  uses: number;
+  max_uses: number | null;
+  expires_at: number | null;
+  revoked_at: number | null;
+  created_at: number;
+}
+
+/**
+ * Crea un enlace. El token se devuelve **una sola vez**: de él solo se guarda
+ * el hash, porque el enlace es el secreto y una base robada no debe entregar
+ * las invitaciones vivas.
+ */
+export function createMeetingInvite(opts: {
+  meetingId: Snowflake;
+  creatorId: Snowflake;
+  label?: string | null;
+  maxUses?: number | null;
+  expiresAt?: number | null;
+  now?: number;
+}): { invite: MeetingInvite; token: string } {
+  const now = opts.now ?? Date.now();
+  const token = randomBytes(24).toString("base64url");
+  const id = uuidv7();
+  db.prepare(
+    `INSERT INTO meeting_invites (id, meeting_id, token_hash, creator_id, label, max_uses, expires_at, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    id,
+    opts.meetingId,
+    hashInvitacion(token),
+    opts.creatorId,
+    opts.label ?? null,
+    opts.maxUses ?? null,
+    opts.expiresAt ?? null,
+    now,
+  );
+  return { invite: invitesOf(opts.meetingId).find((i) => i.id === id)!, token };
+}
+
+export function invitesOf(meetingId: Snowflake): MeetingInvite[] {
+  return db
+    .prepare(
+      "SELECT id, meeting_id, label, uses, max_uses, expires_at, revoked_at, created_at FROM meeting_invites WHERE meeting_id = ? ORDER BY created_at DESC",
+    )
+    .all(meetingId) as MeetingInvite[];
+}
+
+export function revokeMeetingInvite(inviteId: string, now = Date.now()): boolean {
+  return (
+    db.prepare("UPDATE meeting_invites SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").run(now, inviteId)
+      .changes > 0
+  );
+}
+
+export type InviteRejection =
+  | "INVITE_UNKNOWN"
+  | "INVITE_REVOKED"
+  | "INVITE_EXPIRED"
+  | "INVITE_EXHAUSTED"
+  | "MEETING_CLOSED"
+  | "GUESTS_NOT_ALLOWED"
+  | "MEETING_FULL";
+
+export type InviteCheck =
+  | { ok: true; invite: MeetingInvite; meeting: Meeting }
+  | { ok: false; reason: InviteRejection };
+
+/** Aforo de invitados por reunión: una lista sin fondo es disco de quien hospeda. */
+export const MAX_INVITADOS = 100;
+
+/**
+ * Comprueba un enlace **sin crear nada**.
+ *
+ * El orden es la mitad del diseño de esta fase: primero el código, la reunión,
+ * los invitados permitidos, la caducidad, los usos y el aforo; y solo si todo
+ * eso pasa, se crea la identidad. Al revés, cualquiera probando enlaces al azar
+ * dejaría un rastro de cuentas basura en la instancia de otra persona.
+ */
+export function checkMeetingInvite(token: string, now = Date.now()): InviteCheck {
+  const fila = db.prepare("SELECT * FROM meeting_invites WHERE token_hash = ?").get(hashInvitacion(token)) as
+    | (MeetingInvite & { token_hash: string })
+    | undefined;
+  if (!fila) return { ok: false, reason: "INVITE_UNKNOWN" };
+  if (fila.revoked_at !== null) return { ok: false, reason: "INVITE_REVOKED" };
+  if (fila.expires_at !== null && fila.expires_at <= now) return { ok: false, reason: "INVITE_EXPIRED" };
+  if (fila.max_uses !== null && fila.uses >= fila.max_uses) return { ok: false, reason: "INVITE_EXHAUSTED" };
+
+  const reunion = meetingById(fila.meeting_id);
+  if (!reunion) return { ok: false, reason: "INVITE_UNKNOWN" };
+  if (!reunion.guests_allowed) return { ok: false, reason: "GUESTS_NOT_ALLOWED" };
+  if (reunion.state !== "LOBBY" && reunion.state !== "LIVE") return { ok: false, reason: "MEETING_CLOSED" };
+
+  const invitados = (
+    db.prepare("SELECT COUNT(*) AS n FROM meeting_guests WHERE meeting_id = ?").get(reunion.id) as { n: number }
+  ).n;
+  if (invitados >= MAX_INVITADOS) return { ok: false, reason: "MEETING_FULL" };
+
+  return { ok: true, invite: fila, meeting: reunion };
+}
+
+/** Apunta el uso y ata al invitado a esa reunión. Después de crear la identidad. */
+export function bindGuest(meetingId: Snowflake, inviteId: string, userId: Snowflake, now = Date.now()): void {
+  db.prepare("UPDATE meeting_invites SET uses = uses + 1 WHERE id = ?").run(inviteId);
+  db.prepare("INSERT OR REPLACE INTO meeting_guests (user_id, meeting_id, invite_id, created_at) VALUES (?, ?, ?, ?)").run(
+    userId,
+    meetingId,
+    inviteId,
+    now,
+  );
+}
+
+/** A qué reunión está atado un invitado, o null si no lo es. */
+export function guestMeetingOf(userId: Snowflake): Snowflake | null {
+  const fila = db.prepare("SELECT meeting_id FROM meeting_guests WHERE user_id = ?").get(userId) as
+    | { meeting_id: string }
+    | undefined;
+  return fila?.meeting_id ?? null;
+}
+
+/** El canal de la reunión a la que está atado un invitado, si lo está. */
+export function guestChannelOf(userId: Snowflake): Snowflake | null {
+  const fila = db
+    .prepare("SELECT m.channel_id FROM meeting_guests g JOIN meetings m ON m.id = g.meeting_id WHERE g.user_id = ?")
+    .get(userId) as { channel_id: string } | undefined;
+  return fila?.channel_id ?? null;
+}
+
+/**
+ * Lo que puede hacer un invitado, y solo en el canal de su reunión.
+ *
+ * Ver, entrar, hablar, encender la cámara y escribir en el chat de la reunión.
+ * Nada más: ni adjuntar ficheros al disco de quien hospeda, ni mencionar a toda
+ * la comunidad, ni gestionar nada.
+ */
+export const PERMISOS_INVITADO =
+  PERMISSIONS.VIEW_CHANNEL |
+  PERMISSIONS.SEND_MESSAGES |
+  PERMISSIONS.READ_HISTORY |
+  PERMISSIONS.ADD_REACTIONS |
+  PERMISSIONS.CONNECT_VOICE |
+  PERMISSIONS.SPEAK |
+  PERMISSIONS.STREAM |
+  PERMISSIONS.USE_CAMERA;
+
+/**
+ * Limpia invitados que nunca llegaron a entrar.
+ *
+ * Alguien que abrió el enlace, escribió su nombre y se fue sin que le
+ * admitieran deja una cuenta que no pertenece a ninguna comunidad y a la que
+ * nadie va a volver. Sin esto se acumulan en el disco de quien hospeda.
+ */
+export function sweepGuests(maxAgeMs = 24 * 3600_000, now = Date.now()): number {
+  const viejos = db
+    .prepare("SELECT user_id FROM meeting_guests WHERE admitted_at IS NULL AND created_at < ?")
+    .all(now - maxAgeMs) as Array<{ user_id: string }>;
+  let borrados = 0;
+  for (const { user_id } of viejos) {
+    /* Solo se borra la cuenta si de verdad no es de nadie: quien convirtió su
+       paso por una reunión en una cuenta de la comunidad no la pierde por una
+       limpieza. */
+    const esMiembro = (db.prepare("SELECT COUNT(*) AS n FROM members WHERE user_id = ?").get(user_id) as { n: number }).n;
+    db.prepare("DELETE FROM meeting_guests WHERE user_id = ?").run(user_id);
+    if (esMiembro === 0) {
+      db.prepare("DELETE FROM users WHERE id = ? AND kind = 'guest'").run(user_id);
+      borrados += 1;
+    }
+  }
+  return borrados;
 }
 
 /** Solo para las pruebas: vacía las salas de espera en memoria. */

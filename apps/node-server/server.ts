@@ -15,6 +15,7 @@ import { closeGateway, handleUpgrade } from "./gateway.ts";
 import { setState, VERSION } from "./instance.ts";
 import { startIntegrityWork, stopIntegrityWork } from "./integrity.ts";
 import { announceStartup, startPushHeartbeat } from "./push.ts";
+import { sweepGuests } from "./meetings.ts";
 import { freezeWrites, registerShutdownHandler, waitForRequests } from "./lifecycle.ts";
 import { sweepIncoming } from "./storage.ts";
 import { autostartTunnel } from "./tunnel.ts";
@@ -100,7 +101,14 @@ server.on("upgrade", (req, socket, head) => {
   handleUpgrade(req, socket, head);
 });
 
-const pruneTimer = setInterval(pruneSessions, 60 * 60_000);
+const pruneTimer = setInterval(() => {
+  pruneSessions();
+  /* Invitados de reunión que abrieron el enlace, escribieron su nombre y nunca
+     llegaron a entrar: cuentas que no pertenecen a ninguna comunidad y a las
+     que nadie va a volver. Sin esto se acumulan en el disco de quien hospeda. */
+  const idas = sweepGuests();
+  if (idas > 0) console.log(`Limpiados ${idas} invitados de reunión que nunca entraron.`);
+}, 60 * 60_000);
 pruneTimer.unref();
 
 server.listen(config.port, config.host, () => {

@@ -68,6 +68,38 @@ export function communityPermissions(communityId: string, userId: string): bigin
   return bits;
 }
 
+/**
+ * Lo que puede un invitado de reunión, y **solo** en el canal de su reunión.
+ *
+ * Ver, entrar, hablar, encender la cámara y escribir ahí dentro. Ni adjuntar
+ * ficheros al disco de quien hospeda, ni mencionar a toda la comunidad, ni
+ * gestionar nada. En cualquier otro canal devuelve cero, sin excepciones.
+ */
+const PERMISOS_INVITADO =
+  PERMISSIONS.VIEW_CHANNEL |
+  PERMISSIONS.SEND_MESSAGES |
+  PERMISSIONS.READ_HISTORY |
+  PERMISSIONS.ADD_REACTIONS |
+  PERMISSIONS.CONNECT_VOICE |
+  PERMISSIONS.SPEAK |
+  PERMISSIONS.STREAM |
+  PERMISSIONS.USE_CAMERA;
+
+function permisosDeInvitado(channelId: string, userId: string): bigint {
+  const fila = db
+    .prepare(
+      `SELECT m.channel_id, m.state FROM meeting_guests g
+       JOIN meetings m ON m.id = g.meeting_id
+       WHERE g.user_id = ?`,
+    )
+    .get(userId) as { channel_id: string; state: string } | undefined;
+  if (!fila || fila.channel_id !== channelId) return 0n;
+  /* Y solo mientras la reunión siga abierta: terminada la reunión, el invitado
+     no se queda con un canal de la comunidad de otra persona. */
+  if (fila.state !== "LOBBY" && fila.state !== "LIVE") return 0n;
+  return PERMISOS_INVITADO;
+}
+
 export function channelPermissions(channelId: string, userId: string): bigint {
   const channel = db.prepare("SELECT community_id FROM channels WHERE id = ?").get(channelId) as
     | { community_id: string }
@@ -75,7 +107,15 @@ export function channelPermissions(channelId: string, userId: string): bigint {
   if (!channel) return 0n;
 
   const state = memberState(channel.community_id, userId);
-  if (!state.isMember || state.banned) return 0n;
+  if (!state.isMember || state.banned) {
+    /* Un invitado de reunión (V2) no es miembro de la comunidad a propósito, y
+       aun así tiene que poder estar en SU reunión. Se mira solo cuando ya se
+       sabe que no es miembro, así que el camino de siempre no paga nada.
+       La consulta va aquí en vez de importar meetings.ts porque ese módulo
+       importa este: el ciclo existiría solo para ahorrar cuatro líneas. */
+    if (state.banned) return 0n;
+    return permisosDeInvitado(channelId, userId);
+  }
   if (state.isOwner) return ALL_PERMISSIONS;
 
   let bits = communityPermissions(channel.community_id, userId);
