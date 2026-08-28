@@ -777,6 +777,7 @@ figure {
   stroke-dasharray: 1;
   --ai-anim: ai-pop-streamers 0.7s ease-in-out;
 }
+.ai-compass [data-anim="needle"] { --ai-anim: ai-compass-seek 0.9s ease-in-out; }
 
 @keyframes ai-draw-in {
   from { stroke-dashoffset: 1; opacity: 0; }
@@ -881,6 +882,15 @@ figure {
   50% { scale: 1; stroke-dashoffset: 0.5; }
   75% { scale: 1.1; }
   100% { opacity: 1; scale: 1; translate: 0 0; stroke-dashoffset: 0; }
+}
+
+/* La aguja busca el norte: dos oscilaciones amortiguadas y vuelta al reposo,
+   una pasada por entrada de hover/foco como el resto de la familia. */
+@keyframes ai-compass-seek {
+  0%, 100% { rotate: 0deg; }
+  30% { rotate: -30deg; }
+  65% { rotate: 18deg; }
+  85% { rotate: -6deg; }
 }
 
 /* En @layer components y no suelto: sin capa, estas reglas le ganaban a las

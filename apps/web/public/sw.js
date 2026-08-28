@@ -14,7 +14,9 @@ const SHELL = "distop-shell-v2";
 /* El cascarón y sus assets: los de /assets/ llevan hash de Vite (inmutables),
    rings y sounds son catálogo fijo, emoji-animated es grande pero finito y de
    uso repetido — este último es el que vigila el tope de abajo. */
-const SHELL_PREFIXES = ["/assets/", "/rings/", "/sounds/", "/emoji-animated/"];
+/* `/models/` es el modelo del fondo de cámara: un único archivo de 244 KB que
+   no cambia nunca, y cachearlo evita volver a bajarlo en cada llamada. */
+const SHELL_PREFIXES = ["/assets/", "/rings/", "/sounds/", "/emoji-animated/", "/models/"];
 const SHELL_PAGES = ["/", "/icon.svg", "/manifest.webmanifest"];
 const MAX_ENTRIES = 400;
 

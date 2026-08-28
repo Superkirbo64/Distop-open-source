@@ -141,6 +141,20 @@ export function Announcement({ size = 18, className }: IconProps) {
   );
 }
 
+/**
+ * Brújula de "Explorar comunidades". Geometría de Lucide (compass) con el
+ * patrón de la casa: la aguja lleva data-anim y styles.css decide la
+ * coreografía — oscila buscando el norte y aterriza donde estaba.
+ */
+export function Compass({ size = 18, className }: IconProps) {
+  return (
+    <svg width={size} height={size} className={cls("ai ai-compass", className)} {...svgProps}>
+      <circle cx={12} cy={12} r={10} />
+      <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" data-anim="needle" />
+    </svg>
+  );
+}
+
 /** Animate UI: send. */
 export function Send({ size = 18, className }: IconProps) {
   return (

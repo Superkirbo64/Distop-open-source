@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_PROFILE_STYLE, type SelfUser } from "@distop/protocol";
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { useStore, type BackdropChoice, type Density, type FontChoice, type ThemeChoice } from "../store.ts";
 import { api, setTokens, type Tokens } from "../lib/api.ts";
 import { inputDevice, probeNetwork, retuneVideo, setIceServers, setInputDevice, setVideoMode } from "../lib/voice.ts";
@@ -17,6 +17,7 @@ import {
   ColorInput,
   DisplayName,
   ErrorNote,
+  ExternalLinkButton,
   Field,
   ImageField,
   Modal,
@@ -29,6 +30,7 @@ import {
 } from "../components/ui.tsx";
 import { WallpaperField, WallpaperPicker } from "../components/Wallpaper.tsx";
 import { Gallery } from "../components/Gallery.tsx";
+import { CameraBackgroundSetup } from "../components/CameraBackground.tsx";
 import {
   AvatarDecoPicker,
   CardEffectLayer,
@@ -41,6 +43,7 @@ import {
 import { askNotifyPermission, notifyPermission, type NotifyLevel } from "../lib/notify.ts";
 import { activeAvailabilityWatch, setActiveAvailabilityWatch } from "../lib/instance.ts";
 import { disablePush, enablePush, pushState, type PushFailure, type PushState } from "../lib/push.ts";
+import { CLOUD_GUIDE_URL } from "../lib/publish.ts";
 
 /** Paleta de partida. Cualquier otro color sale del selector, sin cortapisas. */
 const ACCENTS = ["#4059e0", "#7b5cff", "#c2389c", "#d94f43", "#e08c2f", "#2f9e6f", "#2f8fd6", "#5b6472"];
@@ -1017,6 +1020,12 @@ function VideoSetup() {
           />
         )}
       </Field>
+
+      {/* El fondo va en esta misma pestaña y no en una propia: es otra decisión
+          sobre la propia cámara, y aquí es donde se viene a mirar. */}
+      <div className="border-t border-line pt-4">
+        <CameraBackgroundSetup />
+      </div>
     </div>
   );
 }
@@ -1039,32 +1048,13 @@ interface RelayState {
   username: string;
   keyId: string;
   appName: string;
-  /** Fijado por ICE_SERVERS en el entorno: manda eso y desde aquí no se cambia. */
+  /** Fijado por el entorno (ICE_SERVERS o TURN_URL/TURN_SECRET): manda eso y desde aquí no se cambia. */
   locked: boolean;
+  /** Las credenciales TURN rotan solas (use-auth-secret). El secreto jamás viaja de vuelta. */
+  ephemeral: boolean;
 }
 
 type Probe = { host: boolean; stun: boolean; relay: boolean } | "running" | null;
-
-/**
- * Enlace al sitio donde se saca la credencial.
- * Sin esto hay que salir de la aplicación a buscar a mano en qué rincón del panel
- * del proveedor está la clave, que es justo donde la gente abandona.
- */
-function Externo({ href, children }: { href: string; children: string }) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      // noreferrer además de noopener: la instancia puede estar en una dirección
-      // privada y no tiene por qué acabar en las estadísticas de nadie.
-      rel="noopener noreferrer"
-      className="btn btn-ghost self-start text-xs"
-    >
-      {children}
-      <ExternalLink size={13} aria-hidden />
-    </a>
-  );
-}
 
 /**
  * Micrófono, altavoces y volúmenes (§10.2).
@@ -1314,6 +1304,7 @@ function VoiceTab() {
     url: "",
     username: "",
     credential: "",
+    secret: "",
     keyId: "",
     apiToken: "",
     appName: "",
@@ -1324,16 +1315,22 @@ function VoiceTab() {
   const [probe, setProbe] = useState<Probe>(null);
   /** Lo marcado en pantalla, que hasta pulsar "Guardar" puede no ser lo guardado. */
   const [elegido, setElegido] = useState<RelayState["mode"]>("direct");
+  /* La variante del TURN propio: credencial fija o secreto compartido. Sale de
+     `ephemeral` al cargar; un servidor viejo que no mande el campo cae en
+     estático, que era el único comportamiento que existía. */
+  const [customKind, setCustomKind] = useState<"static" | "ephemeral">("static");
 
   useEffect(() => {
     api<RelayState>("GET", "/api/v1/instance/relay")
       .then((value) => {
         setRelayState(value);
         setElegido(value.mode);
+        setCustomKind(value.ephemeral ? "ephemeral" : "static");
         setDraft({
           url: value.url,
           username: value.username,
           credential: "",
+          secret: "",
           keyId: value.keyId,
           apiToken: "",
           appName: value.appName,
@@ -1354,6 +1351,7 @@ function VoiceTab() {
   async function save(
     next: Partial<RelayState> & {
       credential?: string;
+      secret?: string;
       apiToken?: string;
       apiKey?: string;
     },
@@ -1491,7 +1489,14 @@ function VoiceTab() {
             ) : null}
           </div>
 
-          {relay.locked ? <p className="text-sm text-muted">{t("voice.relayLocked")}</p> : null}
+          {relay.locked ? (
+            <p className="text-sm text-muted">
+              {t("voice.relayLocked")}
+              {/* Con TURN_URL/TURN_SECRET del entorno las credenciales además
+                  rotan solas: se dice, porque es lo único visible desde aquí. */}
+              {relay.ephemeral ? ` ${t("voice.relayEphemeralActive")}` : ""}
+            </p>
+          ) : null}
 
           <fieldset className="flex flex-col gap-2" disabled={relay.locked}>
             <legend className="sr-only">{t("voice.relayTitle")}</legend>
@@ -1537,7 +1542,7 @@ function VoiceTab() {
                 <li>{t("voice.relayMetStep2")}</li>
                 <li>{t("voice.relayMetStep3")}</li>
               </ol>
-              <Externo href="https://dashboard.metered.ca/signup?tool=turnserver">{t("voice.relayMetOpen")}</Externo>
+              <ExternalLinkButton href="https://dashboard.metered.ca/signup?tool=turnserver">{t("voice.relayMetOpen")}</ExternalLinkButton>
               <Field label={t("voice.relayMetApp")} hint={t("voice.relayMetAppHint")}>
                 {(id) => (
                   <input
@@ -1583,7 +1588,7 @@ function VoiceTab() {
                 <li>{t("voice.relayCfStep2")}</li>
                 <li>{t("voice.relayCfStep3")}</li>
               </ol>
-              <Externo href="https://dash.cloudflare.com/?to=/:account/calls">{t("voice.relayCfOpen")}</Externo>
+              <ExternalLinkButton href="https://dash.cloudflare.com/?to=/:account/calls">{t("voice.relayCfOpen")}</ExternalLinkButton>
               <Field label={t("voice.relayCfKey")} hint={t("voice.relayCfKeyHint")}>
                 {(id) => (
                   <input
@@ -1616,16 +1621,64 @@ function VoiceTab() {
               className="flex flex-col gap-3 rounded-card border border-line p-3"
               onSubmit={(event) => {
                 event.preventDefault();
-                void save({
-                  mode: "custom",
-                  url: draft.url,
-                  username: draft.username,
-                  credential: draft.credential,
-                });
+                /* Estático manda `secret: ""` a propósito: un secreto guardado
+                   gana siempre sobre usuario y contraseña en el servidor, así
+                   que cambiar de variante tiene que borrarlo o el formulario
+                   estático guardaría credenciales que nunca se usarían.
+                   En efímero, el secreto solo viaja si se escribió uno nuevo:
+                   el campo nunca viene prellenado y mandar vacío lo borraría. */
+                void save(
+                  customKind === "ephemeral"
+                    ? { mode: "custom", url: draft.url, ...(draft.secret ? { secret: draft.secret } : {}) }
+                    : { mode: "custom", url: draft.url, username: draft.username, credential: draft.credential, secret: "" },
+                );
               }}
             >
-              <p className="text-xs text-muted">{t("voice.relayHelp")}</p>
-              <Externo href="https://www.expressturn.com/#signup">{t("voice.relayCustomOpen")}</Externo>
+              <fieldset className="flex flex-col gap-2">
+                <legend className="sr-only">{t("voice.relayCustom")}</legend>
+                {(
+                  [
+                    ["static", t("voice.relayCustomStatic"), t("voice.relayCustomStaticHint")],
+                    ["ephemeral", t("voice.relayEphemeral"), t("voice.relayEphemeralHint")],
+                  ] as const
+                ).map(([kind, label, hint]) => (
+                  <label
+                    key={kind}
+                    className={`flex cursor-pointer gap-3 rounded-card border p-3 transition-colors ${
+                      customKind === kind ? "border-accent bg-accent-soft" : "border-line hover:bg-raise"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="custom-kind"
+                      checked={customKind === kind}
+                      onChange={() => {
+                        setCustomKind(kind);
+                        setError("");
+                      }}
+                      className="mt-1 accent-[var(--accent)]"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm font-medium">{label}</span>
+                      <span className="block text-xs text-muted">{hint}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+
+              {customKind === "static" ? (
+                <>
+                  <p className="text-xs text-muted">{t("voice.relayHelp")}</p>
+                  <ExternalLinkButton href="https://www.expressturn.com/#signup">{t("voice.relayCustomOpen")}</ExternalLinkButton>
+                </>
+              ) : (
+                <>
+                  {/* El estado guardado, sin enseñar jamás el secreto: si rota, rota. */}
+                  {relay.ephemeral ? <p className="text-xs text-ok">{t("voice.relayEphemeralActive")}</p> : null}
+                  <ExternalLinkButton href={CLOUD_GUIDE_URL}>{t("voice.relayEphemeralOpen")}</ExternalLinkButton>
+                </>
+              )}
+
               <Field label={t("voice.relayUrl")} hint="turn:turn.tudominio.org:3478">
                 {(id) => (
                   <input
@@ -1637,28 +1690,54 @@ function VoiceTab() {
                   />
                 )}
               </Field>
-              <Field label={t("voice.relayUser")}>
-                {(id) => (
-                  <input
-                    id={id}
-                    className="field"
-                    value={draft.username}
-                    onChange={(e) => setDraft({ ...draft, username: e.target.value })}
-                  />
-                )}
-              </Field>
-              <Field label={t("voice.relayPassword")} hint={t("voice.relayPasswordHint")}>
-                {(id) => (
-                  <input
-                    id={id}
-                    type="password"
-                    className="field"
-                    value={draft.credential}
-                    onChange={(e) => setDraft({ ...draft, credential: e.target.value })}
-                  />
-                )}
-              </Field>
-              <Button type="submit" variant="primary" className="self-start">
+
+              {customKind === "static" ? (
+                <>
+                  <Field label={t("voice.relayUser")}>
+                    {(id) => (
+                      <input
+                        id={id}
+                        className="field"
+                        value={draft.username}
+                        onChange={(e) => setDraft({ ...draft, username: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                  <Field label={t("voice.relayPassword")} hint={t("voice.relayPasswordHint")}>
+                    {(id) => (
+                      <input
+                        id={id}
+                        type="password"
+                        className="field"
+                        value={draft.credential}
+                        onChange={(e) => setDraft({ ...draft, credential: e.target.value })}
+                      />
+                    )}
+                  </Field>
+                </>
+              ) : (
+                <Field label={t("voice.relaySecret")} hint={t("voice.relaySecretHint")}>
+                  {(id) => (
+                    <input
+                      id={id}
+                      type="password"
+                      autoComplete="off"
+                      className="field"
+                      value={draft.secret}
+                      onChange={(e) => setDraft({ ...draft, secret: e.target.value })}
+                    />
+                  )}
+                </Field>
+              )}
+
+              <Button
+                type="submit"
+                variant="primary"
+                className="self-start"
+                /* El servidor rechaza secretos de menos de 16; con la rotación ya
+                   activa se permite guardar sin secreto (cambiar solo la URL). */
+                disabled={customKind === "ephemeral" && (draft.secret ? draft.secret.length < 16 : !relay.ephemeral)}
+              >
                 {t("common.save")}
               </Button>
             </form>

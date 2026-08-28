@@ -39,6 +39,7 @@ import {
   type VoiceState,
 } from "@distop/protocol";
 import { useStore } from "../store.ts";
+import { CameraBackgroundButton } from "./CameraBackground.tsx";
 import { sendCommand } from "../lib/gateway.ts";
 /* En diferido: el panel de la carrera (y su física en lib/marbleRace.ts) solo
    se descarga cuando alguien de la llamada abre una sala, no en el chunk
@@ -451,6 +452,9 @@ export function VoiceBar() {
               <Replace size={14} />
             </button>
           ) : null}
+          {/* El fondo se elige con la cámara encendida o apagada: en el segundo
+              caso queda listo para cuando se encienda. */}
+          {canCamera ? <CameraBackgroundButton /> : null}
         </div>
       ) : null}
 
@@ -488,6 +492,10 @@ export function VoiceBar() {
             ? t("voice.videoDenied")
             : local.videoError === "unsupported"
               ? t("voice.videoUnsupported")
+              : local.videoError === "background_unsupported"
+                ? t("voice.videoBackgroundUnsupported")
+                : local.videoError === "background_failed"
+                  ? t("voice.videoBackgroundFailed")
             : t("voice.noCamera")}
         </ErrorNote>
       ) : null}

@@ -153,6 +153,9 @@ interface State {
   guestMeeting: Meeting | null;
   /** Dirección pública de la instancia, para que los enlaces sirvan fuera de casa. */
   publicUrl: string;
+  /** El anfitrión encendió el directorio (PUBLIC_DISCOVERY_ENABLED). Apagado de
+      fábrica: nada se anuncia sin que quien hospeda lo decida (§19). */
+  publicDiscoveryEnabled: boolean;
   /** El anfitrión configuró clave de Giphy. Sin esto la pestaña de GIF no se enseña. */
   gifEnabled: boolean;
   /** Y la de Klipy, que es la de la galería de stickers. Van por separado. */
@@ -354,6 +357,7 @@ export const useStore = create<State>()((set, get) => ({
   meetingWaiting: {},
   guestMeeting: null,
   publicUrl: "",
+  publicDiscoveryEnabled: false,
   gifEnabled: false,
   stickerGalleryEnabled: false,
   manageOpen: false,
@@ -394,12 +398,14 @@ export const useStore = create<State>()((set, get) => ({
         ice_servers: RTCIceServer[];
         video: { mode: "host" | "direct" };
         public_url: string;
+        public_discovery_enabled: boolean;
         gif_enabled: boolean;
         sticker_gallery_enabled: boolean;
       }>("GET", "/api/v1/info");
       set({
         setup: { required: info.setup_required, requiresCode: info.setup_requires_code },
         publicUrl: info.public_url,
+        publicDiscoveryEnabled: Boolean(info.public_discovery_enabled),
         gifEnabled: Boolean(info.gif_enabled),
         stickerGalleryEnabled: Boolean(info.sticker_gallery_enabled),
       });

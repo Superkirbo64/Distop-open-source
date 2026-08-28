@@ -31,7 +31,7 @@ nunca antes ni a mitad.
       Planificador interno con cortesía hacia llamadas activas, passphrase en
       fichero 0600 que mata el boot si falta o es débil, poda conservando K, y
       el GET de copias relajado a requireHost-only. Restore sigue siendo CLI.
-- [ ] 4. `feat(web): explorar, carril nube, estado de copias y turn efímero en la interfaz`
+- [x] 4. `feat(web): explorar, carril nube, estado de copias y turn efímero en la interfaz`
       Sub-selector TURN en Ajustes, estado de copias en el panel de instancia,
       tercer carril "Siempre disponible (nube, coste cero)" en Compartir, y el
       modal Explorar con estados honestos. i18n en los tres idiomas.

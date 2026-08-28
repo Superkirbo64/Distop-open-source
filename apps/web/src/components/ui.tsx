@@ -15,7 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Image as ImageIcon, Pipette, Search } from "lucide-react";
+import { Check, ChevronDown, ExternalLink, Image as ImageIcon, Pipette, Search } from "lucide-react";
 import { RINGS, type ProfileStyle } from "@distop/protocol";
 import { translate, type MessageKey } from "../i18n.ts";
 import { useStore } from "../store.ts";
@@ -70,6 +70,29 @@ export function Button({
   ...props
 }: ButtonProps) {
   return <button {...props} className={`btn btn-${variant} ${className}`} />;
+}
+
+/**
+ * Enlace externo con aspecto de botón y el icono de "sale de aquí".
+ * Nació en Ajustes para llevar a la página donde se saca cada credencial —sin
+ * esto hay que salir a buscar a mano en qué rincón del panel del proveedor
+ * está la clave, que es justo donde la gente abandona— y ahora también lo usan
+ * las guías de la nube y de copias, así que vive aquí.
+ */
+export function ExternalLinkButton({ href, children }: { href: string; children: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      // noreferrer además de noopener: la instancia puede estar en una dirección
+      // privada y no tiene por qué acabar en las estadísticas de nadie.
+      rel="noopener noreferrer"
+      className="btn btn-ghost self-start text-xs"
+    >
+      {children}
+      <ExternalLink size={13} aria-hidden />
+    </a>
+  );
 }
 
 /**

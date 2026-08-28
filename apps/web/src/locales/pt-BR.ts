@@ -95,6 +95,9 @@ export const ptBR: Record<keyof typeof es, string> = {
   "instance.purgeDone": "Feito: {messages} mensagens apagadas e {mb} MB recuperados.",
   "instance.users": "Pessoas conectadas",
   "instance.version": "Versão",
+  "instance.discovery": "Diretório público",
+  "instance.discoveryOn": "Ativado",
+  "instance.discoveryOff": "Desativado",
   "instance.offlineHelp":
     "A comunidade vive na máquina de quem hospeda. Se ela estiver desligada, não há serviço até voltar.",
 
@@ -179,6 +182,50 @@ export const ptBR: Record<keyof typeof es, string> = {
   "share.continue": "Continuar / tentar novamente",
   "share.tailscaleFairUse": "O Tailscale Funnel é grátis e estável, sujeito a limites de uso justo. Chat e voz leve funcionam bem; para muitos arquivos grandes, prefira Cloudflare com domínio próprio.",
   "share.addressChanged": "O endereço público mudou ao reiniciar. Copie o novo endereço para os membros ou ative o Tailscale Funnel para mantê-lo fixo.",
+  "share.cloud": "Nuvem",
+  "share.cloudTitle": "Sempre disponível (nuvem, custo zero)",
+  "share.cloudHint":
+    "Uma máquina do plano Always Free da Oracle mantém sua comunidade ligada sem custo recorrente, mesmo com o seu computador desligado. Não há garantia de serviço: a Oracle pode recolher máquinas que considerar ociosas, e o guia explica como evitar isso e como se recuperar com cópias.",
+  "share.cloudLimits":
+    "A Oracle pede um cartão só para verificar sua identidade; o plano Always Free não gera cobranças. A instância é a mesma de casa —seus dados continuam seus—, só que rodando na máquina deles.",
+  "share.cloudGuide": "Ver o guia passo a passo",
+  "share.cloudDeploy": "Implantar na Oracle Cloud",
+  "share.cloudFixed": "Endereço fixo configurado",
+  "share.cloudFixedHint":
+    "Esta instância já roda com endereço público próprio: ele vem de PUBLIC_URL no ambiente da máquina. Para mudar, edite essa variável e reinicie o servidor.",
+  "share.cloudTunnelsOff":
+    "Com um endereço fixo na nuvem os túneis sobram: abrir um aqui quebraria o endereço que seus membros já usam.",
+
+  "backups.title": "Cópias de segurança",
+  "backups.scheduleOn": "Programadas: a cada {hours} h, guardando as {keep} mais recentes.",
+  "backups.scheduleOff": "A programação está desligada.",
+  "backups.scheduleOffHint":
+    "Liga-se com BACKUP_INTERVAL_HOURS e BACKUP_PASSPHRASE_FILE (e opcionalmente BACKUP_KEEP) no ambiente do servidor. Sem isso, nenhuma cópia acontece sozinha.",
+  "backups.last": "Última cópia: {date} · {size}",
+  "backups.none": "Ainda não há nenhuma cópia.",
+  "backups.files": "Cópias no disco do servidor",
+  "backups.manualUnavailable":
+    "Cópias manuais só podem ser pedidas do próprio computador anfitrião. Em uma instância na nuvem, use a programação por ambiente.",
+  "backups.create": "Criar cópia agora",
+  "backups.passphrase": "Frase da cópia",
+  "backups.passphraseHint":
+    "Pelo menos 12 caracteres. Ela cifra a cópia e não fica guardada em lugar nenhum: sem ela não dá para restaurar.",
+  "backups.running": "Criando a cópia…",
+  "backups.done": "Cópia criada.",
+  "backups.failed": "A cópia falhou. Veja os registros do servidor.",
+  "backups.guide": "Ver o guia de cópias na nuvem",
+
+  "explore.title": "Explorar comunidades",
+  "explore.open": "Explorar comunidades públicas",
+  "explore.disabled": "O diretório desta instância está desligado",
+  "explore.disabledHostHint":
+    "Liga-se com PUBLIC_DISCOVERY_ENABLED=true no ambiente do servidor. Desligado é o padrão de fábrica: nada se anuncia sem que quem hospeda decida.",
+  "explore.empty": "Nenhuma comunidade foi marcada como pública ainda",
+  "explore.emptyHint":
+    "Marca-se em Administrar → Geral, com “Aparecer na descoberta pública”.",
+  "explore.needInvite":
+    "Para entrar ainda é preciso um convite de alguém de dentro: o diretório mostra, não abre portas.",
+  "explore.sourceInstance": "Esta instância",
 
   "community.yours": "Suas comunidades",
   "community.create": "Criar comunidade",
@@ -395,6 +442,46 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.videoUnsupported":
     "Este navegador não consegue codificar vídeo pelo servidor. Tente o modo direto ou um navegador Chromium atualizado.",
   "voice.noCamera": "Nenhuma câmera encontrada. Conecte uma e tente de novo.",
+  "voice.videoBackgroundFailed":
+    "Não deu para preparar o fundo da câmera, então a câmera não ligou: mostrar seu quarto sem aviso seria o contrário do que você pediu. Tire o fundo em Ajustes → Câmera e tela para ligar assim mesmo.",
+  "voice.videoBackgroundUnsupported":
+    "Este navegador não consegue te recortar do fundo (falta WebAssembly SIMD), e a câmera não ligou para o fundo real não sair daqui. Tire o fundo ou use um navegador mais novo.",
+
+  "camBg.title": "Fundo da câmera",
+  "camBg.intro":
+    "Desfoque o seu quarto ou troque por outra coisa. O recorte acontece no seu equipamento: a sala recebe a imagem já composta e o seu fundo real não sai daqui.",
+  "camBg.button": "Fundo",
+  "camBg.blurTitle": "Desfocar",
+  "camBg.none": "Sem fundo",
+  "camBg.blurLight": "Desfoque leve",
+  "camBg.blurStrong": "Desfoque forte",
+  "camBg.presetsTitle": "Fundos inclusos",
+  "camBg.preset.aurora": "Aurora",
+  "camBg.preset.studio": "Estúdio",
+  "camBg.preset.dusk": "Entardecer",
+  "camBg.preset.grove": "Arvoredo",
+  "camBg.customTitle": "Suas imagens",
+  "camBg.upload": "Enviar imagem",
+  "camBg.remove": "Remover",
+  "camBg.removeConfirm": "Remover “{name}” dos seus fundos? Ela é apagada deste navegador.",
+  "camBg.local":
+    "Suas imagens ficam só neste navegador: não sobem para a instância e ninguém mais vê. Sem limite pago, só o espaço que você tiver.",
+  "camBg.cost":
+    "O recorte roda no seu equipamento e gasta CPU. Em máquinas modestas pode baixar os quadros da câmera; dá para desligar quando quiser.",
+  "camBg.loading": "Preparando o recorte… o motor baixa uma vez (uns 12 MB) e depois fica guardado.",
+  "camBg.willApply": "O fundo entra assim que você ligar a câmera.",
+  "camBg.unsupported":
+    "Este navegador não consegue te recortar do fundo: falta WebAssembly SIMD. Tente um Chrome, Edge, Firefox ou Safari recente.",
+  "camBg.failed":
+    "Não deu para preparar o fundo. A câmera não ligou para você não acabar mostrando o quarto que queria esconder.",
+  "camBg.preview": "Testar com minha câmera",
+  "camBg.previewStop": "Parar teste",
+  "camBg.previewHint": "Ligue a câmera por um momento para ver como fica antes de entrar numa chamada.",
+  "camBg.error.too_big": "A imagem passa de 8 MB. Reduza o tamanho e tente de novo.",
+  "camBg.error.not_image": "Esse arquivo não é uma imagem.",
+  "camBg.error.too_many": "Você já tem 12 fundos guardados. Remova algum para adicionar outro.",
+  "camBg.error.no_storage": "Este navegador não deixou guardar a imagem. Pode estar em modo privado ou sem espaço.",
+
   "voice.emptyRoom": "Sala de voz vazia",
   "voice.emptyRoomHint": "Entre primeiro: quem chegar depois te ouve na hora.",
   "voice.fun": "Jogos da sala",
@@ -511,6 +598,17 @@ export const ptBR: Record<keyof typeof es, string> = {
   "voice.relayCustom": "Usar um servidor TURN",
   "voice.relayCustomHint":
     "Repassa o vídeo quando não há rota direta. Ele vê pacotes cifrados e os IPs de vocês; não consegue ver nem ouvir o conteúdo.",
+  "voice.relayCustomStatic": "Usuário e senha fixos",
+  "voice.relayCustomStaticHint":
+    "Para TURN com credencial estática: ExpressTURN, um coturn com usuário fixo ou parecido.",
+  "voice.relayEphemeral": "Segredo compartilhado (use-auth-secret)",
+  "voice.relayEphemeralHint":
+    "Para um coturn próprio com use-auth-secret: a instância cunha usuários temporários com esse segredo; eles expiram sozinhos e giram sem mexer em nada.",
+  "voice.relaySecret": "Segredo compartilhado",
+  "voice.relaySecretHint":
+    "Pelo menos 16 caracteres, o mesmo static-auth-secret do turnserver.conf. Fica guardado no servidor e não aparece de novo.",
+  "voice.relayEphemeralActive": "Credenciais girando automaticamente.",
+  "voice.relayEphemeralOpen": "Ver o guia do coturn na nuvem",
   "voice.relayHelp":
     "Para qualquer TURN com usuário e senha fixos: coturn próprio, ExpressTURN (turn:relay1.expressturn.com:3478, grátis, responde nas portas 3478, 80 e 443) ou similar. Ao salvar, é conferido se repassa mesmo.",
   "voice.relayUrl": "Endereço do TURN",
@@ -520,7 +618,7 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Fica guardada no servidor e não aparece de novo.",
   "voice.relaySaved": "Salvo. Vale para as próximas chamadas.",
   "voice.relayLocked":
-    "Fixado com ICE_SERVERS no ambiente do servidor. Tire essa variável para mudar aqui.",
+    "Fixado pelo ambiente do servidor (ICE_SERVERS, ou TURN_URL e TURN_SECRET). Tire essas variáveis para mudar aqui.",
   "voice.relayHostOnly": "Só quem hospeda pode mudar isso.",
   "voice.device": "Microfone",
   "voice.deviceDefault": "O do sistema",

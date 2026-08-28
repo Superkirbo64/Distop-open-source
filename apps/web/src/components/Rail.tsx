@@ -6,10 +6,13 @@
 import { useState } from "react";
 import { useEffect, useMemo } from "react";
 import { Link as LinkIcon, Server } from "lucide-react";
-import { Cross } from "./icons.tsx";
+import { Compass, Cross } from "./icons.tsx";
 import { useStore } from "../store.ts";
-import { Button, ErrorNote, Field, IconButton, Modal, Select, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
+import { Button, ErrorNote, ExternalLinkButton, Field, IconButton, Modal, Select, Spinner, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
+import { Explore } from "./Explore.tsx";
 import { api } from "../lib/api.ts";
+import { CLOUD_GUIDE_URL, ORACLE_STACK_URL, detectLane } from "../lib/publish.ts";
+import { describeSchedule, sortBackupFiles, type BackupJob, type BackupsView } from "../lib/backups.ts";
 import {
   clientOrigin,
   connectToInstance,
@@ -25,7 +28,7 @@ import {
   type CachedCommunity,
 } from "../lib/instance.ts";
 import { ensurePortableIdentity } from "../lib/portable.ts";
-import { formatDuration } from "../i18n.ts";
+import { formatBytes, formatDate, formatDuration } from "../i18n.ts";
 import type { Community } from "@distop/protocol";
 
 /**
@@ -66,6 +69,7 @@ export function Rail({
   const unread = useCommunityUnread();
 
   const [status, setStatus] = useState(false);
+  const [explore, setExplore] = useState(false);
   const [knownRevision, setKnownRevision] = useState(0);
   const [unavailable, setUnavailable] = useState<{ community: CachedCommunity; url: string } | null>(null);
 
@@ -168,12 +172,17 @@ export function Rail({
         <LinkIcon size={18} />
       </IconButton>
 
+      <IconButton label={t("explore.open")} onClick={() => setExplore(true)} className="h-10 w-10">
+        <Compass size={18} />
+      </IconButton>
+
       <IconButton label={t("instance.status")} onClick={() => setStatus(true)} className="h-10 w-10">
         <Server size={18} />
       </IconButton>
       <ConnectionDot />
 
       <InstanceStatus open={status} onClose={() => setStatus(false)} />
+      <Explore open={explore} onClose={() => setExplore(false)} />
       <UnavailableCommunity
         target={unavailable}
         user={user}
@@ -678,6 +687,7 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
   const locale = useLocale();
   const instance = useStore((s) => s.instance);
   const status = useStore((s) => s.status);
+  const publicDiscoveryEnabled = useStore((s) => s.publicDiscoveryEnabled);
 
   /* GB o TB según el tamaño: "quedan 231,4 GB" dice algo; "quedan 236993 MB" no.
      Intl y no toFixed: el separador decimal es del idioma, no siempre un punto. */
@@ -702,6 +712,10 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
             ? `${instance.storage_used_mb} MB · ${t("instance.storageFree", { free: freeLabel })}`
             : `${instance.storage_used_mb} MB`,
         ],
+        /* El estado del directorio se dice aquí, mirando a la cara: una
+           instancia que se anuncia (o no) es algo que su gente debe saber sin
+           bucear en variables de entorno (§26). */
+        [t("instance.discovery"), publicDiscoveryEnabled ? t("instance.discoveryOn") : t("instance.discoveryOff")],
       ]
     : [];
 
@@ -729,6 +743,8 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
         </dl>
 
         <ShareInstance />
+
+        <BackupsStatus />
 
         <PurgeData />
 
@@ -780,7 +796,7 @@ function ShareInstance() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [autostart, setAutostart] = useState(true);
-  const [mode, setMode] = useState<"cloudflare" | "tailscale">("cloudflare");
+  const [mode, setMode] = useState<"cloudflare" | "tailscale" | "cloud">("cloudflare");
   const [tailscale, setTailscale] = useState<TailscaleState | null>(null);
 
   // Solo quien hospeda puede abrir el túnel; para el resto, la sección se queda
@@ -790,7 +806,12 @@ function ShareInstance() {
       .then((state) => {
         setIsHost(true);
         setTunnel(state);
-        if (state.fixed_url?.endsWith(".ts.net")) setMode("tailscale");
+        /* El carril inicial lo dice el estado real, no una preferencia: con
+           Funnel activo se abre Tailscale, y en un despliegue con PUBLIC_URL
+           (la VM de la nube) se abre el carril nube — ahí los túneles sobran. */
+        const lane = detectLane(state);
+        if (lane === "tailscale") setMode("tailscale");
+        else if (lane === "cloud-fixed") setMode("cloud");
         useStore.setState({ publicUrl: state.public_url });
         if (typeof state.autostart === "boolean") setAutostart(state.autostart);
       })
@@ -823,6 +844,9 @@ function ShareInstance() {
 
   const address = publicUrl || clientOrigin();
   const isLocal = !publicUrl && /localhost|127\.0\.0\.1|\[::1\]/.test(address);
+  /* Ya desplegada en una máquina con PUBLIC_URL propia (la VM de la nube):
+     la dirección es fija y los túneles solo podrían romperla. */
+  const cloudFixed = detectLane(tunnel) === "cloud-fixed";
   const tailscaleTextKey = {
     missing: "share.tailscale.missing",
     login: "share.tailscale.login",
@@ -908,12 +932,26 @@ function ShareInstance() {
 
       {isHost ? (
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-2 rounded-[10px] bg-sunken p-1">
-            <Button variant={mode === "cloudflare" ? "primary" : "ghost"} onClick={() => setMode("cloudflare")}>
+          <div className="grid grid-cols-3 gap-2 rounded-[10px] bg-sunken p-1">
+            {/* Con dirección fija de la nube, los carriles de túnel se apagan:
+                abrir uno rompería la dirección que la gente ya usa, así que no
+                se ofrece un botón que solo puede estropear cosas (§29.6). */}
+            <Button
+              variant={mode === "cloudflare" ? "primary" : "ghost"}
+              onClick={() => setMode("cloudflare")}
+              disabled={cloudFixed}
+            >
               Cloudflare
             </Button>
-            <Button variant={mode === "tailscale" ? "primary" : "ghost"} onClick={() => setMode("tailscale")}>
+            <Button
+              variant={mode === "tailscale" ? "primary" : "ghost"}
+              onClick={() => setMode("tailscale")}
+              disabled={cloudFixed}
+            >
               Tailscale Funnel
+            </Button>
+            <Button variant={mode === "cloud" ? "primary" : "ghost"} onClick={() => setMode("cloud")}>
+              {t("share.cloud")}
             </Button>
           </div>
 
@@ -936,7 +974,7 @@ function ShareInstance() {
                 </span>
               </label>
             </div>
-          ) : (
+          ) : mode === "tailscale" ? (
             <div className="flex flex-col gap-2 rounded-[10px] border border-line p-3">
               <p className="text-xs font-semibold">{t("share.fixedStep", { step: String(tailscale?.step ?? 1) })}</p>
               <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs text-muted">
@@ -975,6 +1013,40 @@ function ShareInstance() {
               )}
               <p className="text-xs text-muted">{t("share.tailscaleFairUse")}</p>
             </div>
+          ) : (
+            <div className="flex flex-col gap-2 rounded-[10px] border border-line p-3">
+              {cloudFixed ? (
+                <>
+                  {/* Ya corre en la nube: aquí no hay nada que encender, solo
+                      decir dónde vive y de dónde sale esa dirección. */}
+                  <p className="text-xs font-semibold">{t("share.cloudFixed")}</p>
+                  <code className="truncate rounded bg-sunken p-2 text-xs">{tunnel?.public_url}</code>
+                  <p className="text-xs text-muted">{t("share.cloudFixedHint")}</p>
+                  <p className="text-xs text-muted">{t("share.cloudTunnelsOff")}</p>
+                </>
+              ) : (
+                <>
+                  {/* La oferta, contada entera: coste cero recurrente, sin SLA,
+                      Oracle puede reclamar máquinas ociosas y pide tarjeta solo
+                      para verificar identidad. Sin el botón de deploy mientras
+                      no exista el zip versionado (ORACLE_STACK_URL es null). */}
+                  <p className="text-xs font-semibold">{t("share.cloudTitle")}</p>
+                  <p className="text-xs text-muted">{t("share.cloudHint")}</p>
+                  <p className="text-xs text-muted">{t("share.cloudLimits")}</p>
+                  <ExternalLinkButton href={CLOUD_GUIDE_URL}>{t("share.cloudGuide")}</ExternalLinkButton>
+                  {ORACLE_STACK_URL !== null ? (
+                    <a
+                      className="btn btn-primary min-h-10 w-full text-center text-sm font-bold"
+                      href={ORACLE_STACK_URL}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {t("share.cloudDeploy")}
+                    </a>
+                  ) : null}
+                </>
+              )}
+            </div>
           )}
 
           {error ? <ErrorNote>{error}</ErrorNote> : null}
@@ -982,6 +1054,155 @@ function ShareInstance() {
       ) : null}
 
       <p className="text-xs text-muted">{t("share.hostReminder")}</p>
+    </section>
+  );
+}
+
+/**
+ * El estado de las copias de seguridad, mirando a la cara (§21, §26).
+ *
+ * Solo lo ve quien hospeda: el GET es host-only y con 403 la sección entera
+ * desaparece, como el túnel y la purga. Funciona también en la nube — el
+ * listado sobrevive al proxy a propósito—, pero ahí `manual_available` viene
+ * en falso y en vez de un botón que daría 403 se dice la verdad: las copias
+ * manuales solo se piden desde el propio equipo anfitrión.
+ */
+function BackupsStatus() {
+  const t = useT();
+  const locale = useLocale();
+  const errorText = useErrorText();
+
+  const [view, setView] = useState<BackupsView | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [passphrase, setPassphrase] = useState("");
+  const [job, setJob] = useState<BackupJob | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api<BackupsView>("GET", "/api/v1/instance/backups")
+      .then((value) => {
+        setView(value);
+        setVisible(true);
+      })
+      .catch(() => setVisible(false));
+  }, []);
+
+  /* Un trabajo en marcha se sigue de cerca: el estado del poll manda, y al
+     terminar se recarga el listado para que la copia nueva aparezca en la
+     lista sin cerrar y abrir el panel. */
+  useEffect(() => {
+    if (!job || job.state !== "running") return;
+    const timer = setInterval(() => {
+      void api<BackupJob>("GET", `/api/v1/instance/backups/${job.id}`)
+        .then((next) => {
+          setJob(next);
+          if (next.state !== "running") {
+            void api<BackupsView>("GET", "/api/v1/instance/backups").then(setView).catch(() => {});
+          }
+        })
+        .catch(() => {});
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [job]);
+
+  async function create(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    setJob(null);
+    try {
+      const started = await api<BackupJob>("POST", "/api/v1/instance/backups", { passphrase });
+      setJob(started);
+      // La frase muere aquí: cifró la copia y no se guarda en ninguna parte.
+      setPassphrase("");
+    } catch (err) {
+      /* Cinturón defensivo: si a pesar de `manual_available` el POST contesta
+         403 (un proxy nuevo por medio), el error del servidor ya lo dice. */
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!visible) return null;
+
+  const schedule = view ? describeSchedule(view.schedule) : null;
+  const files = view ? sortBackupFiles(view.files) : [];
+  const newest = files[0];
+
+  return (
+    <section className="flex flex-col gap-2 rounded-[10px] border border-line p-3">
+      <h3 className="display text-sm font-bold">{t("backups.title")}</h3>
+
+      {!view || !schedule ? (
+        <Spinner label={t("common.loading")} />
+      ) : (
+        <>
+          {schedule.kind === "on" ? (
+            <p className="text-xs text-ok">{t("backups.scheduleOn", { hours: schedule.hours, keep: schedule.keep })}</p>
+          ) : (
+            <>
+              <p className="text-xs text-warn">{t("backups.scheduleOff")}</p>
+              {/* El hint nombra las variables reales: sin receta no hay copia. */}
+              <p className="text-xs text-muted">{t("backups.scheduleOffHint")}</p>
+              <ExternalLinkButton href={CLOUD_GUIDE_URL}>{t("backups.guide")}</ExternalLinkButton>
+            </>
+          )}
+
+          <p className="text-xs text-muted">
+            {newest
+              ? t("backups.last", { date: formatDate(locale, newest.created_at), size: formatBytes(locale, newest.size) })
+              : t("backups.none")}
+          </p>
+
+          {files.length > 0 ? (
+            <>
+              <span className="text-xs text-muted">{t("backups.files")}</span>
+              <ul className="flex flex-col divide-y divide-line rounded-[10px] border border-line">
+                {files.map((file) => (
+                  <li key={file.filename} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs">
+                    <span className="min-w-0 truncate font-mono">{file.filename}</span>
+                    <span className="shrink-0 text-muted tabular-nums">
+                      {formatDate(locale, file.created_at)} · {formatBytes(locale, file.size)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+
+          {view.manual_available ? (
+            <>
+              <Field label={t("backups.passphrase")} hint={t("backups.passphraseHint")}>
+                {(id) => (
+                  <input
+                    id={id}
+                    type="password"
+                    autoComplete="off"
+                    className="field"
+                    value={passphrase}
+                    onChange={(event) => setPassphrase(event.target.value)}
+                  />
+                )}
+              </Field>
+              <Button
+                variant="primary"
+                className="self-start"
+                onClick={() => void create()}
+                disabled={busy || passphrase.length < 12 || job?.state === "running"}
+              >
+                {job?.state === "running" ? t("backups.running") : t("backups.create")}
+              </Button>
+            </>
+          ) : (
+            <p className="text-xs text-muted">{t("backups.manualUnavailable")}</p>
+          )}
+
+          {job?.state === "done" ? <p className="text-xs text-ok">{t("backups.done")}</p> : null}
+          {job?.state === "failed" ? <ErrorNote>{t("backups.failed")}</ErrorNote> : null}
+          {error ? <ErrorNote>{error}</ErrorNote> : null}
+        </>
+      )}
     </section>
   );
 }

@@ -94,6 +94,9 @@ export const en: Record<keyof typeof es, string> = {
   "instance.purgeDone": "Done: {messages} messages deleted, {mb} MB reclaimed.",
   "instance.users": "People connected",
   "instance.version": "Version",
+  "instance.discovery": "Public directory",
+  "instance.discoveryOn": "Enabled",
+  "instance.discoveryOff": "Disabled",
   "instance.offlineHelp":
     "The community lives on the host's machine. If that machine is off, there is no service until it returns.",
 
@@ -176,6 +179,50 @@ export const en: Record<keyof typeof es, string> = {
   "share.continue": "Continue / retry",
   "share.tailscaleFairUse": "Tailscale Funnel is free and stable, subject to fair-use limits. Chat and light voice traffic work well; Cloudflare with your own domain is better for many large files.",
   "share.addressChanged": "The public address changed after restarting. Copy this new address for members or enable Tailscale Funnel to keep it fixed.",
+  "share.cloud": "Cloud",
+  "share.cloudTitle": "Always available (cloud, zero cost)",
+  "share.cloudHint":
+    "A machine on Oracle's Always Free plan keeps your community online at no recurring cost, even with your computer off. There is no service guarantee: Oracle may reclaim machines it deems idle, and the guide explains how to avoid that and how to recover from backups.",
+  "share.cloudLimits":
+    "Oracle asks for a card only to verify your identity; the Always Free plan generates no charges. The instance is the same one you run at home —your data stays yours—, it just runs on their machine.",
+  "share.cloudGuide": "Read the step-by-step guide",
+  "share.cloudDeploy": "Deploy to Oracle Cloud",
+  "share.cloudFixed": "Fixed address configured",
+  "share.cloudFixedHint":
+    "This instance already runs with its own public address: it comes from PUBLIC_URL in the machine's environment. To change it, edit that variable and restart the server.",
+  "share.cloudTunnelsOff":
+    "With a fixed cloud address, tunnels are redundant: opening one here would break the address your members already use.",
+
+  "backups.title": "Backups",
+  "backups.scheduleOn": "Scheduled: every {hours} h, keeping the {keep} most recent.",
+  "backups.scheduleOff": "Scheduling is off.",
+  "backups.scheduleOffHint":
+    "Enable it with BACKUP_INTERVAL_HOURS and BACKUP_PASSPHRASE_FILE (plus optionally BACKUP_KEEP) in the server's environment. Without that, no backup happens on its own.",
+  "backups.last": "Latest backup: {date} · {size}",
+  "backups.none": "There is no backup yet.",
+  "backups.files": "Backups on the server's disk",
+  "backups.manualUnavailable":
+    "Manual backups can only be requested from the host machine itself. On a cloud instance, use environment-based scheduling.",
+  "backups.create": "Create a backup now",
+  "backups.passphrase": "Backup passphrase",
+  "backups.passphraseHint":
+    "At least 12 characters. It encrypts the backup and is stored nowhere: without it the backup cannot be restored.",
+  "backups.running": "Creating the backup…",
+  "backups.done": "Backup created.",
+  "backups.failed": "The backup failed. Check the server logs.",
+  "backups.guide": "Read the cloud backup guide",
+
+  "explore.title": "Explore communities",
+  "explore.open": "Explore public communities",
+  "explore.disabled": "This instance's directory is off",
+  "explore.disabledHostHint":
+    "Turn it on with PUBLIC_DISCOVERY_ENABLED=true in the server's environment. Off is the factory default: nothing is announced unless the host decides to.",
+  "explore.empty": "No community has been marked public yet",
+  "explore.emptyHint":
+    "It is set in Manage → General, with “Show in public discovery”.",
+  "explore.needInvite":
+    "Joining still requires an invitation from someone inside: the directory shows, it does not open doors.",
+  "explore.sourceInstance": "This instance",
 
   "community.yours": "Your communities",
   "community.create": "Create community",
@@ -390,6 +437,46 @@ export const en: Record<keyof typeof es, string> = {
   "voice.videoUnsupported":
     "This browser cannot encode video through the server. Try direct mode or an up-to-date Chromium browser.",
   "voice.noCamera": "No camera found. Plug one in and try again.",
+  "voice.videoBackgroundFailed":
+    "The camera background could not be prepared, so the camera stayed off: showing your room unannounced would be the opposite of what you asked for. Turn the background off in Settings → Camera and screen to switch it on anyway.",
+  "voice.videoBackgroundUnsupported":
+    "This browser cannot separate you from the background (no WebAssembly SIMD), and the camera stayed off so your real background would not go out. Turn the background off or use a newer browser.",
+
+  "camBg.title": "Camera background",
+  "camBg.intro":
+    "Blur your room or swap it for something else. The cut-out happens on your machine: the room receives the composed image and your real background never leaves here.",
+  "camBg.button": "Background",
+  "camBg.blurTitle": "Blur",
+  "camBg.none": "No background",
+  "camBg.blurLight": "Light blur",
+  "camBg.blurStrong": "Strong blur",
+  "camBg.presetsTitle": "Included backgrounds",
+  "camBg.preset.aurora": "Aurora",
+  "camBg.preset.studio": "Studio",
+  "camBg.preset.dusk": "Dusk",
+  "camBg.preset.grove": "Grove",
+  "camBg.customTitle": "Your images",
+  "camBg.upload": "Upload image",
+  "camBg.remove": "Remove",
+  "camBg.removeConfirm": "Remove “{name}” from your backgrounds? It is deleted from this browser.",
+  "camBg.local":
+    "Your images are stored in this browser only: they are never uploaded to the instance and nobody else sees them. No paid cap, just the space you have.",
+  "camBg.cost":
+    "The cut-out runs on your machine and costs CPU. On modest hardware it can lower your camera's frame rate; turn it off whenever you want.",
+  "camBg.loading": "Preparing the cut-out… the engine downloads once (about 12 MB) and is then kept by the browser.",
+  "camBg.willApply": "The background will apply as soon as you turn the camera on.",
+  "camBg.unsupported":
+    "This browser cannot separate you from the background: it lacks WebAssembly SIMD. Try a recent Chrome, Edge, Firefox or Safari.",
+  "camBg.failed":
+    "The background could not be prepared. The camera stayed off so you would not end up showing the room you meant to hide.",
+  "camBg.preview": "Try it with my camera",
+  "camBg.previewStop": "Stop preview",
+  "camBg.previewHint": "Turn the camera on for a moment to see how it looks before joining a call.",
+  "camBg.error.too_big": "That image is over 8 MB. Shrink it and try again.",
+  "camBg.error.not_image": "That file is not an image.",
+  "camBg.error.too_many": "You already have 12 saved backgrounds. Remove one to add another.",
+  "camBg.error.no_storage": "This browser would not store the image. It may be in private mode or out of space.",
+
   "voice.emptyRoom": "Empty voice room",
   "voice.emptyRoomHint":
     "Go in first: whoever arrives next will hear you straight away.",
@@ -505,6 +592,17 @@ export const en: Record<keyof typeof es, string> = {
   "voice.relayCustom": "Use a TURN server",
   "voice.relayCustomHint":
     "Forwards the video when there is no direct route. It sees encrypted packets and your IPs; it cannot see or hear the content.",
+  "voice.relayCustomStatic": "Fixed username and password",
+  "voice.relayCustomStaticHint":
+    "For TURN with a static credential: ExpressTURN, a coturn with a fixed user, or similar.",
+  "voice.relayEphemeral": "Shared secret (use-auth-secret)",
+  "voice.relayEphemeralHint":
+    "For your own coturn with use-auth-secret: the instance mints temporary users with that secret; they expire on their own and rotate without touching anything.",
+  "voice.relaySecret": "Shared secret",
+  "voice.relaySecretHint":
+    "At least 16 characters, the same static-auth-secret from turnserver.conf. It is stored on the server and never shown again.",
+  "voice.relayEphemeralActive": "Credentials rotating automatically.",
+  "voice.relayEphemeralOpen": "Read the coturn cloud guide",
   "voice.relayHelp":
     "For any TURN with a fixed username and password: your own coturn, ExpressTURN (turn:relay1.expressturn.com:3478, free, answers on ports 3478, 80 and 443) or similar. Saving checks that it really relays.",
   "voice.relayUrl": "TURN address",
@@ -513,7 +611,7 @@ export const en: Record<keyof typeof es, string> = {
   "voice.relayPasswordHint": "Stored on the server and never shown again.",
   "voice.relaySaved": "Saved. It applies to the next calls.",
   "voice.relayLocked":
-    "Fixed by ICE_SERVERS in the server's environment. Remove that variable to change it here.",
+    "Fixed from the server's environment (ICE_SERVERS, or TURN_URL and TURN_SECRET). Remove those variables to change it here.",
   "voice.relayHostOnly": "Only the host can change this.",
   "voice.device": "Microphone",
   "voice.deviceDefault": "System default",

@@ -12,6 +12,7 @@ import { api, upload } from "../lib/api.ts";
 import { Picker } from "./Picker.tsx";
 import { renderContent, type RenderContext } from "../lib/markdown.tsx";
 import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLocal } from "./Voice.tsx";
+import { CameraBackgroundButton } from "./CameraBackground.tsx";
 import { MeetingHeaderBadges, MeetingHeaderControls, MeetingPanel } from "./Meeting.tsx";
 import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
 import { formatBytes, formatDayHeading, formatTime } from "../i18n.ts";
@@ -463,6 +464,11 @@ function ChatVoiceHeader({
               muted={voiceLocal.muted || voiceLocal.forcedMuted}
             />
           ) : null}
+          <span className="h-5 w-px shrink-0 bg-line" />
+          {/* El fondo de cámara vive aquí porque es un mando de la llamada, no
+              un ajuste que haya que ir a buscar: vale igual en una sala de voz
+              y en una reunión. */}
+          <CameraBackgroundButton label />
           <span className="h-5 w-px shrink-0 bg-line" />
           {voiceLocal.video ? (
             <>
