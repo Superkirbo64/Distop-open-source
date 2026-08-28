@@ -9,25 +9,67 @@
  * Lo que se elige NO se envía solo: se inserta en la caja de escritura. Así se
  * puede acompañar de texto, corregir, o arrepentirse, que es lo que se espera
  * de un teclado y no de un botón de disparo.
+ *
+ * La rejilla pinta el emoji del sistema, quieto. La versión animada se ve al
+ * enviarlo, no al elegirlo: cada animación es un JSON de ~79 KB y un bucle de
+ * lottie corriendo, y con el catálogo entero delante eso era abrir el selector
+ * y esperar. Elegir tiene que ser instantáneo (§10.3).
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Search, X } from "lucide-react";
 import { PERMISSIONS, has, toBits, type CustomEmoji } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
-import { Spinner, useT } from "./ui.tsx";
-import { AnimatedEmoji, animatedIdFor } from "./AnimatedEmoji.tsx";
-
-/** Los de siempre, sin depender de que la comunidad haya subido ninguno. */
-const UNICODE = [
-  "👍", "👎", "❤️", "🔥", "🎉", "😄", "😂", "🙂", "😉", "😊",
-  "😍", "🤔", "😐", "😴", "😢", "😭", "😡", "🥳", "🤝", "🙏",
-  "👀", "💪", "✨", "⭐", "💡", "✅", "❌", "⚠️", "🚀", "🐛",
-  "💻", "📌", "📎", "🔗", "🔒", "🎮", "🎵", "☕", "🍕", "🌙",
-  "🎂", "🍺", "🐱", "🐶", "🌈", "☀️", "🌧️", "❄️", "🏆", "🎯",
-];
+import { Spinner, useLocale, useT } from "./ui.tsx";
+import type { MessageKey } from "../i18n.ts";
+import { EMOJI_GROUPS, type EmojiGroupKey } from "../lib/emojiCatalog.generated.ts";
+import { POPULAR_EMOJI } from "../lib/emojiPopular.ts";
+import { emojiIndexCargado, emojiName, loadEmojiIndex, searchEmoji, type EmojiIndex } from "../lib/emojiIndex.ts";
 
 type Tab = "emoji" | "sticker" | "gif";
+
+/** Un emoji por grupo como pestaña: se reconoce de un vistazo, y cabe. */
+const GROUP_ICON: Record<EmojiGroupKey, string> = {
+  smileys: "🙂",
+  people: "🧑",
+  nature: "🐻",
+  food: "🍔",
+  travel: "✈️",
+  activities: "⚽",
+  objects: "💡",
+  symbols: "🔣",
+  flags: "🏁",
+};
+
+/**
+ * Cuántos emojis se pintan de golpe, y cuántos se añaden al llegar al final.
+ * Los 1900 del catálogo son 1900 botones: montarlos todos de una tarda lo suyo
+ * en un equipo modesto, y nadie mira más allá de la primera pantalla.
+ */
+const CHUNK = 240;
+
+/**
+ * ¿Dibuja este sistema las banderas? Windows no trae glifos de bandera en su
+ * fuente de emoji: 🇧🇷 sale como dos letras sueltas, "BR". No se arregla desde
+ * el cliente —haría falta embarcar una fuente de emojis entera— así que se
+ * dice, que es lo honesto: quien las reciba en un móvil sí las ve dibujadas
+ * (§29.3). Una bandera de verdad ocupa lo que cualquier emoji; dos letras, no.
+ */
+let banderasDibujadas: boolean | undefined;
+
+function dibujaBanderas(): boolean {
+  if (banderasDibujadas !== undefined) return banderasDibujadas;
+  try {
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return (banderasDibujadas = true);
+    ctx.font = "16px sans-serif";
+    banderasDibujadas = ctx.measureText("🇧🇷").width >= ctx.measureText("🍕").width * 0.9;
+  } catch {
+    // Sin canvas (o con él capado) no se adivina: mejor no avisar de nada.
+    banderasDibujadas = true;
+  }
+  return banderasDibujadas;
+}
 
 interface Gif {
   id: string;
@@ -66,6 +108,7 @@ export function Picker({
   onClose: () => void;
 }) {
   const t = useT();
+  const locale = useLocale();
   const expressions = useStore((s) => s.expressions);
   const communities = useStore((s) => s.communities);
   const gifEnabled = useStore((s) => s.gifEnabled);
@@ -83,11 +126,36 @@ export function Picker({
   const [gifs, setGifs] = useState<Gif[] | null>(null);
   const [gifError, setGifError] = useState<string | null>(null);
   const [packHelpOpen, setPackHelpOpen] = useState(false);
+  /* Grupo elegido en la tira de categorías, o todos seguidos si no hay ninguno. */
+  const [grupo, setGrupo] = useState<EmojiGroupKey | null>(null);
+  const [visible, setVisible] = useState(CHUNK);
+  /* Nombres y palabras clave del idioma activo: llegan en diferido y hasta
+     entonces la rejilla ya se puede usar, solo que sin buscador ni tooltips. */
+  const [index, setIndex] = useState<EmojiIndex | undefined>(() => emojiIndexCargado(locale));
   const busca = useRef<HTMLInputElement>(null);
+  const lista = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     busca.current?.focus();
   }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "emoji") return;
+    const ya = emojiIndexCargado(locale);
+    if (ya) {
+      setIndex(ya);
+      return;
+    }
+    let vivo = true;
+    setIndex(undefined);
+    // Sin índice el selector sigue sirviendo: se pierde la búsqueda, no la rejilla.
+    void loadEmojiIndex(locale).then((cargado) => {
+      if (vivo) setIndex(cargado);
+    });
+    return () => {
+      vivo = false;
+    };
+  }, [tab, locale]);
 
   /* Dos servicios distintos —Giphy para GIF, Klipy para stickers— pero el
      servidor devuelve los dos en el mismo formato, asi que aqui comparten
@@ -128,11 +196,58 @@ export function Picker({
     }));
   }, [expressions, tab, filtro, communities]);
 
-  /* Solo cuenta en la pestaña de Emojis: si no, en Stickers sin ninguno
-     todavía esto salía "no vacío" igual (era la lista fija de Unicode, ajena
-     a la pestaña), el aviso de "no hay nada" nunca se pintaba, y la pestaña
-     se quedaba en blanco sin más — ni rejilla ni mensaje. */
-  const unicodeVisible = tab === "emoji" && !filtro ? UNICODE : [];
+  /* Búsqueda sobre el catálogo entero, ignorando el grupo elegido: quien
+     escribe "pizza" quiere la pizza, no que se le recuerde que estaba mirando
+     las banderas. Solo en la pestaña de Emojis: en Stickers y GIF el texto es
+     para la galería remota. */
+  const resultados = useMemo(
+    () => (tab === "emoji" && filtro ? searchEmoji(index, filtro) : []),
+    [tab, filtro, index],
+  );
+
+  /* Las secciones de emojis Unicode, en el orden en que se pintan. Los
+     populares solo cuando no hay ni búsqueda ni grupo: son un atajo a lo de
+     siempre, no una categoría más que estorbe cuando ya se está buscando. */
+  const secciones = useMemo<Array<{ key: string; titulo: string; emojis: readonly string[] }>>(() => {
+    if (tab !== "emoji") return [];
+    if (filtro) {
+      return resultados.length > 0 ? [{ key: "resultados", titulo: t("picker.results"), emojis: resultados }] : [];
+    }
+    const grupos = EMOJI_GROUPS.filter((g) => !grupo || g.key === grupo).map((g) => ({
+      key: g.key,
+      titulo: t(`picker.group.${g.key}` as MessageKey),
+      emojis: g.emojis,
+    }));
+    return grupo ? grupos : [{ key: "populares", titulo: t("picker.popular"), emojis: POPULAR_EMOJI }, ...grupos];
+  }, [tab, filtro, resultados, grupo, t]);
+
+  const totalUnicode = useMemo(() => secciones.reduce((n, s) => n + s.emojis.length, 0), [secciones]);
+
+  /* Se pinta hasta donde se ha bajado y ni un botón más. Cambiar de grupo, de
+     búsqueda o de pestaña vuelve a empezar, y también arriba del todo: si no,
+     se cambia de categoría y se sigue viendo el hueco del scroll anterior. */
+  useEffect(() => {
+    setVisible(CHUNK);
+    lista.current?.scrollTo({ top: 0 });
+  }, [filtro, grupo, tab]);
+
+  const visibles = useMemo(() => {
+    const salida: Array<{ key: string; titulo: string; emojis: readonly string[] }> = [];
+    let pintados = 0;
+    for (const seccion of secciones) {
+      if (pintados >= visible) break;
+      const trozo = seccion.emojis.slice(0, visible - pintados);
+      salida.push({ ...seccion, emojis: trozo });
+      pintados += trozo.length;
+    }
+    return salida;
+  }, [secciones, visible]);
+
+  function alDesplazar(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 240) return;
+    setVisible((actual) => (actual >= totalUnicode ? actual : Math.min(actual + CHUNK, totalUnicode)));
+  }
 
   function elegir(token: string) {
     rememberEmoji(token);
@@ -178,6 +293,39 @@ export function Picker({
             className="min-w-0 flex-1 bg-transparent text-sm outline-none"
           />
         </div>
+        {/* Tira de categorías: con 1900 emojis, bajar en línea recta hasta las
+            banderas no es navegar. Se esconde al buscar, que entonces el
+            catálogo entero ya está en juego y el grupo no pinta nada. */}
+        {tab === "emoji" && !filtro ? (
+          <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
+            <button
+              onClick={() => setGrupo(null)}
+              aria-pressed={grupo === null}
+              className={`shrink-0 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
+                grupo === null ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:border-accent hover:text-ink"
+              }`}
+            >
+              {t("picker.group.all")}
+            </button>
+            {EMOJI_GROUPS.map((g) => {
+              const nombre = t(`picker.group.${g.key}` as MessageKey);
+              return (
+                <button
+                  key={g.key}
+                  onClick={() => setGrupo(g.key)}
+                  aria-pressed={grupo === g.key}
+                  aria-label={nombre}
+                  title={nombre}
+                  className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-sm transition-colors ${
+                    grupo === g.key ? "border-accent bg-accent-soft" : "border-line hover:border-accent"
+                  }`}
+                >
+                  {GROUP_ICON[g.key]}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         {tab === "gif" ? (
           <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5" style={{ scrollbarWidth: "none" }}>
             {["Tendencias", "LOL", "OMG", "Angry", "Sad", "Dance", "Fail"].map((cat) => {
@@ -198,11 +346,11 @@ export function Picker({
         ) : null}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div ref={lista} onScroll={tab === "emoji" ? alDesplazar : undefined} className="flex-1 overflow-y-auto p-2">
         {tab === "emoji" && recent.length > 0 && !filtro ? (
           <Section title={t("picker.recent")}>
             {recent.map((token) => (
-              <TokenButton key={token} token={token} expressions={expressions} onPick={elegir} />
+              <TokenButton key={token} token={token} expressions={expressions} index={index} onPick={elegir} />
             ))}
           </Section>
         ) : null}
@@ -228,28 +376,35 @@ export function Picker({
             ))
           : null}
 
-        {tab === "emoji" && unicodeVisible.length > 0 ? (
-          <Section title={t("picker.standard")}>
-            {unicodeVisible.map((emoji) => (
+        {/* El catálogo Unicode: el carácter tal cual, sin lottie ni imágenes.
+            Lo pinta la fuente del sistema, que es lo que ya sabe hacer. */}
+        {visibles.map((seccion) => (
+          <Section
+            key={seccion.key}
+            title={seccion.titulo}
+            note={seccion.key === "flags" && !dibujaBanderas() ? t("picker.flagsUnsupported") : undefined}
+          >
+            {seccion.emojis.map((emoji) => (
               <button
                 key={emoji}
                 onClick={() => elegir(emoji)}
-                title={emoji}
+                title={emojiName(index, emoji)}
                 className="grid h-9 w-9 place-items-center rounded-lg text-lg hover:bg-raise"
               >
-                {/* En reposo, quietos: cincuenta bucles a la vez en esta
-                    rejilla costaban CPU; en hover cada uno cuenta lo suyo. */}
-                {animatedIdFor(emoji) ? <AnimatedEmoji char={emoji} size={24} playOn="hover" /> : emoji}
+                {emoji}
               </button>
             ))}
           </Section>
-        ) : null}
+        ))}
 
-        {/* Crédito exigido por la licencia (CC BY 4.0) de las animaciones que
-            trae ese "Estándar": nada que pagar, pero sí algo que citar. */}
-        {tab === "emoji" && unicodeVisible.length > 0 ? (
-          <p className="px-1 text-[0.65rem] text-muted">{t("picker.animatedCredit")}</p>
-        ) : null}
+        {/* Buscar con el índice a medio llegar no encuentra nada; decirlo es
+            más honesto que enseñar "nada por aquí" y que aparezca solo. */}
+        {tab === "emoji" && filtro && !index ? <Spinner label={t("common.loading")} /> : null}
+
+        {/* Créditos: los nombres y las palabras con que se busca salen de CLDR,
+            y las animaciones que se ven al enviar, de Noto (CC BY 4.0 exige
+            citarla). Nada que pagar, pero sí algo que decir. */}
+        {tab === "emoji" ? <p className="px-1 pt-1 text-[0.65rem] text-muted">{t("picker.animatedCredit")}</p> : null}
 
         {/* Galería buscable: Giphy en GIF, Klipy en Sticker, cada una con su
             clave. Nada de pack por nombre — se escribe y aparece, como el
@@ -337,7 +492,7 @@ export function Picker({
           </section>
         ) : null}
 
-        {tab === "emoji" && porComunidad.length === 0 && unicodeVisible.length === 0 ? (
+        {tab === "emoji" && porComunidad.length === 0 && visibles.length === 0 && (!filtro || index) ? (
           <p className="py-8 text-center text-sm text-muted">{t("picker.empty")}</p>
         ) : null}
       </div>
@@ -346,10 +501,20 @@ export function Picker({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  /** Lo que haya que advertir de esta sección antes de que se note solo. */
+  note?: string | undefined;
+  children: React.ReactNode;
+}) {
   return (
     <section className="mb-3">
       <h4 className="mb-1 px-1 text-[0.7rem] font-semibold tracking-wider text-muted uppercase">{title}</h4>
+      {note ? <p className="mb-1.5 px-1 text-[0.65rem] leading-relaxed text-muted">{note}</p> : null}
       <div className="flex flex-wrap gap-0.5">{children}</div>
     </section>
   );
@@ -359,16 +524,22 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function TokenButton({
   token,
   expressions,
+  index,
   onPick,
 }: {
   token: string;
   expressions: CustomEmoji[];
+  index: EmojiIndex | undefined;
   onPick: (token: string) => void;
 }) {
   if (!token.startsWith("<:")) {
     return (
-      <button onClick={() => onPick(token)} title={token} className="grid h-9 w-9 place-items-center rounded-lg text-lg hover:bg-raise">
-        {animatedIdFor(token) ? <AnimatedEmoji char={token} size={24} /> : token}
+      <button
+        onClick={() => onPick(token)}
+        title={emojiName(index, token)}
+        className="grid h-9 w-9 place-items-center rounded-lg text-lg hover:bg-raise"
+      >
+        {token}
       </button>
     );
   }

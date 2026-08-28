@@ -7,8 +7,8 @@
  * (AnimatedEmoji.tsx). Disco post-install: ~60 MB menos por copia.
  *
  * Corre dentro de `npm run dist` del desktop, antes de electron-builder, igual
- * que stage-protocol.mjs. La lista curada ES la del picker (Picker.tsx): una
- * sola fuente de verdad, leída de ahí para que añadir un emoji al picker lo
+ * que stage-protocol.mjs. La lista curada ES la del picker (lib/emojiPopular.ts): una
+ * sola fuente de verdad, leída de ahí para que añadir un emoji a esa lista lo
  * añada también al instalador sin tocar este script.
  */
 import { copyFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
@@ -16,16 +16,16 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PICKER = join(root, "apps", "web", "src", "components", "Picker.tsx");
+const POPULAR = join(root, "apps", "web", "src", "lib", "emojiPopular.ts");
 const MAP = join(root, "apps", "web", "src", "lib", "animatedEmoji.generated.ts");
 const SRC_DIR = join(root, "apps", "web", "public", "emoji-animated");
 const OUT_DIR = join(root, "apps", "desktop", "staging", "emoji-curated");
 
-/** El array UNICODE del picker, extraído del fuente (no hay runtime TS aquí). */
+/** La lista de siempre del picker, extraída del fuente (no hay runtime TS aquí). */
 function pickerEmojis() {
-  const source = readFileSync(PICKER, "utf8");
-  const match = source.match(/const UNICODE = \[([\s\S]*?)\];/);
-  if (!match) throw new Error("Picker.tsx ya no declara UNICODE — actualizar este script.");
+  const source = readFileSync(POPULAR, "utf8");
+  const match = source.match(/POPULAR_EMOJI: readonly string\[\] = \[([\s\S]*?)\];/);
+  if (!match) throw new Error("emojiPopular.ts ya no declara POPULAR_EMOJI — actualizar este script.");
   return [...match[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
 }
 

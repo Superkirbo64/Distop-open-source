@@ -748,17 +748,27 @@ figure {
 .ai-speaker[data-anim="shake"] { --ai-anim: ai-speaker-shake 0.6s ease-in-out; }
 .ai-hash [data-anim="stems"] { --ai-anim: ai-hash-stems 0.55s ease-in-out; }
 .ai-hash [data-anim="bars"] { --ai-anim: ai-hash-bars 0.55s ease-in-out; }
-/* El megáfono pivota cerca de la boca, como el transformOrigin en línea que
-   traía de motion/react; view-box para que 8px 12px se mida en el viewBox. */
+/* El hash del panel de canales renuncia a la coreografía de barras y hace
+   solo un zoom mínimo, con la misma transición de entrada y de salida. Solo
+   :hover, sin :focus-within: el botón del canal activo retiene el foco tras
+   el clic y el hash quedaría ampliado indefinidamente. */
+.ai-zoom.ai-hash [data-anim] { --ai-anim: none; }
+.ai-zoom.ai-hash {
+  transform-origin: center;
+  transition: scale 0.15s ease-in-out;
+}
+:is(button, a, label, summary, [role="menuitem"], [role="button"]):hover .ai-zoom.ai-hash,
+.ai-zoom.ai-hash:hover {
+  scale: 1.08;
+}
+/* El megáfono (lu-megaphone de animateicons.in) grita entero: el original
+   rotaba y escalaba el contenedor completo, así que el pivote es el centro
+   del viewBox; view-box para que 12px 12px se mida ahí y no en el bbox. */
 .ai-announce [data-anim="body"] {
   transform-box: view-box;
-  transform-origin: 8px 12px;
-  --ai-anim: ai-announce-body 0.6s ease-in-out;
+  transform-origin: 12px 12px;
+  --ai-anim: ai-announce-body 1s ease-in-out;
 }
-.ai-announce [data-anim="wave-a"],
-.ai-announce [data-anim="wave-b"] { stroke-dasharray: 1; }
-.ai-announce [data-anim="wave-a"] { --ai-anim: ai-announce-wave 0.6s ease-in-out; }
-.ai-announce [data-anim="wave-b"] { --ai-anim: ai-announce-wave 0.6s ease-in-out 0.1s; }
 .ai-send [data-anim="jet"] { --ai-anim: ai-send-fly 1.2s ease-in-out; }
 .ai-voice [data-anim="lift"] { --ai-anim: ai-voice-lift 0.6s ease-in-out; }
 .ai-popper [data-anim="cone"] { --ai-anim: ai-pop-cone 0.7s ease-in-out; }
@@ -823,19 +833,13 @@ figure {
   66.6% { translate: 1.25px 0; }
 }
 
+/* rotate [0,-6,4,-2,0] + scale [1,1.06,1.01,1.03,1] con times
+   [0,.22,.46,.72,1] del variant "shout" original. */
 @keyframes ai-announce-body {
-  0%, 100% { rotate: 0deg; translate: 0 0; }
-  33.3% { rotate: -4deg; translate: -0.5px 0; }
-  66.6% { rotate: 3deg; translate: 0.5px 0; }
-}
-
-/* opacity [0,1,.35,1] + pathLength [0,1,1,1] del original: el dashoffset hace
-   de pathLength (1 = trazo oculto, 0 = dibujado). */
-@keyframes ai-announce-wave {
-  0% { opacity: 0; stroke-dashoffset: 1; }
-  33.3% { opacity: 1; stroke-dashoffset: 0; }
-  66.6% { opacity: 0.35; stroke-dashoffset: 0; }
-  100% { opacity: 1; stroke-dashoffset: 0; }
+  0%, 100% { rotate: 0deg; scale: 1; }
+  22% { rotate: -6deg; scale: 1.06; }
+  46% { rotate: 4deg; scale: 1.01; }
+  72% { rotate: -2deg; scale: 1.03; }
 }
 
 /* Los times [0,.25,.5,.5,1] del original: el doble 0.5 es el teletransporte

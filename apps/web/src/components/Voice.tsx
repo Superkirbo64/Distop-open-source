@@ -328,10 +328,6 @@ export function VoiceBar() {
   const local = useVoiceLocal();
   const communityId = useStore((s) => s.activeCommunityId);
   const data = useStore((s) => (communityId ? s.data[communityId] : undefined));
-  const states = useStore((s) =>
-    local.channelId ? (s.voice[local.channelId] ?? EMPTY) : EMPTY,
-  );
-
   if (local.error) {
     const reason =
       local.error === "denied"
@@ -496,11 +492,8 @@ export function VoiceBar() {
         </ErrorNote>
       ) : null}
 
-      {/* Por dónde va cada cosa. La voz siempre por la instancia; el vídeo,
-          directo, y si acabó pasando por un relevo ajeno se dice. */}
-      <p className="text-[0.65rem] text-muted">
-        {t("voice.throughHost", { count: Math.max(states.length - 1, 0) })}
-      </p>
+      {/* Por dónde va el vídeo: directo, y si acabó pasando por un relevo ajeno
+          se dice. */}
       {local.video && local.route ? (
         <p className="text-[0.65rem] text-muted">
           {t(local.route === "relay" ? "voice.viaRelay" : "voice.videoDirect")}

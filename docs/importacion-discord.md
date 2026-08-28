@@ -72,7 +72,7 @@ una fase posterior y necesita verificación real — no se improvisa en v1.
 
 ## Estado en el código
 
-Hecho, sin commit todavía:
+Hecho y usable de punta a punta:
 
 - `apps/node-server/discord-import.ts` — `previewDiscord()` y `importDiscord()`
   completos: metadatos en paralelo, historial paginado, miembros paginados
@@ -82,17 +82,21 @@ Hecho, sin commit todavía:
 - Migración `external_imports` — `UNIQUE(provider, source_id)` impide importar
   dos veces el mismo servidor, y guarda el informe auditable. El token **no**
   vive ahí.
+- Rutas en `api.ts`: `POST /api/v1/import/discord/preview` y
+  `POST /api/v1/import/discord`, con sesión obligatoria, el token en el cuerpo
+  y límite de frecuencia (10 previas/10 min, 2 imports/hora por usuario).
+- Interfaz en `apps/web`: el diálogo «Nueva comunidad» tiene la pestaña
+  «Importar de Discord» con previsualización, historial elegible, miembros
+  opcionales e informe final con avisos traducidos, en los tres idiomas.
+- Pruebas en `discord-import.test.ts` contra un Discord falso
+  (`DISCORD_API_BASE`): previa sin efectos, token rechazado → error tipado,
+  import completo verificable por la API normal, duplicado → 409.
 
-Falta para que sea una función y no un módulo:
+Fase posterior:
 
-- Rutas HTTP (`preview` e `import`), solo para usuarios autenticados con
-  derecho a crear comunidades, con el token en el cuerpo y límite de frecuencia.
-- El asistente en `apps/web` con los seis pasos de arriba, la previsualización
-  con conteos, y el informe final legible.
-- Claves i18n en los tres idiomas.
-- Pruebas: duplicado → 409, token jamás en logs/auditoría/informe, contenido
-  vacío → aviso `MESSAGE_CONTENT_EMPTY` y no silencio, descargas solo desde
-  `cdn.discordapp.com` / `media.discordapp.net`.
+- Prueba explícita de que el token jamás aparece en logs/auditoría/informe
+  (la implementación ya lo cumple; falta el test que lo vigile).
+- Progreso en vivo durante el import (hoy es una espera con aviso honesto).
 
 ## Límites honestos (§29.3)
 

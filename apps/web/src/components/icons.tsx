@@ -123,16 +123,20 @@ export function ChannelHash({ size = 18, className }: IconProps) {
   );
 }
 
-/** Canales de anuncios: el megáfono da un golpe corto y emite dos ondas. */
+/**
+ * Canales de anuncios: megáfono lu-megaphone de animateicons.in (geometría
+ * Lucide, ISC). El "shout" original — rotate [0,-6,4,-2,0] + scale sutil vía
+ * motion/react — vive en styles.css como ai-announce-body, igual que el resto
+ * de coreografías portadas.
+ */
 export function Announcement({ size = 18, className }: IconProps) {
   return (
     <svg width={size} height={size} className={cls("ai ai-announce", className)} {...svgProps}>
       <g data-anim="body">
-        <path d="m3 11 18-5v12L3 14v-3Z" />
-        <path d="m7.2 15.2.8 5.3a1 1 0 0 0 1 .8h2a1 1 0 0 0 1-1.2l-.8-3.3" />
+        <path d="M11 6a13 13 0 0 0 8.4-2.8A1 1 0 0 1 21 4v12a1 1 0 0 1-1.6.8A13 13 0 0 0 11 14H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z" />
+        <path d="M6 14a12 12 0 0 0 2.4 7.2 2 2 0 0 0 3.2-2.4A8 8 0 0 1 10 14" />
+        <path d="M8 6v8" />
       </g>
-      <path d="M21 9.5c1 .7 1 4.3 0 5" pathLength={1} data-anim="wave-a" />
-      <path d="M23 8c1.3 1.2 1.3 6.8 0 8" pathLength={1} data-anim="wave-b" />
     </svg>
   );
 }

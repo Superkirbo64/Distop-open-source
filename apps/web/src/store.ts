@@ -216,6 +216,8 @@ interface State {
   send: (channelId: string, content: string, attachmentIds: string[], replyToId: string | null) => Promise<void>;
   notifyTyping: (channelId: string) => void;
   markRead: (channelId: string) => void;
+  /** Poner al día un canal que quizá ni se ha abierto (menú de la barra lateral). */
+  catchUp: (channelId: string) => Promise<void>;
   loadExpressions: () => Promise<void>;
   reloadCommunities: () => Promise<void>;
   /** Borrado real: quita la comunidad del estado Y de la caché de instancias. */
@@ -671,6 +673,33 @@ export const useStore = create<State>()((set, get) => ({
     void api("POST", `/api/v1/channels/${channelId}/read`, { message_id: last.id }).catch(() => {
       // Sin red se queda leído en local; al reconectar, el bootstrap manda.
     });
+  },
+
+  /**
+   * Como `markRead`, pero sirve para un canal que nunca se ha abierto.
+   *
+   * `markRead` marca "hasta el último mensaje CARGADO", así que en un canal sin
+   * abrir no tenía nada que marcar y no hacía nada — un menú que se pulsa y no
+   * pasa nada es peor que no tener el menú. Aquí se pide el último mensaje (uno
+   * solo) y se marca hasta ahí.
+   */
+  async catchUp(channelId) {
+    const state = get();
+    if (state.messages[channelId]?.length) {
+      state.markRead(channelId);
+      return;
+    }
+    try {
+      const [last] = await api<Message[]>("GET", `/api/v1/channels/${channelId}/messages?limit=1`);
+      if (!last) return;
+      set({
+        lastRead: { ...get().lastRead, [channelId]: last.id },
+        unread: { ...get().unread, [channelId]: { count: 0, mentions: 0 } },
+      });
+      await api("POST", `/api/v1/channels/${channelId}/read`, { message_id: last.id });
+    } catch {
+      // Sin red no se marca nada: el contador sigue como estaba, que es la verdad.
+    }
   },
 
   setTuner: (open) => set({ tuner: open }),

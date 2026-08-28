@@ -80,6 +80,7 @@ import {
   type Ctx,
 } from "./http.ts";
 import { instanceHealth, invalidateStorageCache, VERSION } from "./instance.ts";
+import { DiscordImportError, importDiscord, previewDiscord } from "./discord-import.ts";
 import { BACKUP_DIR, backupJob, listBackupFiles, recentBackupJobs, startBackup } from "./backup.ts";
 import { BackupError } from "./backup-format.ts";
 import { inspectBackup } from "./restore.ts";
@@ -695,6 +696,53 @@ route("POST", "/api/v1/communities", async (ctx) => {
 
   const id = seedCommunity({ name, slug: uniqueSlug(name), ownerId: user.id, isPublic, accentColor: accent ?? undefined });
   return getCommunity(id);
+});
+
+/* ── importar de Discord (docs/importacion-discord.md) ──────────────────
+ *
+ * El token del bot viaja SIEMPRE en el cuerpo de un POST y solo vive en la
+ * memoria de la petición (§22): no se guarda, no se registra, no vuelve en
+ * ninguna respuesta. La previa es barata (4 llamadas a Discord); el import
+ * puede tardar minutos con historial largo, y el cliente espera con la
+ * conexión abierta — la fila de external_imports deja constancia si se corta.
+ */
+
+function discordHttp(error: unknown): never {
+  if (error instanceof DiscordImportError) throw new HttpError(error.status, error.code, error.message);
+  throw error;
+}
+
+route("POST", "/api/v1/import/discord/preview", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  rateLimit(`discord-preview:${user.id}`, 10, 10 * 60_000);
+
+  const body = await readJson(ctx);
+  const token = v.string(body, "token", { min: 20, max: 100 });
+  const guildId = v.string(body, "guild_id", { min: 6, max: 24, pattern: /^\d+$/ });
+
+  try {
+    return await previewDiscord(token, guildId);
+  } catch (error) {
+    discordHttp(error);
+  }
+});
+
+route("POST", "/api/v1/import/discord", async (ctx) => {
+  // Mismo criterio que crear comunidad (§7.1): también con sesión de invitado.
+  const { user } = requireAuth(ctx);
+  rateLimit(`discord-import:${user.id}`, 2, 60 * 60_000);
+
+  const body = await readJson(ctx);
+  const token = v.string(body, "token", { min: 20, max: 100 });
+  const guildId = v.string(body, "guild_id", { min: 6, max: 24, pattern: /^\d+$/ });
+  const historyLimit = v.int(body, "history_limit", { min: 0, max: 1000, fallback: 200 });
+  const importMembers = v.bool(body, "import_members", true);
+
+  try {
+    return await importDiscord({ token, guildId, ownerId: user.id, historyLimitPerChannel: historyLimit, importMembers });
+  } catch (error) {
+    discordHttp(error);
+  }
 });
 
 route("GET", "/api/v1/communities/:id", (ctx) => {

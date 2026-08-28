@@ -874,6 +874,7 @@ export function Modal({
 }) {
   const t = useT();
   const ref = useRef<HTMLDialogElement>(null);
+  const pressedOnBackdrop = useRef(false);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -885,8 +886,27 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
-      onCancel={onClose}
+      /* React reparte `close` y `cancel` por todos los ancestros: no burbujean
+         en el DOM, pero su sistema de eventos los propaga igual. Con un
+         <dialog> dentro de otro —la confirmación de un borrado, dentro de
+         Ajustes— cerrar el de dentro cerraba también el de fuera y devolvía a
+         la pantalla de inicio. Solo contesta el diálogo que se cerró. */
+      onClose={(e) => {
+        if (e.target === ref.current) onClose();
+      }}
+      onCancel={(e) => {
+        if (e.target === ref.current) onClose();
+      }}
+      /* Clic en el fondo = cerrar. El contenido llena el <dialog> (p-0), así
+         que un evento cuyo target es el propio <dialog> solo puede venir del
+         backdrop. La pulsación debe EMPEZAR y TERMINAR ahí: soltar fuera una
+         selección de texto iniciada dentro del card no debe cerrarlo. */
+      onPointerDown={(e) => {
+        pressedOnBackdrop.current = e.target === ref.current;
+      }}
+      onClick={(e) => {
+        if (pressedOnBackdrop.current && e.target === ref.current) onClose();
+      }}
       // Sin cabecera no hay <h2> que nombre el diálogo, así que lo nombra el título.
       {...(chrome ? {} : { "aria-label": title })}
       style={{ width: `min(94vw, ${size === "lg" ? "56rem" : "34rem"})` }}
@@ -1161,6 +1181,93 @@ export function MenuItem({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Menú de clic derecho, anclado al puntero y no a un botón.
+ *
+ * `Menu` cuelga de su disparador; aquí el ancla es un punto de la pantalla, así
+ * que se coloca en `fixed` y se cierra al hacer scroll: un menú que sigue
+ * flotando sobre una lista que se ha movido señala a otra fila.
+ *
+ * El teclado también lo abre — la tecla de menú contextual dispara el mismo
+ * evento con las coordenadas del elemento enfocado (§31) —, por eso al abrirse
+ * el foco salta al primer elemento.
+ */
+export function ContextMenu({
+  at,
+  onClose,
+  children,
+}: {
+  at: { x: number; y: number } | null;
+  onClose: () => void;
+  children: (close: () => void) => ReactNode;
+}) {
+  const popup = useRef<HTMLDivElement>(null);
+  const [box, setBox] = useState<{ left: number; top: number } | null>(null);
+
+  /* Se mide después de pintar: la altura depende de cuántas opciones tenga
+     quien lo abre, y sin medir un menú abierto abajo del todo se sale. */
+  useLayoutEffect(() => {
+    if (!at) {
+      setBox(null);
+      return;
+    }
+    const menu = popup.current;
+    if (!menu) return;
+    const margin = 8;
+    const maxLeft = Math.max(margin, window.innerWidth - menu.offsetWidth - margin);
+    const maxTop = Math.max(margin, window.innerHeight - menu.offsetHeight - margin);
+    setBox({
+      left: Math.min(maxLeft, Math.max(margin, at.x)),
+      top: Math.min(maxTop, Math.max(margin, at.y)),
+    });
+    menu.querySelector<HTMLElement>("[role='menuitem']:not([disabled])")?.focus();
+  }, [at]);
+
+  useEffect(() => {
+    if (!at) return;
+    /* `mousedown` y no `click`: en un clic derecho fuera, el botón secundario
+       cierra este menú antes de que el `contextmenu` de la otra fila abra el
+       suyo, y así no hay dos abiertos. */
+    const away = (event: MouseEvent) => {
+      if (!popup.current?.contains(event.target as Node)) onClose();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", escape);
+    window.addEventListener("resize", onClose);
+    window.addEventListener("scroll", onClose, true);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", escape);
+      window.removeEventListener("resize", onClose);
+      window.removeEventListener("scroll", onClose, true);
+    };
+  }, [at, onClose]);
+
+  if (!at) return null;
+
+  return createPortal(
+    <div
+      ref={popup}
+      role="menu"
+      style={{
+        left: box?.left ?? at.x,
+        top: box?.top ?? at.y,
+        zIndex: 1000,
+        // Antes de medir se pinta invisible: si no, se ve saltar de sitio.
+        visibility: box ? "visible" : "hidden",
+        maxHeight: "calc(100vh - 16px)",
+      }}
+      className="card fixed min-w-52 overflow-y-auto p-1 text-sm"
+    >
+      {children(onClose)}
+    </div>,
+    document.body,
   );
 }
 

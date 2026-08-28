@@ -8,7 +8,7 @@ import { useEffect, useMemo } from "react";
 import { Link as LinkIcon, Server } from "lucide-react";
 import { Cross } from "./icons.tsx";
 import { useStore } from "../store.ts";
-import { Button, ErrorNote, Field, IconButton, Modal, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
+import { Button, ErrorNote, Field, IconButton, Modal, Select, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
 import { api } from "../lib/api.ts";
 import {
   clientOrigin,
@@ -402,6 +402,32 @@ export function JoinCommunity({ open, onClose }: { open: boolean; onClose: () =>
  * todavía no tiene ninguna comunidad no llegaba a ella. El diálogo lo monta el
  * cascarón, así que se puede abrir desde donde haga falta.
  */
+/* Espejo de los tipos del node-server (discord-import.ts): el protocolo aún no
+   los publica, y duplicar dos formas pequeñas es más barato que acoplar el
+   cliente al paquete del servidor. */
+interface DiscordPreview {
+  guild: { id: string; name: string; description: string | null; icon_url: string | null };
+  counts: { channels: number; categories: number; roles: number; emojis: number; members: number | null };
+  unsupported_channels: number;
+}
+
+interface DiscordImportReport {
+  community_id: string;
+  channels: number;
+  messages: number;
+  imported_profiles: number;
+  warnings: string[];
+}
+
+const DISCORD_WARNINGS = [
+  "MESSAGE_CONTENT_EMPTY",
+  "MEMBERS_ONLY_AUTHORS",
+  "ATTACHMENTS_SKIPPED",
+  "UNSUPPORTED_CHANNELS",
+  "MEMBERS_TRUNCATED",
+] as const;
+type DiscordWarning = (typeof DISCORD_WARNINGS)[number];
+
 export function CreateCommunity({
   open,
   onClose,
@@ -417,10 +443,19 @@ export function CreateCommunity({
   const openCommunity = useStore((s) => s.openCommunity);
   const reload = useStore((s) => s.reloadCommunities);
 
+  const [mode, setMode] = useState<"blank" | "discord">("blank");
   const [name, setName] = useState("");
   const [isPublic, setIsPublic] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Importar de Discord: el token vive en este estado y muere con el diálogo.
+  const [botToken, setBotToken] = useState("");
+  const [guildId, setGuildId] = useState("");
+  const [preview, setPreview] = useState<DiscordPreview | null>(null);
+  const [historyLimit, setHistoryLimit] = useState("200");
+  const [withMembers, setWithMembers] = useState(true);
+  const [report, setReport] = useState<DiscordImportReport | null>(null);
 
   async function create() {
     setBusy(true);
@@ -439,27 +474,199 @@ export function CreateCommunity({
     }
   }
 
+  async function loadPreview() {
+    setBusy(true);
+    setError(null);
+    try {
+      setPreview(await api<DiscordPreview>("POST", "/api/v1/import/discord/preview", {
+        token: botToken,
+        guild_id: guildId.trim(),
+      }));
+    } catch (err) {
+      setPreview(null);
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runImport() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api<DiscordImportReport>("POST", "/api/v1/import/discord", {
+        token: botToken,
+        guild_id: guildId.trim(),
+        history_limit: Number(historyLimit),
+        import_members: withMembers,
+      });
+      setBotToken("");
+      setReport(result);
+      await reload();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openImported() {
+    if (report) await openCommunity(report.community_id);
+    setGuildId("");
+    setPreview(null);
+    setReport(null);
+    setMode("blank");
+    onClose();
+  }
+
+  const guildIdOk = /^\d{6,24}$/.test(guildId.trim());
+  const discordReady = botToken.trim().length >= 20 && guildIdOk;
+
+  const footer = report ? (
+    <Button variant="primary" onClick={openImported}>
+      {t("discord.open")}
+    </Button>
+  ) : mode === "blank" ? (
+    <>
+      <Button onClick={onClose}>{t("common.cancel")}</Button>
+      <Button variant="primary" onClick={create} disabled={busy || name.trim().length < 2}>
+        {t("common.create")}
+      </Button>
+    </>
+  ) : (
+    <>
+      <Button onClick={onClose} disabled={busy}>{t("common.cancel")}</Button>
+      <Button onClick={loadPreview} disabled={busy || !discordReady}>
+        {t("discord.preview")}
+      </Button>
+      <Button variant="primary" onClick={runImport} disabled={busy || !discordReady}>
+        {t("discord.import")}
+      </Button>
+    </>
+  );
+
   return (
-    <Modal
-      open={open}
-      onClose={onClose}
-      title={t("community.createTitle")}
-      footer={
-        <>
-          <Button onClick={onClose}>{t("common.cancel")}</Button>
-          <Button variant="primary" onClick={create} disabled={busy || name.trim().length < 2}>
-            {t("common.create")}
-          </Button>
-        </>
-      }
-    >
+    <Modal open={open} onClose={busy ? () => {} : onClose} title={t("community.createTitle")} footer={footer}>
       <div className="flex flex-col gap-4">
-        <Field label={t("community.name")}>
-          {(id) => (
-            <input id={id} className="field" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} autoFocus />
-          )}
-        </Field>
-        <Toggle checked={isPublic} onChange={setIsPublic} label={t("community.public")} hint={t("community.publicHint")} />
+        {report ? (
+          <>
+            <p className="font-semibold">{t("discord.done")}</p>
+            <p className="text-sm text-muted">
+              {t("discord.reportSummary", {
+                channels: report.channels,
+                messages: report.messages,
+                profiles: report.imported_profiles,
+              })}
+            </p>
+            {report.warnings
+              .filter((w): w is DiscordWarning => (DISCORD_WARNINGS as readonly string[]).includes(w))
+              .map((warning) => (
+                <p key={warning} className="text-sm text-muted">
+                  {t(`discord.warn.${warning}`)}
+                </p>
+              ))}
+          </>
+        ) : (
+          <>
+            <div className="flex gap-2">
+              <Button onClick={() => setMode("blank")} variant={mode === "blank" ? "primary" : "ghost"} disabled={busy}>
+                {t("discord.blankTab")}
+              </Button>
+              <Button onClick={() => setMode("discord")} variant={mode === "discord" ? "primary" : "ghost"} disabled={busy}>
+                {t("discord.tab")}
+              </Button>
+            </div>
+
+            {mode === "blank" ? (
+              <>
+                <Field label={t("community.name")}>
+                  {(id) => (
+                    <input id={id} className="field" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} autoFocus />
+                  )}
+                </Field>
+                <Toggle checked={isPublic} onChange={setIsPublic} label={t("community.public")} hint={t("community.publicHint")} />
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted">{t("discord.intro")}</p>
+                <Field label={t("discord.token")}>
+                  {(id) => (
+                    <input
+                      id={id}
+                      className="field"
+                      type="password"
+                      autoComplete="off"
+                      value={botToken}
+                      onChange={(e) => setBotToken(e.target.value)}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+                <Field label={t("discord.guildId")} hint={t("discord.guildIdHint")}>
+                  {(id) => (
+                    <input
+                      id={id}
+                      className="field"
+                      inputMode="numeric"
+                      value={guildId}
+                      onChange={(e) => setGuildId(e.target.value)}
+                      disabled={busy}
+                    />
+                  )}
+                </Field>
+
+                {preview ? (
+                  <div className="flex items-center gap-3 rounded-xl border border-line p-3">
+                    {preview.guild.icon_url ? (
+                      <img src={preview.guild.icon_url} alt="" className="h-10 w-10 shrink-0 rounded-[12px] object-cover" />
+                    ) : null}
+                    <div className="min-w-0">
+                      <p className="display truncate font-bold">{preview.guild.name}</p>
+                      <p className="text-xs text-muted">
+                        {t("discord.previewCounts", {
+                          channels: preview.counts.channels,
+                          categories: preview.counts.categories,
+                          roles: preview.counts.roles,
+                          emojis: preview.counts.emojis,
+                        })}
+                        {preview.counts.members !== null
+                          ? ` · ${t("discord.previewMembers", { count: preview.counts.members })}`
+                          : ""}
+                      </p>
+                      {preview.unsupported_channels > 0 ? (
+                        <p className="text-xs text-muted">{t("discord.warn.UNSUPPORTED_CHANNELS")}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                <Field label={t("discord.history")}>
+                  {(id) => (
+                    <Select
+                      id={id}
+                      value={historyLimit}
+                      onChange={setHistoryLimit}
+                      disabled={busy}
+                      options={[
+                        { value: "0", label: t("discord.historyNone") },
+                        { value: "100", label: "100" },
+                        { value: "200", label: "200" },
+                        { value: "1000", label: "1000" },
+                      ]}
+                    />
+                  )}
+                </Field>
+                <Toggle
+                  checked={withMembers}
+                  onChange={setWithMembers}
+                  label={t("discord.members")}
+                  hint={t("discord.membersHint")}
+                />
+                {busy ? <p className="text-sm text-muted">{t("discord.importing")}</p> : null}
+              </>
+            )}
+          </>
+        )}
         {error ? <ErrorNote>{error}</ErrorNote> : null}
       </div>
     </Modal>
