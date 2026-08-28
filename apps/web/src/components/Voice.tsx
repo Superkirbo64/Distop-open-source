@@ -14,11 +14,13 @@ import {
   Music,
   MoreVertical,
   Minimize2,
+  LayoutGrid,
   MonitorUp,
   Orbit,
   PhoneOff,
   Pin,
   Presentation,
+  SquareUser,
   Search,
   Signal,
   Trophy,
@@ -53,6 +55,7 @@ import {
   setDeafened,
   setMuted,
   setShareMuted,
+  setCameraOverlay,
   setVideoSource,
   moderateVoice,
   setSoundError,
@@ -331,6 +334,10 @@ export function VoiceBar() {
     const reason =
       local.error === "denied"
         ? "voice.denied"
+        : local.error === "meeting_closed"
+          ? "voice.meetingClosed"
+          : local.error === "voice_forbidden"
+            ? "voice.forbidden"
         : local.error === "unsupported"
           ? "voice.unsupported"
           : "voice.noDevice";
@@ -397,19 +404,24 @@ export function VoiceBar() {
       {canCamera || canScreen ? (
         <div className="flex gap-1">
           {canCamera ? (
+            /* Con la pantalla activa, este botón no la sustituye: incrusta la
+               cámara como recuadro sobre ella (setCameraOverlay). Pantalla y
+               cámara a la vez, con un solo flujo. */
             <button
               onClick={() =>
-                void setVideoSource(local.video === "camera" ? null : "camera")
+                local.video === "screen"
+                  ? void setCameraOverlay(!local.cameraOverlay)
+                  : void setVideoSource(local.video === "camera" ? null : "camera")
               }
-              aria-pressed={local.video === "camera"}
-              className={`btn h-9 min-h-9 flex-1 px-2 text-xs ${local.video === "camera" ? "btn-primary" : "btn-ghost"}`}
+              aria-pressed={local.video === "camera" || local.cameraOverlay}
+              className={`btn h-9 min-h-9 flex-1 px-2 text-xs ${local.video === "camera" || local.cameraOverlay ? "btn-primary" : "btn-ghost"}`}
             >
-              {local.video === "camera" ? (
+              {local.video === "camera" || local.cameraOverlay ? (
                 <VideoOff size={14} />
               ) : (
                 <Video size={14} />
               )}
-              {local.video === "camera"
+              {local.video === "camera" || local.cameraOverlay
                 ? t("voice.cameraOff")
                 : t("voice.camera")}
             </button>
@@ -417,7 +429,9 @@ export function VoiceBar() {
           {canScreen ? (
             <button
               onClick={() =>
-                void setVideoSource(local.video === "screen" ? null : "screen")
+                /* Al dejar de compartir con el recuadro puesto, la cámara no se
+                   apaga: pasa a ser el vídeo principal. */
+                void setVideoSource(local.video === "screen" ? (local.cameraOverlay ? "camera" : null) : "screen")
               }
               aria-pressed={local.video === "screen"}
               className={`btn h-9 min-h-9 flex-1 px-2 text-xs ${local.video === "screen" ? "btn-primary" : "btn-ghost"}`}
@@ -1589,23 +1603,38 @@ export function StageLayoutPicker() {
   const layout = useStore((s) => s.stageLayout);
   const setLayout = useStore((s) => s.setStageLayout);
 
+  /* Iconos que dicen lo que son: una rejilla para la galería y una persona para
+     la vista de orador. El altavoz de antes se leía como un control de audio, y
+     tres iconos sueltos sin texto eran botones a adivinar. */
   const opciones = [
-    { value: "gallery", icon: <Orbit size={15} />, key: "voice.layoutGallery" },
-    { value: "speaker", icon: <Volume2 size={15} />, key: "voice.layoutSpeaker" },
+    { value: "gallery", icon: <LayoutGrid size={15} />, key: "voice.layoutGallery" },
+    { value: "speaker", icon: <SquareUser size={15} />, key: "voice.layoutSpeaker" },
     { value: "presentation", icon: <Presentation size={15} />, key: "voice.layoutPresentation" },
   ] as const;
 
   return (
-    <div role="group" aria-label={t("voice.layout")} className="flex items-center gap-0.5">
+    <div
+      role="group"
+      aria-label={t("voice.layout")}
+      className="flex items-center gap-0.5 rounded-full border border-line bg-surface/60 p-0.5"
+    >
       {opciones.map((opcion) => (
-        <IconButton
+        <button
           key={opcion.value}
-          label={t(opcion.key)}
-          pressed={layout === opcion.value}
+          type="button"
+          aria-label={t(opcion.key)}
+          title={t(opcion.key)}
+          aria-pressed={layout === opcion.value}
           onClick={() => setLayout(layout === opcion.value ? "auto" : opcion.value)}
+          className={`flex h-7 items-center gap-1 rounded-full px-2 text-[0.7rem] font-semibold transition-colors ${
+            layout === opcion.value ? "bg-accent-soft text-accent" : "text-muted hover:bg-raise hover:text-ink"
+          }`}
         >
           {opcion.icon}
-        </IconButton>
+          {/* En pantallas estrechas queda el icono con su tooltip; en anchas, el
+              nombre visible — que es lo que faltaba para saber para qué son. */}
+          <span className="hidden md:inline">{t(opcion.key)}</span>
+        </button>
       ))}
     </div>
   );

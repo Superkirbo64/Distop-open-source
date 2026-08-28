@@ -465,8 +465,11 @@ function DataTab({ community, onClose }: { community: Community; onClose: () => 
           onClick={async () => {
             try {
               await api("DELETE", `/api/v1/communities/${community.id}`);
+              /* Sin recargar la página: el estado y la caché de instancias se
+                 limpian aquí mismo, y al resto de miembros les llega el
+                 COMMUNITY_DELETE por el gateway. */
+              useStore.getState().removeCommunity(community.id);
               onClose();
-              location.reload();
             } catch (err) {
               setError(errorText(err));
             }

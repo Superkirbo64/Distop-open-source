@@ -97,7 +97,7 @@ export function permissionList(bits: bigint): PermissionName[] {
 
 export type Snowflake = string;
 
-export type UserKind = "local" | "guest";
+export type UserKind = "local" | "guest" | "imported";
 
 /**
  * Estado elegido a mano, distinto de "tiene un socket abierto" (§9.1).
@@ -1126,6 +1126,7 @@ export const GATEWAY_EVENTS = [
   "CHANNEL_DELETE",
   "CATEGORY_UPDATE",
   "COMMUNITY_UPDATE",
+  "COMMUNITY_DELETE",
   "MEMBER_JOIN",
   "MEMBER_LEAVE",
   "MEMBER_UPDATE",
@@ -1165,6 +1166,10 @@ export type ServerEvent =
   | { t: "CHANNEL_DELETE"; d: { id: Snowflake; community_id: Snowflake } }
   | { t: "CATEGORY_UPDATE"; d: { community_id: Snowflake; categories: Category[] } }
   | { t: "COMMUNITY_UPDATE"; d: Community }
+  /* Borrada de verdad, para todos los conectados: sin este evento solo quien
+     la borraba dejaba de verla y para el resto quedaba un cascarón que daba
+     error al abrirlo. */
+  | { t: "COMMUNITY_DELETE"; d: { community_id: Snowflake } }
   | { t: "MEMBER_JOIN"; d: Member }
   | { t: "MEMBER_LEAVE"; d: { community_id: Snowflake; user_id: Snowflake } }
   | { t: "MEMBER_UPDATE"; d: Member }
@@ -1174,6 +1179,10 @@ export type ServerEvent =
   | { t: "GAME_PRESENCE_UPDATE"; d: { community_id: Snowflake; presences: GamePresence[] } }
   | { t: "TYPING_START"; d: { channel_id: Snowflake; user_id: Snowflake; until: number } }
   | { t: "VOICE_STATE_UPDATE"; d: { channel_id: Snowflake; community_id: Snowflake; states: VoiceState[] } }
+  /* Confirmación dirigida al socket que intentó entrar. Antes, el cliente se
+     daba por conectado antes de que la instancia aceptara la entrada; un
+     rechazo por reunión cerrada o por permisos quedaba completamente mudo. */
+  | { t: "VOICE_JOIN_RESULT"; d: { channel_id: Snowflake; outcome: "joined" | "waiting" | "closed" | "denied" } }
   | { t: "VOICE_SIGNAL"; d: VoiceSignal }
   /* Tabla de sonidos (§9.4): NO viaja el audio, viaja el id. Cada cliente ya
      puede pedir el archivo a la instancia y lo reproduce a su calidad original,

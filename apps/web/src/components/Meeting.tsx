@@ -51,7 +51,8 @@ import {
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
 import { sendCommand } from "../lib/gateway.ts";
-import { holdFloor, raiseHand, setPushToTalkMode } from "../lib/voice.ts";
+import { holdFloor, joinVoice, raiseHand, setPushToTalkMode } from "../lib/voice.ts";
+import { recordingSupported, requestRecording, stopRecording } from "../lib/record.ts";
 import { useVoiceLocal } from "./Voice.tsx";
 import { Avatar, Button, ErrorNote, Field, IconButton, Modal, Select, Spinner, useConfirm, useErrorText, useT } from "./ui.tsx";
 import type { MessageKey } from "../i18n.ts";
@@ -466,7 +467,7 @@ function AvisoDeGrabacion({ channelId, selfId }: { channelId: string; selfId: st
         <Button
           variant="danger"
           className="h-7 shrink-0 px-2 text-xs"
-          onClick={() => sendCommand({ t: "MEETING_RECORD", d: { channel_id: channelId, state: "FINALIZING" } })}
+          onClick={() => stopRecording(channelId)}
         >
           <Square size={12} /> {t("meeting.recordStop")}
         </Button>
@@ -512,11 +513,15 @@ function ControlesDeModeracion({ meeting, papel, autoridad }: { meeting: Meeting
   const [ocupado, setOcupado] = useState(false);
   const [panel, setPanel] = useState<"roles" | "invites" | "attendance" | null>(null);
 
-  const cambiarEstado = async (state: Meeting["state"]) => {
+  const cambiarEstado = async (state: Meeting["state"], entrar = false) => {
     setOcupado(true);
     setError(null);
     try {
-      await api<Meeting>("POST", `/api/v1/meetings/${meeting.id}/state`, { state });
+      const actualizada = await api<Meeting>("POST", `/api/v1/meetings/${meeting.id}/state`, { state });
+      useStore.setState((actual) => ({
+        meetings: { ...actual.meetings, [actualizada.channel_id]: actualizada },
+      }));
+      if (entrar) await joinVoice(meeting.channel_id);
     } catch (fallo) {
       setError(errorText(fallo));
     } finally {
@@ -524,8 +529,12 @@ function ControlesDeModeracion({ meeting, papel, autoridad }: { meeting: Meeting
     }
   };
 
-  const grabando = useStore.getState().recording[meeting.channel_id];
+  /* Reactivo, no getState(): el botón tiene que desaparecer solo cuando otra
+     persona empieza a grabar, no cuando este componente repinte por otra cosa. */
+  const voiceLocal = useVoiceLocal();
+  const grabando = useStore((s) => s.recording[meeting.channel_id]);
   const puedeGrabar = !grabando || !recordingIsLive(grabando.state);
+  const dentroDeLaLlamada = voiceLocal.channelId === meeting.channel_id;
 
   return (
     <section className="flex flex-wrap items-center gap-2 rounded-[12px] border border-line bg-surface p-3">
@@ -535,14 +544,14 @@ function ControlesDeModeracion({ meeting, papel, autoridad }: { meeting: Meeting
           <Button variant="ghost" disabled={ocupado} onClick={() => void cambiarEstado("LOBBY")}>
             <DoorOpen size={15} /> {t("meeting.openLobby")}
           </Button>
-          <Button variant="primary" disabled={ocupado} onClick={() => void cambiarEstado("LIVE")}>
+          <Button variant="primary" disabled={ocupado} onClick={() => void cambiarEstado("LIVE", true)}>
             <Play size={15} /> {t("meeting.start")}
           </Button>
         </>
       ) : null}
 
       {meeting.state === "LOBBY" ? (
-        <Button variant="primary" disabled={ocupado} onClick={() => void cambiarEstado("LIVE")}>
+        <Button variant="primary" disabled={ocupado} onClick={() => void cambiarEstado("LIVE", true)}>
           <Play size={15} /> {t("meeting.start")}
         </Button>
       ) : null}
@@ -564,7 +573,9 @@ function ControlesDeModeracion({ meeting, papel, autoridad }: { meeting: Meeting
       {meeting.state === "LIVE" && puedeGrabar ? (
         <Button
           variant="ghost"
-          onClick={() => sendCommand({ t: "MEETING_RECORD", d: { channel_id: meeting.channel_id, state: "CONSENTING" } })}
+          disabled={!dentroDeLaLlamada || !recordingSupported()}
+          title={dentroDeLaLlamada ? undefined : t("meeting.recordNeedsCall")}
+          onClick={() => requestRecording(meeting.channel_id)}
         >
           <CircleDot size={15} /> {t("meeting.recordStart")}
         </Button>
@@ -924,7 +935,11 @@ export function CreateMeeting({
       setTitle("");
       setAgenda("");
       setCuandoTexto("");
-      await useStore.getState().reloadCommunities();
+      /* reloadCommunities solo refresca los iconos del rail. El canal recién
+         creado y sus permisos viven en bootstrap; sin recargarlo, openChannel
+         seleccionaba un id que Chat no podía encontrar y la reunión quedaba
+         inutilizable hasta recargar toda la aplicación. */
+      await useStore.getState().openCommunity(communityId);
       await openChannel(reunion.channel_id);
     } catch (fallo) {
       setError(errorText(fallo));

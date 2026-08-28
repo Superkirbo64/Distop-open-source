@@ -564,6 +564,27 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_calendario_usuario ON calendar_tokens(user_id);
   `,
+
+  /* Importaciones desde servicios externos.
+
+     El token de acceso NO vive aquí: solo se usa durante la petición y se
+     descarta. Esta fila impide importar dos veces el mismo servidor y deja una
+     explicación auditable de qué llegó y qué no. */
+  `
+  CREATE TABLE external_imports (
+    id            TEXT PRIMARY KEY,
+    provider      TEXT NOT NULL,
+    source_id     TEXT NOT NULL,
+    community_id  TEXT NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    actor_id      TEXT NOT NULL REFERENCES users(id),
+    state         TEXT NOT NULL CHECK (state IN ('RUNNING','COMPLETED','FAILED')),
+    report        TEXT NOT NULL DEFAULT '{}',
+    created_at    INTEGER NOT NULL,
+    completed_at  INTEGER,
+    UNIQUE(provider, source_id)
+  );
+  CREATE INDEX idx_external_imports_community ON external_imports(community_id);
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

@@ -162,6 +162,20 @@ test("convocar crea el canal y deja a quien organiza como anfitrión", async () 
   assert.equal((await call("GET", `/api/v1/meetings/${reunion.id}`, { token: leo.access_token })).json.my_role, "attendee");
 });
 
+test("entrar antes de abrir recibe un rechazo explícito y no finge conexión", async () => {
+  const cliente = await abrir(ana.access_token);
+  cliente.socket.send(JSON.stringify({ t: "SUBSCRIBE", d: { community_id: comunidadId } }));
+  await reposar();
+  cliente.socket.send(JSON.stringify({ t: "VOICE_JOIN", d: { channel_id: canalId } }));
+  const resultado = await esperar(cliente, "VOICE_JOIN_RESULT", (d) => d.channel_id === canalId);
+  assert.equal(resultado.outcome, "closed");
+  assert.equal(
+    (db.prepare("SELECT COUNT(*) AS n FROM meeting_attendance WHERE meeting_id = ?").get(reunion.id) as { n: number }).n,
+    0,
+  );
+  cliente.socket.close();
+});
+
 test("la máquina de estados no acepta atajos, y una reunión terminada no se reabre", async () => {
   /* DRAFT no puede saltar a ENDED: cerrar algo que nunca se abrió dejaría una
      reunión "terminada" sin principio ni asistencia. */
@@ -433,6 +447,8 @@ test("quien administra la comunidad puede cerrar una reunión que no organizó, 
   });
   assert.equal(cerrada.status, 200);
   assert.equal(cerrada.json.state, "ENDED");
+  const vozCerrada = await esperar(cAna, "VOICE_STATE_UPDATE", (d) => d.channel_id === canalId && d.states.length === 0);
+  assert.equal(vozCerrada.states.length, 0, "cerrar también saca visualmente a todos los clientes");
   assert.ok(cerrada.json.closed_at > 0);
 
   const log = await call("GET", `/api/v1/communities/${comunidadId}/audit`, { token: ana.access_token });

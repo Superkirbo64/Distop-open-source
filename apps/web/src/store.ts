@@ -32,9 +32,10 @@ import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
 import { connect, disconnect, onEvent, onStatus, sendCommand, type ConnectionStatus } from "./lib/gateway.ts";
 import { detectLocale, loadLocale, type Locale } from "./i18n.ts";
 import { notify, setSoundsEnabled, type NotifyLevel } from "./lib/notify.ts";
-import { configureVoice, currentChannel, handleSignal, resumeVoice, setSoundError, setVideoMode, syncPeers } from "./lib/voice.ts";
+import { configureVoice, currentChannel, handleSignal, leaveVoice, rejectVoiceJoin, resumeVoice, setSoundError, setVideoMode, syncPeers } from "./lib/voice.ts";
 import { playClip } from "./lib/relay.ts";
-import { instanceBase, peekPendingInvite, rememberCommunities, setDesktopAvailabilityStatus, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
+import { onRecordingUpdate } from "./lib/record.ts";
+import { forgetCommunity, instanceBase, peekPendingInvite, rememberCommunities, setDesktopAvailabilityStatus, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
 import { portableAuthPayload, syncPortableMedia } from "./lib/portable.ts";
 
 export type ThemeChoice = "light" | "dark" | "system";
@@ -140,6 +141,8 @@ interface State {
   meetingWaiting: Record<string, boolean>;
   /** Carga (o recarga) la reunión de un canal desde la API. */
   loadMeeting: (channelId: string) => Promise<void>;
+  /** Los estados de todas las reuniones de una comunidad, para la barra lateral. */
+  loadMeetings: (communityId: string) => Promise<void>;
   /**
    * Entré por un enlace de reunión y mi sesión solo sirve para ella.
    *
@@ -215,6 +218,8 @@ interface State {
   markRead: (channelId: string) => void;
   loadExpressions: () => Promise<void>;
   reloadCommunities: () => Promise<void>;
+  /** Borrado real: quita la comunidad del estado Y de la caché de instancias. */
+  removeCommunity: (communityId: string) => void;
 
   setPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
   /** Panel flotante de ajuste del fondo. No se guarda: es "lo tengo abierto ahora". */
@@ -498,6 +503,19 @@ export const useStore = create<State>()((set, get) => ({
     set({ communities: await api<Community[]>("GET", "/api/v1/communities") });
   },
 
+  removeCommunity(communityId) {
+    const state = get();
+    const { [communityId]: _removed, ...rest } = state.data;
+    set({
+      communities: state.communities.filter((community) => community.id !== communityId),
+      data: rest,
+      activeCommunityId: state.activeCommunityId === communityId ? null : state.activeCommunityId,
+      activeChannelId: state.activeCommunityId === communityId ? null : state.activeChannelId,
+    });
+    /* También la caché local: era lo que resucitaba comunidades borradas. */
+    if (instanceBase) forgetCommunity(instanceBase, communityId);
+  },
+
   async openCommunity(communityId) {
     set({ activeCommunityId: communityId });
     sendCommand({ t: "SUBSCRIBE", d: { community_id: communityId } });
@@ -563,17 +581,21 @@ export const useStore = create<State>()((set, get) => ({
    * después se pide el detalle, que es lo único que trae mi papel, la sala de
    * espera y la grabación viva.
    */
+  async loadMeetings(communityId) {
+    const lista = await api<Meeting[]>("GET", `/api/v1/communities/${communityId}/meetings`);
+    const porCanal: Record<string, Meeting> = {};
+    for (const item of lista) porCanal[item.channel_id] = item;
+    set((state) => ({ meetings: { ...state.meetings, ...porCanal } }));
+  },
+
   async loadMeeting(channelId) {
     const communityId = get().channelOwner[channelId] ?? get().activeCommunityId;
     if (!communityId) return;
 
     let reunion = get().meetings[channelId];
     if (!reunion) {
-      const lista = await api<Meeting[]>("GET", `/api/v1/communities/${communityId}/meetings`);
-      const porCanal: Record<string, Meeting> = {};
-      for (const item of lista) porCanal[item.channel_id] = item;
-      set((state) => ({ meetings: { ...state.meetings, ...porCanal } }));
-      reunion = porCanal[channelId];
+      await get().loadMeetings(communityId);
+      reunion = get().meetings[channelId];
       if (!reunion) return;
     }
 
@@ -807,6 +829,13 @@ onEvent((event: ServerEvent) => {
       return;
     }
 
+    case "VOICE_JOIN_RESULT": {
+      if (event.d.outcome === "closed" || event.d.outcome === "denied") {
+        rejectVoiceJoin(event.d.channel_id, event.d.outcome);
+      }
+      return;
+    }
+
     /* ── reuniones ─────────────────────────────────────────────────────
        Los seis eventos son de reemplazo, no de delta: cada uno trae el valor
        completo de lo suyo. Es a propósito — una reunión donde la sala de espera
@@ -818,6 +847,7 @@ onEvent((event: ServerEvent) => {
       /* Terminada o cancelada no hay a quién admitir ni turno que repartir: se
          limpia para que la interfaz no enseñe una cola de una reunión cerrada. */
       if (event.d.state === "ENDED" || event.d.state === "CANCELLED") {
+        if (currentChannel() === event.d.channel_id) leaveVoice();
         useStore.setState({
           lobby: { ...state.lobby, [event.d.channel_id]: [] },
           floor: { ...state.floor, [event.d.channel_id]: null },
@@ -850,6 +880,9 @@ onEvent((event: ServerEvent) => {
 
     case "RECORDING_UPDATE": {
       useStore.setState({ recording: { ...state.recording, [event.d.channel_id]: event.d.recording } });
+      /* El módulo de grabación decide si le toca: arrancar la captura cuando la
+         instancia confirma mi aviso, o cortarla si un moderador la marcó caída. */
+      onRecordingUpdate(event.d.channel_id, event.d.recording, state.user?.id);
       return;
     }
 
@@ -972,6 +1005,12 @@ onEvent((event: ServerEvent) => {
         ? data.members.map((m) => (m.user.id === event.d.user.id ? event.d : m))
         : [...data.members, event.d];
       useStore.setState({ data: { ...state.data, [event.d.community_id]: { ...data, members } } });
+      return;
+    }
+
+    case "COMMUNITY_DELETE": {
+      // Dejó de existir para TODOS los conectados, no solo para quien la borró.
+      useStore.getState().removeCommunity(event.d.community_id);
       return;
     }
 

@@ -147,7 +147,9 @@ export function App() {
   const [changedPublicUrl, setChangedPublicUrl] = useState("");
   const isMobile = useIsMobile();
   const activeChannel = activeData?.channels.find((channel) => channel.id === activeChannelId);
-  const voiceChat = activeChannel?.kind === "voice";
+  // Una reunión también tiene su chat: es un canal (§8.1), y sin esto el panel
+  // lateral de mensajes solo existía para las salas de voz de siempre.
+  const voiceChat = activeChannel?.kind === "voice" || activeChannel?.kind === "meeting";
 
   // Montados con el primer uso y ya no se desmontan (ver el lazy de arriba).
   const [settingsMounted, setSettingsMounted] = useState(false);

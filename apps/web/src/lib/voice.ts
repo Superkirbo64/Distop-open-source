@@ -30,6 +30,8 @@ export interface VoiceLocalState {
   speaking: Set<Snowflake>;
   /** Qué estoy publicando: cámara, pantalla o nada. */
   video: VideoSource | null;
+  /** Cámara incrustada como recuadro sobre la pantalla compartida. Sigue siendo UN flujo (§8.7). */
+  cameraOverlay: boolean;
   /** Mi propio vídeo, para verme sin esperar a que vuelva de la red. */
   localVideo: MediaStream | null;
   /** Vídeo que llega de cada par. Existe aunque esté apagado: la pista se reserva al conectar. */
@@ -83,6 +85,7 @@ const state: VoiceLocalState = {
   forcedDeafened: false,
   speaking: new Set(),
   video: null,
+  cameraOverlay: false,
   localVideo: null,
   videos: new Map(),
   videoFps: null,
@@ -103,6 +106,10 @@ let selfId: Snowflake = "";
 let iceServers: RTCIceServer[] = [];
 let localStream: MediaStream | null = null;
 let videoStream: MediaStream | null = null;
+/* La pantalla sin componer y la cámara del recuadro, vivas solo mientras la
+   cámara viaja incrustada sobre la pantalla (ver setCameraOverlay). */
+let rawScreen: MediaStream | null = null;
+let overlay: { cam: MediaStream; stop: () => void } | null = null;
 let audioContext: AudioContext | null = null;
 
 interface Peer {
@@ -742,6 +749,14 @@ export function leaveVoice(): void {
   disconnectVoice(true);
 }
 
+/** Revierte una entrada que el cliente inició pero la instancia rechazó. */
+export function rejectVoiceJoin(channelId: Snowflake, outcome: "closed" | "denied"): void {
+  if (state.channelId !== channelId) return;
+  disconnectVoice(false);
+  state.error = outcome === "closed" ? "meeting_closed" : "voice_forbidden";
+  emit();
+}
+
 /**
  * Dispara un sonido de la tabla para toda la sala (§9.4).
  *
@@ -995,6 +1010,16 @@ async function tuneSender(sender: RTCRtpSender, source: VideoSource): Promise<vo
 }
 
 function stopLocalVideo(): void {
+  if (overlay) {
+    overlay.stop();
+    for (const track of overlay.cam.getTracks()) track.stop();
+    overlay = null;
+  }
+  /* La pantalla original vive fuera de `videoStream` mientras hay recuadro:
+     sin esto, apagar el vídeo dejaba al navegador "compartiendo" para nadie. */
+  if (rawScreen && rawScreen !== videoStream) for (const track of rawScreen.getTracks()) track.stop();
+  rawScreen = null;
+  state.cameraOverlay = false;
   for (const track of videoStream?.getTracks() ?? []) track.stop();
   videoStream = null;
   state.localVideo = null;
@@ -1028,6 +1053,7 @@ export async function setVideoSource(source: VideoSource | null): Promise<void> 
 
     stopLocalVideo();
     videoStream = stream;
+    rawScreen = source === "screen" ? stream : null;
     state.localVideo = stream;
     // La pista le dice al codificador qué es: con prioridad elegida manda esa;
     // en equilibrado, una cámara privilegia movimiento y una pantalla, letras.
@@ -1112,6 +1138,146 @@ export async function retuneVideo(): Promise<void> {
   } else {
     for (const peer of peers.values()) if (peer.videoSender) await tuneSender(peer.videoSender, source);
   }
+}
+
+/* ── cámara sobre la pantalla ──────────────────────────────────────────
+   El protocolo y los dos transportes llevan UN vídeo por persona: la sala de
+   voz negocia un solo emisor WebRTC y el relevo un solo codificador. En vez de
+   duplicar todo ese camino, la cámara viaja INCRUSTADA como recuadro dentro de
+   la pantalla —un canvas mezcla las dos y el resultado es el mismo flujo de
+   siempre—. La sala la ve donde ya miraba, el presupuesto (§8.7) sigue
+   contando una fuente con prioridad de pantalla, y un cliente viejo no nota
+   nada. El precio, dicho claro: el recuadro va cocido en la imagen (nadie
+   puede apartarlo) y la mezcla se pinta a 30 fps como mucho. */
+
+function composeScreenAndCamera(
+  screen: MediaStream,
+  cam: MediaStream,
+  fps: number,
+): { stream: MediaStream; stop: () => void } {
+  const screenTrack = screen.getVideoTracks()[0];
+  const { width = 1280, height = 720 } = screenTrack?.getSettings() ?? {};
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  const screenVideo = document.createElement("video");
+  const camVideo = document.createElement("video");
+  for (const [el, src] of [
+    [screenVideo, screen],
+    [camVideo, cam],
+  ] as const) {
+    el.muted = true;
+    el.playsInline = true;
+    el.srcObject = src;
+    void el.play().catch(() => {
+      // Autoplay bloqueado no aplica a vídeo silenciado propio; si aun así
+      // falla, el recuadro sale negro pero la llamada no se cae.
+    });
+  }
+  const timer = window.setInterval(() => {
+    if (!ctx) return;
+    ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
+    const ancho = Math.round(canvas.width / 4);
+    const camW = camVideo.videoWidth || 4;
+    const camH = camVideo.videoHeight || 3;
+    const alto = Math.round((ancho * camH) / camW);
+    const margen = Math.round(canvas.width / 64);
+    const x = canvas.width - ancho - margen;
+    const y = canvas.height - alto - margen;
+    ctx.drawImage(camVideo, x, y, ancho, alto);
+    ctx.strokeStyle = "rgba(255,255,255,0.6)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x, y, ancho, alto);
+  }, Math.max(Math.round(1000 / fps), 33));
+  const stream = canvas.captureStream(fps);
+  return {
+    stream,
+    stop: () => {
+      window.clearInterval(timer);
+      for (const track of stream.getTracks()) track.stop();
+      screenVideo.srcObject = null;
+      camVideo.srcObject = null;
+    },
+  };
+}
+
+/** Cambia la pista saliente sin tocar permisos ni anuncios: mismo flujo lógico. */
+async function swapOutgoing(stream: MediaStream): Promise<boolean> {
+  const track = stream.getVideoTracks()[0];
+  if (!track) return false;
+  if (videoViaHost) {
+    relay.stopVideo();
+    return await relay.startVideo(stream, sendMedia, "screen").catch(() => false);
+  }
+  for (const peer of peers.values()) {
+    const sender = peer.videoSender;
+    if (!sender) continue;
+    void sender.replaceTrack(track).then(() => tuneSender(sender, "screen"));
+  }
+  return true;
+}
+
+/**
+ * Enciende o apaga la cámara MIENTRAS se comparte pantalla.
+ * Solo tiene sentido con la pantalla activa; con la cámara sola ya existe
+ * `setVideoSource("camera")`.
+ */
+export async function setCameraOverlay(on: boolean): Promise<void> {
+  if (!state.channelId || state.video !== "screen" || !rawScreen) return;
+  if (on === !!overlay) return;
+  state.videoError = null;
+
+  if (!on) {
+    const pantalla = rawScreen;
+    if (overlay) {
+      overlay.stop();
+      for (const track of overlay.cam.getTracks()) track.stop();
+      overlay = null;
+    }
+    state.cameraOverlay = false;
+    videoStream = pantalla;
+    state.localVideo = pantalla;
+    await swapOutgoing(pantalla);
+    emit();
+    playUi("camera_off");
+    return;
+  }
+
+  let cam: MediaStream;
+  try {
+    cam = await capture("camera");
+  } catch (err) {
+    state.videoError = err instanceof DOMException && err.name === "NotAllowedError" ? "denied" : "nodevice";
+    emit();
+    return;
+  }
+  const camTrack = cam.getVideoTracks()[0];
+  if (!camTrack) {
+    for (const track of cam.getTracks()) track.stop();
+    state.videoError = "nodevice";
+    emit();
+    return;
+  }
+  // Si desenchufan la cámara, el recuadro se quita solo y la pantalla sigue.
+  camTrack.addEventListener("ended", () => void setCameraOverlay(false));
+
+  /* Componer a más de 30 fps quema CPU pintando un recuadro: se limita aquí,
+     no en el perfil, para que la pantalla sola conserve su fluidez elegida. */
+  const compuesto = composeScreenAndCamera(rawScreen, cam, Math.min(relay.videoProfile("screen").fps, 30));
+  if (!(await swapOutgoing(compuesto.stream))) {
+    compuesto.stop();
+    for (const track of cam.getTracks()) track.stop();
+    state.videoError = "unsupported";
+    emit();
+    return;
+  }
+  overlay = { cam, stop: compuesto.stop };
+  videoStream = compuesto.stream;
+  state.localVideo = compuesto.stream;
+  state.cameraOverlay = true;
+  emit();
+  playUi("camera_on");
 }
 
 /**

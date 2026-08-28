@@ -495,8 +495,9 @@ test("un sonido de la tabla llega a la sala, y solo a la sala", async () => {
     JSON.stringify({ t: "VOICE_MUTE", d: { channel_id: channel.id, muted: false, deafened: false } }),
   );
   await waitFor(clientZoe, "VOICE_STATE_UPDATE", (d) => d.states.some((s: any) => s.user_id === zoe.user.id && !s.muted));
-  // El primero ya gastó una de las cinco acciones de esta ventana.
-  for (let i = 0; i < 4; i++) {
+  // El primero ya gastó una de las cincuenta acciones de esta ventana: el
+  // techo es alto adrede (la tabla existe para jugar), pero sigue siendo techo.
+  for (let i = 0; i < 49; i++) {
     clientZoe.socket.send(JSON.stringify({ t: "VOICE_SOUND", d: { channel_id: channel.id, sound_id: sonido.id } }));
     await waitFor(clientZoe, "VOICE_SOUND");
   }
@@ -567,4 +568,25 @@ test("salirse de la carrera no cierra la que está corriendo", async () => {
   assert.equal(vuelta.lobby.host_id, mia.user.id, "volver no devuelve el testigo");
 
   for (const client of [lSock, mSock]) client.socket.close();
+});
+
+test("borrar la comunidad la borra para TODOS los conectados, no solo para quien la borró", async () => {
+  const dana = await call("POST", "/api/v1/auth/register", { body: { username: "dana", password: "contrasena-larga-31" } });
+  const ivo = await call("POST", "/api/v1/auth/register", { body: { username: "ivo", password: "contrasena-larga-32" } });
+
+  const community = await call("POST", "/api/v1/communities", { token: dana.access_token, body: { name: "Efímera" } });
+  const invite = await call("POST", `/api/v1/communities/${community.id}/invites`, { token: dana.access_token, body: {} });
+  await call("POST", `/api/v1/invites/${invite.code}/join`, { token: ivo.access_token });
+
+  const clientIvo = await open(ivo.access_token);
+  await waitFor(clientIvo, "READY");
+  clientIvo.socket.send(JSON.stringify({ t: "SUBSCRIBE", d: { community_id: community.id } }));
+  await waitFor(clientIvo, "PRESENCE_UPDATE");
+
+  // Antes solo quien borraba dejaba de verla; al resto le quedaba un cascarón.
+  await call("DELETE", `/api/v1/communities/${community.id}`, { token: dana.access_token });
+  const borrado = await waitFor(clientIvo, "COMMUNITY_DELETE");
+  assert.equal(borrado.community_id, community.id);
+
+  clientIvo.socket.close();
 });

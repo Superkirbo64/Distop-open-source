@@ -135,7 +135,7 @@ import {
   type MigrationRow,
 } from "./community-migration.ts";
 import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
-import { disconnectSession, disconnectUser, hasOpenSocket, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
+import { announceVoice, disconnectSession, disconnectUser, hasOpenSocket, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.ts";
 import { statesOfCommunity } from "./voice.ts";
 import { advanceTailscale, stopTailscale, tailscaleState } from "./tailscale.ts";
@@ -780,6 +780,10 @@ route("DELETE", "/api/v1/communities/:id", (ctx) => {
 
   deleteExpressionAttachmentsOfCommunity(community.id);
   db.prepare("DELETE FROM communities WHERE id = ?").run(community.id);
+  /* A TODOS los conectados, no solo a quien borra: sin esto, para el resto de
+     miembros quedaba un cascarón en la barra que daba error al abrirlo. El
+     MEMBER_LEAVE se conserva para clientes anteriores a este evento. */
+  publish(community.id, { t: "COMMUNITY_DELETE", d: { community_id: community.id } });
   publish(community.id, { t: "MEMBER_LEAVE", d: { community_id: community.id, user_id: user.id } });
 });
 
@@ -948,6 +952,10 @@ route("POST", "/api/v1/meetings/:id/state", async (ctx) => {
   try {
     const actualizada = transitionMeeting(reunion.id, to, auth.user.id);
     publish(actualizada.community_id, { t: "MEETING_UPDATE", d: actualizada });
+    /* transitionMeeting vacía la sala al cerrar. La foto vacía también tiene
+       que llegar a los clientes: si no, seguían mostrando «Voz conectada» y
+       conservando el micrófono abierto contra una reunión ya terminada. */
+    if (to === "ENDED" || to === "CANCELLED") announceVoice(reunion.channel_id);
     return actualizada;
   } catch (error) {
     meetingHttp(error);

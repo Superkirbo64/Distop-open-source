@@ -3,7 +3,7 @@
  * Lo que no puedes usar no se pinta apagado: si no tienes VIEW_CHANNEL el canal
  * simplemente no llega desde la instancia.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalendarClock, ChevronDown, Settings, UserPlus } from "lucide-react";
 import { Announcement, ChannelHash, Cross, Speaker } from "./icons.tsx";
 import { PERMISSIONS, has, toBits, type Channel } from "@distop/protocol";
@@ -45,10 +45,25 @@ export function Sidebar({
   const user = useStore((s) => s.user);
   const voiceRooms = useStore((s) => s.voice);
   const unread = useStore((s) => s.unread);
+  const meetings = useStore((s) => s.meetings);
+  const loadMeetings = useStore((s) => s.loadMeetings);
 
   const [creating, setCreating] = useState(false);
   const [convocando, setConvocando] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  /* Cerrado por defecto: el historial es consulta, no agenda. */
+  const [historialAbierto, setHistorialAbierto] = useState(false);
+
+  /* Sin los estados no se puede separar lo vivo de lo terminado, y los canales
+     del bootstrap no los traen. Una petición por comunidad; los cambios
+     posteriores llegan solos por MEETING_UPDATE. */
+  const historialDe = useRef<string | null>(null);
+  const hayReuniones = data?.channels.some((channel) => channel.kind === "meeting") ?? false;
+  useEffect(() => {
+    if (!communityId || !hayReuniones || historialDe.current === communityId) return;
+    historialDe.current = communityId;
+    void loadMeetings(communityId);
+  }, [communityId, hayReuniones, loadMeetings]);
 
   if (!communityId || !data) {
     return (
@@ -72,6 +87,15 @@ export function Sidebar({
   const esReunion = (channel: Channel) => channel.kind === "meeting";
   const conversacion = data.channels.filter((channel) => !esReunion(channel));
   const reuniones = data.channels.filter(esReunion);
+
+  /* Una reunión terminada no es basura ni agenda: es acta (§8.4). Se aparta a
+     un historial plegado en vez de quedarse mezclada con las próximas. */
+  const terminada = (channel: Channel) => {
+    const meeting = meetings[channel.id];
+    return !!meeting && (meeting.state === "ENDED" || meeting.state === "CANCELLED");
+  };
+  const reunionesVivas = reuniones.filter((channel) => !terminada(channel));
+  const reunionesPasadas = reuniones.filter(terminada);
 
   const uncategorised = conversacion.filter((channel) => !channel.category_id);
   const grouped = data.categories
@@ -253,7 +277,7 @@ export function Sidebar({
               <CalendarClock size={12} className="shrink-0" />
               <span className="truncate">{t("meeting.section")}</span>
             </p>
-            <ul className="flex flex-col gap-0.5">{reuniones.map(renderChannel)}</ul>
+            <ul className="flex flex-col gap-0.5">{reunionesVivas.map(renderChannel)}</ul>
             {canCallMeetings ? (
               <button
                 onClick={() => setConvocando(true)}
@@ -261,6 +285,20 @@ export function Sidebar({
               >
                 <Cross size={15} /> {t("meeting.create")}
               </button>
+            ) : null}
+            {reunionesPasadas.length > 0 ? (
+              <>
+                <button
+                  onClick={() => setHistorialAbierto(!historialAbierto)}
+                  aria-expanded={historialAbierto}
+                  className="mt-1 flex w-full items-center gap-1 px-2 py-1 text-[0.72rem] font-semibold tracking-wide text-muted transition-colors hover:text-ink"
+                >
+                  <ChevronDown size={12} className={`transition-transform ${historialAbierto ? "" : "-rotate-90"}`} />
+                  <span className="truncate">{t("meeting.history")}</span>
+                  <span aria-hidden="true">({reunionesPasadas.length})</span>
+                </button>
+                {historialAbierto ? <ul className="flex flex-col gap-0.5">{reunionesPasadas.map(renderChannel)}</ul> : null}
+              </>
             ) : null}
           </section>
         ) : null}

@@ -208,6 +208,7 @@ function handleCommand(client: Client, raw: string): void {
         const salida = meetings.joinMeeting(channelId, client.userId);
         if (salida === "waiting") {
           const enEspera = meetings.meetingOf(channelId)!;
+          send(client, { t: "VOICE_JOIN_RESULT", d: { channel_id: channelId, outcome: "waiting" } });
           send(client, {
             t: "MEETING_WAITING",
             d: { meeting_id: enEspera.id, channel_id: channelId, admitted: false },
@@ -221,14 +222,22 @@ function handleCommand(client: Client, raw: string): void {
           announceLobby(channelId);
           return;
         }
-        if (salida !== "joined") return;
+        if (salida !== "joined") {
+          send(client, { t: "VOICE_JOIN_RESULT", d: { channel_id: channelId, outcome: salida } });
+          return;
+        }
+        send(client, { t: "VOICE_JOIN_RESULT", d: { channel_id: channelId, outcome: "joined" } });
         announceVoice(channelId);
         announceMeeting(channelId);
         return;
       }
 
       const result = voice.join(channelId, client.userId);
-      if (!result) return;
+      if (!result) {
+        send(client, { t: "VOICE_JOIN_RESULT", d: { channel_id: channelId, outcome: "denied" } });
+        return;
+      }
+      send(client, { t: "VOICE_JOIN_RESULT", d: { channel_id: channelId, outcome: "joined" } });
       if (result.left) {
         announceVoice(result.left);
         // Cambiar de sala es irse de la carrera de la anterior.
@@ -440,9 +449,11 @@ function handleCommand(client: Client, raw: string): void {
       }
 
       /* Un botón que suena es un botón para machacar. Sin este límite basta con
-         dejar el dedo apoyado para que nadie más pueda usar la sala. */
+         dejar el dedo apoyado para que nadie más pueda usar la sala. El techo es
+         alto adrede: la tabla de sonidos existe para jugar, y cortar a la quinta
+         pulsación castigaba el uso normal, no el abuso. */
       try {
-        rateLimit(`vsound:${client.userId}`, 5, 10_000);
+        rateLimit(`vsound:${client.userId}`, 50, 10_000);
       } catch {
         rejectVoiceSound(client, channelId, soundId, "rate_limited");
         return;

@@ -249,11 +249,15 @@ export async function setOutputDevice(id: string): Promise<void> {
 /* ── envío ─────────────────────────────────────────────────────────────── */
 
 let encoder: AudioEncoder | null = null;
-let capture: { track: MediaStreamTrack; source: AudioNode; mix: AudioNode } | null = null;
+/* `mix` es el nodo-destino del micrófono procesado: su `.stream` alimenta al
+   codificador y también a la toma de grabación local. */
+let capture: { track: MediaStreamTrack; source: AudioNode; mix: MediaStreamAudioDestinationNode } | null = null;
 let sending = true;
 
 export function setSending(on: boolean): void {
   sending = on;
+  // El micro de la grabación local sigue al de la sala: mudo aquí, mudo allí.
+  if (recordTap?.micGain) recordTap.micGain.gain.value = on ? 1 : 0;
 }
 
 /* ── sonido de lo que se comparte ─────────────────────────────────────────
@@ -383,6 +387,52 @@ const activeClips = new Set<AudioBufferSourceNode>();
 export function setDeafened(on: boolean): void {
   deafened = on;
   if (master) master.gain.value = on ? 0 : outLevel;
+}
+
+/* ── toma para la grabación local (V3 §8.9) ────────────────────────────
+   La grabación es un fichero en TU equipo, no una nube: aquí solo se mezcla
+   lo que ya suena. Dos fuentes: el máster (la sala, los clips, el audio de
+   pantalla ajeno) y mi micrófono TAL Y COMO sale a la sala —pasa por una
+   ganancia espejo de `sending`, para que el silencio del botón de mudo también
+   sea silencio en el fichero. Grabar lo que la sala no oye sería una trampa. */
+let recordTap: {
+  dest: MediaStreamAudioDestinationNode;
+  micSource: MediaStreamAudioSourceNode | null;
+  micGain: GainNode | null;
+} | null = null;
+
+/** Mezcla lista para un MediaRecorder. Si cambias de micrófono a mitad, la
+ *  toma conserva el anterior: limitación conocida de esta primera versión. */
+export function startRecordTap(): MediaStream {
+  const ctx = audio();
+  stopRecordTap();
+  const dest = ctx.createMediaStreamDestination();
+  output(ctx).connect(dest);
+  let micSource: MediaStreamAudioSourceNode | null = null;
+  let micGain: GainNode | null = null;
+  if (capture) {
+    micSource = ctx.createMediaStreamSource(capture.mix.stream);
+    micGain = ctx.createGain();
+    micGain.gain.value = sending ? 1 : 0;
+    micSource.connect(micGain).connect(dest);
+  }
+  recordTap = { dest, micSource, micGain };
+  return dest.stream;
+}
+
+export function stopRecordTap(): void {
+  if (!recordTap) return;
+  try {
+    master?.disconnect(recordTap.dest);
+  } catch {
+    // Ya estaba suelto: el contexto pudo reiniciarse durante la llamada.
+  }
+  try {
+    recordTap.micSource?.disconnect();
+  } catch {
+    // Ídem.
+  }
+  recordTap = null;
 }
 
 /* ── tabla de sonidos (§9.4) ───────────────────────────────────────────

@@ -420,6 +420,7 @@ function ChatVoiceHeader({
 }) {
   const t = useT();
   const voiceLocal = useVoiceLocal();
+  const meeting = useStore((s) => (channel.kind === "meeting" ? s.meetings[channel.id] : undefined));
   const [voiceNoteOff, setVoiceNoteOff] = useState(false);
   /* Se descarta la nota, no el aviso: vuelve a aparecer la próxima vez que
      entres a una sala de voz, que es cuando otra vez importa. */
@@ -466,8 +467,14 @@ function ChatVoiceHeader({
           </button>
         </div>
       ) : (
-        <Button variant="primary" disabled={!canConnect} onClick={() => void joinVoice(channel.id)}>
-          {t("voice.join")}
+        <Button
+          variant="primary"
+          disabled={!canConnect || (channel.kind === "meeting" && meeting?.state !== "LOBBY" && meeting?.state !== "LIVE")}
+          onClick={() => void joinVoice(channel.id)}
+        >
+          {channel.kind === "meeting" && meeting && meeting.state !== "LOBBY" && meeting.state !== "LIVE"
+            ? t("meeting.startToJoin")
+            : t("voice.join")}
         </Button>
       )}
       <VoiceSoundError error={voiceLocal.soundError} />
@@ -507,7 +514,9 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
   const scroller = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
-  const channel = data?.channels.find((candidate) => candidate.id === channelId && candidate.kind === "voice");
+  const channel = data?.channels.find(
+    (candidate) => candidate.id === channelId && (candidate.kind === "voice" || candidate.kind === "meeting"),
+  );
   const memberIndex = useMemo(() => new Map((data?.members ?? []).map((member) => [member.user.id, member])), [data?.members]);
   // Mismo índice O(1) y mismas identidades estables que en Chat: MessageRow es
   // compartido y su React.memo depende de ellas.

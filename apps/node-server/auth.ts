@@ -209,7 +209,7 @@ export function toPublicUser(row: UserRow): PublicUser {
     bio: row.bio,
     pronouns: row.pronouns,
     accent_color: row.accent_color,
-    kind: row.kind === "guest" ? "guest" : "local",
+    kind: row.kind === "guest" ? "guest" : row.kind === "imported" ? "imported" : "local",
     // Un valor viejo o corrupto en la base no debe pintar un estado inventado.
     status: (USER_STATUSES as readonly string[]).includes(row.status) ? (row.status as UserStatus) : "online",
     custom_status: row.custom_status,
@@ -305,7 +305,7 @@ export function createUser(opts: {
   username: string;
   displayName?: string;
   password?: string;
-  kind?: "local" | "guest" | "portable";
+  kind?: "local" | "guest" | "portable" | "imported";
 }): UserRow {
   const id = uuidv7();
   db.prepare(

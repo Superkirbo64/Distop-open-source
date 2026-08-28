@@ -405,6 +405,27 @@ export function forgetInstance(url: string): void {
   syncDesktopAvailability();
 }
 
+/**
+ * Quita UNA comunidad de la lista recordada de su instancia.
+ *
+ * Es lo que falta cuando alguien la borra: `rememberCommunities` solo corre en
+ * el efecto del Rail y en la app empaquetada, así que la caché conservaba la
+ * comunidad borrada y volvía a pintarla como si existiera.
+ */
+export function forgetCommunity(url: string, communityId: string): void {
+  if (!url) return;
+  const list = knownInstances();
+  const entry = list.find((known) => known.url === url);
+  if (!entry?.communities?.some((community) => community.id === communityId)) return;
+  const next = list.map((known) =>
+    known.url === url
+      ? { ...known, communities: (known.communities ?? []).filter((community) => community.id !== communityId) }
+      : known,
+  );
+  localStorage.setItem(LIST_KEY, JSON.stringify(next));
+  syncDesktopAvailability();
+}
+
 let availabilityConnected = false;
 
 

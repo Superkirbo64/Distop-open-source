@@ -99,3 +99,28 @@ de agente). El estado vivo es efímero en memoria con heartbeat + barrido
 `users.settings`: `share_game_activity` y `show_game_history` (ausente = sí:
 instalar la app de escritorio ya es el acto de consentimiento; el interruptor
 es la pausa, §29.6).
+
+## 2026-08: Discord — importación puntual con bot oficial, nunca sincronización
+
+Las peticiones originales del proyecto pedían traer comunidades y bots de
+Discord, y ningún plan las había recogido. Decisión en dos partes:
+
+1. **Importar = mudanza con fecha, no puente permanente.** Un bot que crea la
+   propia persona en su servidor lee estructura, roles, miembros, historial
+   reciente, adjuntos y emojis, y la instancia local los convierte en una
+   comunidad Distop normal (`apps/node-server/discord-import.ts`, tabla
+   `external_imports` con `UNIQUE(provider, source_id)`). El token de bot solo
+   existe en la memoria de la petición: ni base, ni logs, ni informe (§22).
+   Los self-bots (token de usuario) violan los ToS de Discord y no se aceptan.
+   Los autores se archivan como `kind='imported'` — las cuentas no se mudan.
+   Diseño completo: `docs/importacion-discord.md`.
+2. **Bots: compatibilidad por capas, no emulación.** Primero webhooks
+   entrantes con el formato de Discord (cambiar una URL basta para GitHub y
+   compañía), después API de bots nativa con guía de porte, después bot
+   puente de migración. No se promete ejecutar bots de Discord sin cambios.
+   Diseño completo: `docs/bots-de-discord.md`.
+
+Además se restauraron en `claude.md` las secciones §12 (bots, plugins) y §13
+(Minecraft) que un resumen anterior había reducido a punteros hacia skills
+inexistentes — esa pérdida de contexto fue la raíz de que estos tópicos
+quedaran fuera de los planes. No volver a resumirlas.
