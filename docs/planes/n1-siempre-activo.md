@@ -35,7 +35,7 @@ nunca antes ni a mitad.
       Sub-selector TURN en Ajustes, estado de copias en el panel de instancia,
       tercer carril "Siempre disponible (nube, coste cero)" en Compartir, y el
       modal Explorar con estados honestos. i18n en los tres idiomas.
-- [ ] 5. `infra: stack terraform para oracle always free`
+- [x] 5. `infra: stack terraform para oracle always free`
       `infrastructure/oracle/` completo (VM A1, IP reservada única, bucket,
       cloud-init sin secretos en user_data, coturn, timer de subida de copias)
       más el workflow `infra.yml` sin credenciales en CI.

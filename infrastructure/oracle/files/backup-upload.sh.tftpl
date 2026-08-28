@@ -1,0 +1,103 @@
+#!/bin/bash
+# shellcheck disable=SC2016
+#
+# Sube las copias cifradas de Distop al bucket privado de Object Storage.
+# Lo lanza distop-backup-upload.timer a diario; las copias las crea el
+# planificador interno del servidor (BACKUP_INTERVAL_HOURS) en /data/backups.
+#
+# Contrato (docs/nube-oracle.md):
+#   - instance principal: cero claves API en el disco de la VM;
+#   - solo *.distop-backup — jamás *.partial (una copia a medio escribir);
+#   - subir a incoming/ → verificar con head → renombrar a backups/: un corte
+#     a mitad de subida nunca deja una copia aparentemente válida en backups/;
+#   - poda remota conservando las KEEP más recientes;
+#   - techo propio de ~15 GiB: los 20 GB Always Free de Object Storage son una
+#     cuota COMBINADA de toda la tenencia, mejor no apurarla.
+set -euo pipefail
+
+# Valores inyectados por Terraform (templatefile). El resto es shell normal.
+BUCKET='${backup_bucket}'
+KEEP='${backup_keep}'
+
+export OCI_CLI_AUTH=instance_principal
+OCI=/opt/oci-cli/bin/oci
+BACKUP_DIR=/data/backups
+QUOTA_BYTES=$((15 * 1024 * 1024 * 1024))
+FALLO=0
+
+log() { echo "[backup-upload] $*"; }
+
+# Objetos bajo un prefijo como JSON [{name,size,tc}] (tc = time-created).
+# El CLI imprime vacío cuando no hay resultados: se normaliza a [].
+listar() {
+  salida=$("$OCI" os object list -bn "$BUCKET" --prefix "$1" --all --output json)
+  if [ -z "$salida" ]; then
+    echo '[]'
+  else
+    jq -c '[.data[]? | {name, size, tc: ."time-created"}]' <<< "$salida"
+  fi
+}
+
+borrar() { "$OCI" os object delete -bn "$BUCKET" --object-name "$1" --force; }
+
+poda_remota() {
+  listar "backups/" |
+    jq -r --argjson k "$KEEP" 'sort_by(.tc) | reverse | .[$k:] | .[].name' |
+    while IFS= read -r objeto; do
+      log "poda remota: $objeto"
+      borrar "$objeto"
+    done
+}
+
+[ -d "$BACKUP_DIR" ] || { log "sin $BACKUP_DIR todavía: nada que subir"; exit 0; }
+
+# 1. Restos de subidas cortadas: incoming/ nunca contiene nada válido.
+listar "incoming/" | jq -r '.[].name' | while IFS= read -r objeto; do
+  log "limpio resto de subida cortada: $objeto"
+  borrar "$objeto"
+done
+
+# 2. Estado remoto actual.
+REMOTO=$(listar "backups/")
+TOTAL=$(jq '[.[].size] | add // 0' <<< "$REMOTO")
+
+# 3. Subir lo local que falte en el bucket.
+shopt -s nullglob
+for fichero in "$BACKUP_DIR"/*.distop-backup; do
+  nombre=$(basename "$fichero")
+  if jq -e --arg n "backups/$nombre" 'any(.[]; .name == $n)' <<< "$REMOTO" >/dev/null; then
+    continue
+  fi
+  tam=$(stat -c %s "$fichero")
+
+  # Pre-check de cuota: antes de pasarse, podar; si aun así no cabe, fallar a
+  # gritos es mejor que llenar la cuota combinada de la tenencia en silencio.
+  if [ $((TOTAL + tam)) -gt "$QUOTA_BYTES" ]; then
+    poda_remota
+    REMOTO=$(listar "backups/")
+    TOTAL=$(jq '[.[].size] | add // 0' <<< "$REMOTO")
+    if [ $((TOTAL + tam)) -gt "$QUOTA_BYTES" ]; then
+      log "ERROR: $nombre ($tam bytes) no cabe bajo el techo de 15 GiB; no se sube"
+      FALLO=1
+      continue
+    fi
+  fi
+
+  "$OCI" os object put -bn "$BUCKET" --file "$fichero" --name "incoming/$nombre" --force
+  tam_remoto=$("$OCI" os object head -bn "$BUCKET" --name "incoming/$nombre" \
+    --query '"content-length"' --raw-output)
+  if [ "$tam_remoto" != "$tam" ]; then
+    log "ERROR: verificación fallida de $nombre (local $tam, remoto $tam_remoto); descarto incoming/"
+    borrar "incoming/$nombre"
+    FALLO=1
+    continue
+  fi
+  "$OCI" os object rename -bn "$BUCKET" --source-name "incoming/$nombre" --new-name "backups/$nombre"
+  TOTAL=$((TOTAL + tam))
+  log "subida verificada: backups/$nombre ($tam bytes)"
+done
+
+# 4. Poda final conservando las KEEP más recientes.
+poda_remota
+
+exit "$FALLO"

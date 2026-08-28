@@ -1,0 +1,27 @@
+# Copia este fichero a terraform.tfvars y rellénalo. El fichero real NO se
+# commitea: contiene OCIDs de tu tenencia y, si usas DuckDNS, un token.
+
+tenancy_ocid        = "ocid1.tenancy.oc1..aaaaaaaa..."
+compartment_ocid    = "ocid1.compartment.oc1..aaaaaaaa..." # puede ser la propia tenancy
+region              = "eu-madrid-1"
+availability_domain = "Abcd:EU-MADRID-1-AD-1" # oci iam availability-domain list
+
+# README § "Imagen ARM64": cómo listar las imágenes Ubuntu 24.04 aarch64.
+ubuntu_image_ocid = "ocid1.image.oc1.eu-madrid-1.aaaaaaaa..."
+
+ssh_public_key = "ssh-ed25519 AAAA... tu@equipo"
+admin_cidr     = "203.0.113.7/32" # tu IP pública; el 22 jamás se abre al mundo
+
+instance_name   = "Mi instancia Distop"
+distop_release  = "v0.1.2"                  # tag inmutable, nunca una rama
+public_hostname = "micomunidad.duckdns.org" # o tu dominio propio
+
+# Solo con DuckDNS. AVISO: queda legible en el state y en el user_data.
+# duckdns_token = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Defaults sanos: 1 OCPU, 6 GB, 50 GB de disco, 7 copias, IAM automático.
+# ocpus          = 1
+# memory_gb      = 6
+# boot_volume_gb = 50
+# backup_keep    = 7
+# create_iam     = false # sin permisos de admin: fallback manual en el README

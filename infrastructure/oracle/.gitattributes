@@ -1,0 +1,4 @@
+# LF forzado: estos ficheros los consume Linux (cloud-init, shell, Terraform).
+# Sin esto, un checkout en Windows con autocrlf=true metería \r en el user_data
+# y firstboot.sh moriría en la VM con "$'\r': command not found".
+* text eol=lf

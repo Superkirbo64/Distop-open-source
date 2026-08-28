@@ -1,0 +1,168 @@
+#!/bin/bash
+# shellcheck disable=SC2016
+#
+# Primer arranque de la VM Distop en Oracle Always Free. Idempotente a
+# propósito: puede correr dos veces sin borrar /data, sin regenerar secretos y
+# sin duplicar reglas — una instancia restaurada no pierde nada por un reboot.
+#
+# Escape en este .tftpl: la interpolacion dolar-llave es SOLO de Terraform y
+# vive confinada en el bloque de asignaciones de abajo; las variables de shell
+# van siempre sin llaves para que el fichero sea sh valido tambien en crudo.
+set -euo pipefail
+
+# Valores inyectados por Terraform (templatefile). El resto es shell normal.
+PUBLIC_HOSTNAME='${public_hostname}'
+DISTOP_RELEASE='${distop_release}'
+DUCKDNS_TOKEN='${duckdns_token}'
+
+REPO_URL=https://github.com/Superkirbo64/Distop-open-source
+ENV_FILE=/etc/distop/distop.env
+
+log() { echo "[firstboot] $*"; }
+
+# ── 1. Espera de egress ──────────────────────────────────────────────────────
+# La VNIC nace con assign_public_ip=false: hasta que Terraform asocia la IP
+# reservada NO hay salida a Internet (sin IP pública no hay NAT). Un arranque
+# ingenuo moriría aquí mismo — apt, git y pip necesitan red. Backoff ~10 min.
+espera=0
+until curl -fsS --max-time 5 https://github.com >/dev/null 2>&1; do
+  espera=$((espera + 15))
+  if [ "$espera" -gt 600 ]; then
+    log "sin salida a Internet tras 10 min; abandono (¿IP reservada sin asociar?)"
+    exit 1
+  fi
+  log "sin egress todavía; reintento en 15 s ($espera s acumulados)"
+  sleep 15
+done
+
+# ── 2. Paquetes (repos oficiales de Ubuntu 24.04, sin terceros) ──────────────
+# No van en `packages:` de cloud-init porque correrían antes de tener egress.
+# --force-confold: write_files ya dejó /etc/turnserver.conf y el Caddyfile;
+# los paquetes no deben pisarlos.
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -q
+apt-get install -y -q \
+  -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+  ca-certificates curl git jq openssl \
+  docker.io docker-compose-v2 caddy coturn \
+  iptables-persistent python3-venv
+
+# ── 3. Firewall del host ─────────────────────────────────────────────────────
+# La imagen Ubuntu de OCI trae iptables con solo el 22 abierto y reglas iSCSI
+# que protegen el volumen de arranque: se AÑADE (-C || -I), nunca se reemplaza.
+abrir() {
+  proto=$1
+  puerto=$2
+  iptables -C INPUT -p "$proto" --dport "$puerto" -j ACCEPT 2>/dev/null ||
+    iptables -I INPUT -p "$proto" --dport "$puerto" -j ACCEPT
+}
+abrir tcp 80
+abrir tcp 443
+abrir tcp 3478
+abrir udp 3478
+abrir udp 49160:49260
+netfilter-persistent save
+
+# ── 4. Volumen de datos ──────────────────────────────────────────────────────
+# Guard /data/.initialized: si la VM arranca sobre datos restaurados, aquí no
+# se toca NADA. UID/GID 1000 = usuario `node` del contenedor; sin el chown, el
+# proceso sin privilegios no podría escribir en el bind mount.
+if [ ! -f /data/.initialized ]; then
+  install -d -o 1000 -g 1000 -m 750 /data /data/uploads /data/backups
+  install -o 1000 -g 1000 -m 600 /dev/null /data/.initialized
+fi
+mkdir -p /opt/distop /etc/distop
+
+# ── 5. IP externa para coturn ────────────────────────────────────────────────
+# IMDSv2 de OCI exige el header "Authorization: Bearer Oracle". Se espera a
+# que aparezca publicIp (Terraform la asocia tras crear la VM): sin
+# external-ip, coturn anunciaría candidatos relay con la IP privada.
+intentos=0
+PUB_IP=""
+PRIV_IP=""
+while [ -z "$PUB_IP" ]; do
+  VNICS=$(curl -fsS --max-time 5 -H "Authorization: Bearer Oracle" \
+    http://169.254.169.254/opc/v2/vnics/ || echo '[]')
+  PRIV_IP=$(jq -r '.[0].privateIp // empty' <<< "$VNICS")
+  PUB_IP=$(jq -r '.[0].publicIp // empty' <<< "$VNICS")
+  if [ -z "$PUB_IP" ]; then
+    intentos=$((intentos + 1))
+    if [ "$intentos" -gt 30 ]; then
+      log "el metadata no publica la IP pública tras 5 min; abandono"
+      exit 1
+    fi
+    log "esperando la IP pública reservada en el metadata…"
+    sleep 10
+  fi
+done
+grep -q '^external-ip=' /etc/turnserver.conf ||
+  echo "external-ip=$PUB_IP/$PRIV_IP" >> /etc/turnserver.conf
+
+# ── 6. Secretos de la instancia ──────────────────────────────────────────────
+# Se generan AQUÍ y nunca en Terraform: el user_data y el state son legibles.
+# AUTH_SECRET: generado en la VM para que las sesiones sobrevivan de forma
+# predecible a una reconstrucción (la copia restaurada trae el suyo; este solo
+# vale para un primer arranque limpio). Append idempotente: jamás se rota solo.
+grep -q '^AUTH_SECRET=' "$ENV_FILE" ||
+  echo "AUTH_SECRET=$(openssl rand -hex 32)" >> "$ENV_FILE"
+
+# TURN: secreto compartido para credenciales efímeras (use-auth-secret).
+if [ ! -f /etc/distop/turn.secret ]; then
+  (umask 077 && openssl rand -hex 32 > /etc/distop/turn.secret)
+fi
+TURN_SECRET=$(cat /etc/distop/turn.secret)
+sed -i "s|__TURN_SECRET__|$TURN_SECRET|" /etc/turnserver.conf
+if ! grep -q '^TURN_SECRET=' "$ENV_FILE"; then
+  {
+    echo "TURN_SECRET=$TURN_SECRET"
+    # Contrato con el servidor: lista separada por comas, udp y tcp.
+    echo "TURN_URL=turn:$PUBLIC_HOSTNAME:3478?transport=udp,turn:$PUBLIC_HOSTNAME:3478?transport=tcp"
+  } >> "$ENV_FILE"
+fi
+
+# ── 7. Frase de las copias cifradas ──────────────────────────────────────────
+# Vive en el volumen de datos (sobrevive a recrear el contenedor) y JAMÁS se
+# sube al bucket junto a las copias. El README ordena guardarla también fuera
+# de la VM: sin ella, una copia no se puede restaurar.
+if [ ! -f /data/backup-passphrase ]; then
+  (umask 077 && openssl rand -base64 32 > /data/backup-passphrase)
+  chown 1000:1000 /data/backup-passphrase
+fi
+
+# ── 8. Código fuente del tag fijado ──────────────────────────────────────────
+# Clone superficial de un tag INMUTABLE (nunca main): v1 compila en la VM
+# (10-20 min). Cuando el job `docker` de release.yml publique la imagen GHCR,
+# la línea `# image:` del compose sustituirá este paso (pull por digest).
+if [ ! -d /opt/distop/src/.git ]; then
+  git clone --depth 1 --branch "$DISTOP_RELEASE" "$REPO_URL" /opt/distop/src
+fi
+
+# ── 9. oci-cli en venv (sin curl|sh) ─────────────────────────────────────────
+# Lo usa el timer de subida de copias con instance principal: cero claves API.
+if [ ! -x /opt/oci-cli/bin/oci ]; then
+  python3 -m venv /opt/oci-cli
+  /opt/oci-cli/bin/pip install --quiet --upgrade pip
+  /opt/oci-cli/bin/pip install --quiet oci-cli
+fi
+
+# ── 10. DuckDNS (solo si hay token) ──────────────────────────────────────────
+# El token viajó por user_data y queda en el state: riesgo asumido y avisado
+# en el README (con dominio propio este bloque no hace nada).
+if [ -n "$DUCKDNS_TOKEN" ]; then
+  DUCKDNS_DOMAIN=$(printf '%s' "$PUBLIC_HOSTNAME" | sed 's/\.duckdns\.org$//')
+  if [ ! -f /etc/distop/duckdns.env ]; then
+    (
+      umask 077
+      {
+        echo "DUCKDNS_DOMAIN=$DUCKDNS_DOMAIN"
+        echo "DUCKDNS_TOKEN=$DUCKDNS_TOKEN"
+      } > /etc/distop/duckdns.env
+    )
+  fi
+  systemctl daemon-reload
+  systemctl enable --now duckdns-update.timer
+  systemctl start duckdns-update.service ||
+    log "primer update de DuckDNS falló; el timer reintentará"
+fi
+
+log "primer arranque completado"

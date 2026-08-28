@@ -390,6 +390,10 @@ variables ordinarias del stack.
 
 ## cloud-init
 
+La versión ejecutable y mantenida vive en `infrastructure/oracle/`
+(`cloud-init.yaml.tftpl` y `files/firstboot.sh.tftpl`); lo de aquí explica las
+decisiones, y si algún día difieren, manda el stack.
+
 El arranque debe ser idempotente: si se ejecuta dos veces no debe borrar `/data`
 ni regenerar la identidad de una instancia restaurada. Un esquema seguro es:
 
@@ -427,14 +431,21 @@ write_files:
 
   # Docker publica puertos mediante NAT (cadena DOCKER), saltándose las reglas
   # INPUT del host: el "5000:5000" del compose del repo dejaría la instancia
-  # expuesta a Internet aunque iptables no abriera el puerto. Solo loopback:
-  - path: /etc/distop/docker-compose.override.yml
+  # expuesta a Internet aunque iptables no abriera el puerto. Por eso el stack
+  # trae SU PROPIO compose, con el puerto solo en loopback — el del repo exige
+  # además AUTH_SECRET, que aquí genera el primer arranque:
+  - path: /opt/distop/docker-compose.oracle.yml
     permissions: "0644"
     content: |
       services:
         instance:
-          ports: !override
+          build: { context: /opt/distop/src, dockerfile: apps/node-server/Dockerfile }
+          # image:  # reservado: pull por digest cuando el job GHCR publique
+          ports:
             - "127.0.0.1:5000:5000"
+          env_file: /etc/distop/distop.env
+          volumes: ["/data:/data"]
+          restart: unless-stopped
 
   - path: /etc/caddy/Caddyfile
     permissions: "0644"
@@ -475,9 +486,9 @@ write_files:
       [Service]
       Type=oneshot
       RemainAfterExit=yes
-      WorkingDirectory=/opt/distop/src
-      ExecStart=/usr/bin/docker compose -f docker-compose.yml -f /etc/distop/docker-compose.override.yml --env-file /etc/distop/distop.env up -d --build
-      ExecStop=/usr/bin/docker compose -f docker-compose.yml -f /etc/distop/docker-compose.override.yml down
+      WorkingDirectory=/opt/distop
+      ExecStart=/usr/bin/docker compose -f /opt/distop/docker-compose.oracle.yml up -d --build
+      ExecStop=/usr/bin/docker compose -f /opt/distop/docker-compose.oracle.yml down
       TimeoutStartSec=0
 
       [Install]

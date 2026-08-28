@@ -1,0 +1,115 @@
+# Validación de infrastructure/ SIN credenciales: nada de `terraform plan`
+# (exigiría secretos de OCI y este CI no guarda ninguno). Lo que sí se puede
+# comprobar en seco: formato, esquema del proveedor, los scripts de shell, el
+# cloud-init renderizado y que el zip del stack lleva main.tf en la raíz.
+name: infra
+
+on:
+  pull_request:
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infra.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infrastructure/**"
+      - ".github/workflows/infra.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infrastructure/oracle
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Formato canónico
+        run: terraform fmt -check -recursive
+
+      - name: Validación contra el esquema del proveedor
+        # -backend=false: init solo descarga el proveedor; no hay state remoto.
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: shellcheck de los scripts .tftpl (en crudo)
+        # Los scripts se escriben para ser sh válido también sin renderizar:
+        # las interpolaciones ${...} de Terraform viven confinadas en
+        # asignaciones entre comillas simples (SC2016 desactivado a nivel de
+        # fichero en cada script, con el porqué comentado allí).
+        run: shellcheck files/firstboot.sh.tftpl files/backup-upload.sh.tftpl
+
+      - name: Render de muestra (node sustituye las vars de plantilla)
+        # Sustitución simple con valores de ejemplo: soporta ${var},
+        # ${indent(N, var)} y el escape $${ → ${. Si aparece una variable sin
+        # valor de ejemplo, el paso falla: mantiene la lista sincronizada.
+        run: |
+          node - <<'EOF'
+          const fs = require('fs');
+          const ejemplo = {
+            instance_name: 'Mi instancia Distop',
+            public_hostname: 'ejemplo.duckdns.org',
+            distop_release: 'v0.1.2',
+            duckdns_token: '',
+            backup_bucket: 'distop-backups-ejemplo-duckdns-org',
+            backup_keep: '7',
+          };
+          function render(ruta, extra = {}) {
+            const valores = { ...ejemplo, ...extra };
+            let out = fs.readFileSync(ruta, 'utf8');
+            out = out.replace(/(?<!\$)\$\{indent\((\d+),\s*(\w+)\)\}/g, (_m, n, v) => {
+              if (!(v in valores)) throw new Error(`sin valor de ejemplo: ${v} en ${ruta}`);
+              return String(valores[v]).split('\n').join('\n' + ' '.repeat(Number(n)));
+            });
+            out = out.replace(/(?<!\$)\$\{([a-z_]+)\}/g, (_m, v) => {
+              if (!(v in valores)) throw new Error(`sin valor de ejemplo: ${v} en ${ruta}`);
+              return String(valores[v]);
+            });
+            return out.replace(/\$\$\{/g, '${');
+          }
+          fs.mkdirSync('rendered', { recursive: true });
+          const firstboot = render('files/firstboot.sh.tftpl');
+          const backup = render('files/backup-upload.sh.tftpl');
+          const cloud = render('cloud-init.yaml.tftpl', {
+            firstboot_sh: firstboot,
+            backup_upload_sh: backup,
+          });
+          fs.writeFileSync('rendered/firstboot.sh', firstboot);
+          fs.writeFileSync('rendered/backup-upload.sh', backup);
+          fs.writeFileSync('rendered/cloud-init.yaml', cloud);
+          // El user_data de OCI tiene un límite de 16 KB; main.tf lo manda
+          // con base64gzip. Se mide aquí lo que viaja de verdad y se falla
+          // ANTES de que un apply lo descubra en producción.
+          const zlib = require('zlib');
+          const crudo = Buffer.byteLength(cloud);
+          const enviado = Buffer.from(zlib.gzipSync(Buffer.from(cloud), { level: 9 })).toString('base64').length;
+          console.log(`cloud-init: ${crudo} bytes en claro; ${enviado} bytes como gzip+base64 (límite 16384)`);
+          if (enviado > 16384) throw new Error('user_data superaría el límite de 16 KB de OCI');
+          EOF
+
+      - name: shellcheck de los scripts renderizados
+        # Segunda pasada sobre el resultado real que ejecutará la VM (con los
+        # escapes de Terraform ya resueltos).
+        run: shellcheck rendered/firstboot.sh rendered/backup-upload.sh
+
+      - name: Esquema de cloud-init
+        # El runner de GitHub no trae el CLI de cloud-init: se instala de apt.
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q cloud-init
+          cloud-init schema --config-file - --annotate < rendered/cloud-init.yaml
+
+      - name: Dry-run del zip del stack (main.tf debe quedar en la raíz)
+        # Resource Manager exige la configuración en la raíz del zip: este es
+        # el mismo empaquetado que hará el job oci-stack de release.yml.
+        run: |
+          zip -rq "$RUNNER_TEMP/distop-oci-stack-ci.zip" . \
+            -x ".terraform/*" -x "rendered/*" -x "*.tfstate*"
+          unzip -Z1 "$RUNNER_TEMP/distop-oci-stack-ci.zip" | grep -qx "main.tf" \
+            || { echo "::error::main.tf no está en la raíz del zip"; exit 1; }

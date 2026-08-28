@@ -1,0 +1,165 @@
+# UI del stack en Oracle Resource Manager (botón "Deploy to Oracle Cloud").
+# El botón NO se publica todavía: primero el job oci-stack de release.yml debe
+# publicar el zip versionado con checksum y probarse en una tenencia real.
+title: "Distop en Oracle Cloud Always Free"
+description: "Instancia Distop siempre encendida: VM A1, IP reservada, HTTPS con Caddy, TURN propio y copias cifradas en Object Storage — todo dentro de Always Free."
+schemaVersion: 1.1.0
+version: "20190404"
+locale: "es"
+
+variableGroups:
+  # Resource Manager rellena estas dos solo; no se le enseñan al usuario.
+  - title: "Entorno (lo rellena Resource Manager)"
+    visible: false
+    variables:
+      - tenancy_ocid
+      - region
+
+  - title: "Dónde desplegar"
+    variables:
+      - compartment_ocid
+      - availability_domain
+
+  - title: "Máquina"
+    variables:
+      - ubuntu_image_ocid
+      - ocpus
+      - memory_gb
+      - boot_volume_gb
+      - ssh_public_key
+      - admin_cidr
+
+  - title: "Distop"
+    variables:
+      - instance_name
+      - distop_release
+      - public_hostname
+      - duckdns_token
+
+  - title: "Copias e IAM"
+    variables:
+      - backup_keep
+      - create_iam
+
+variables:
+  tenancy_ocid:
+    type: string
+    visible: false
+
+  region:
+    type: oci:identity:region:name
+    visible: false
+
+  compartment_ocid:
+    type: oci:identity:compartment:id
+    title: "Compartment"
+    description: "Dónde vivirán la red, la VM y el bucket de copias."
+    required: true
+
+  availability_domain:
+    type: oci:identity:availabilitydomain:name
+    title: "Availability domain"
+    description: "Si el apply falla con 'Out of host capacity', prueba otro AD de la misma región."
+    required: true
+    dependsOn:
+      compartmentId: ${compartment_ocid}
+
+  ubuntu_image_ocid:
+    type: oci:core:image:id
+    title: "Imagen Ubuntu 24.04 (aarch64)"
+    description: "Elige una imagen Canonical Ubuntu 24.04 para ARM (aarch64); la VM es A1.Flex."
+    required: true
+    dependsOn:
+      compartmentId: ${compartment_ocid}
+
+  ocpus:
+    type: number
+    title: "OCPUs"
+    description: "Máximo 2 combinadas en Always Free."
+    minimum: 1
+    maximum: 2
+    default: 1
+    required: true
+
+  memory_gb:
+    type: number
+    title: "Memoria (GB)"
+    description: "Máximo 12 GB combinados en Always Free."
+    minimum: 1
+    maximum: 12
+    default: 6
+    required: true
+
+  boot_volume_gb:
+    type: number
+    title: "Disco de arranque (GB)"
+    description: "Entre 50 y 200 (cuota Block Volume combinada)."
+    minimum: 50
+    maximum: 200
+    default: 50
+    required: true
+
+  ssh_public_key:
+    type: oci:core:ssh:publickey
+    title: "Clave pública SSH"
+    description: "Para administrar la VM. El acceso queda limitado al CIDR de abajo."
+    required: true
+
+  admin_cidr:
+    type: string
+    title: "CIDR con acceso SSH"
+    description: "Tu IP pública en formato CIDR (ej.: 203.0.113.7/32). El puerto 22 jamás se abre al mundo."
+    pattern: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/(3[0-2]|[12]?[0-9])$"
+    required: true
+
+  instance_name:
+    type: string
+    title: "Nombre de la instancia Distop"
+    default: "Mi instancia Distop"
+    required: true
+
+  distop_release:
+    type: string
+    title: "Versión de Distop"
+    description: "Tag inmutable (ej.: v0.1.2); nunca una rama."
+    pattern: "^v[0-9].*$"
+    required: true
+
+  public_hostname:
+    type: string
+    title: "Nombre DNS público"
+    description: "Subdominio DuckDNS o dominio propio que apuntará a la IP reservada. Jamás sslip.io/nip.io."
+    required: true
+
+  duckdns_token:
+    type: password
+    title: "Token de DuckDNS (opcional)"
+    description: "Solo si el nombre es *.duckdns.org. Aviso: queda en el state del stack; con dominio propio déjalo vacío."
+    sensitive: true
+    required: false
+
+  backup_keep:
+    type: number
+    title: "Copias a conservar"
+    description: "Cuántas copias cifradas guardar en la VM y en el bucket."
+    minimum: 1
+    maximum: 60
+    default: 7
+    required: true
+
+  create_iam:
+    type: boolean
+    title: "Crear IAM para las copias"
+    description: "Dynamic group + policy para subir copias con instance principal. Requiere ser administrador; si no, desmarca y sigue el fallback manual del README."
+    default: true
+
+outputs:
+  public_ip:
+    title: "IP reservada"
+    type: copyableString
+  distop_url:
+    title: "URL de la instancia"
+    type: link
+  backup_bucket:
+    title: "Bucket de copias"
+    type: copyableString

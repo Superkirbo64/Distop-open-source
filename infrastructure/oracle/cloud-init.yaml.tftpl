@@ -1,0 +1,211 @@
+#cloud-config
+# Arranque de la VM Distop en Oracle Always Free (docs/nube-oracle.md).
+#
+# Sin `packages:` a propósito: la VNIC nace sin IP pública (assign_public_ip
+# = false) y no hay salida a Internet hasta que Terraform asocia la IP
+# reservada; apt correría aquí ANTES de tener red y moriría. Todo lo que
+# necesita red vive en firstboot.sh, que sabe esperar (paso 1).
+#
+# Tampoco hay secretos en write_files: el user_data es legible desde la
+# consola de OCI y desde el endpoint de metadata de la propia VM. Los
+# secretos (AUTH_SECRET, TURN, frase de copias) se generan EN la VM.
+
+write_files:
+  # Entorno de la instancia. SIN AUTH_SECRET a propósito: lo genera y añade
+  # firstboot.sh en la propia VM (paso 6) — escribirlo aquí lo dejaría legible
+  # en el user_data y en el state de Terraform.
+  - path: /etc/distop/distop.env
+    permissions: "0600"
+    content: |
+      INSTANCE_NAME=${instance_name}
+      PUBLIC_URL=https://${public_hostname}
+      # Caddy es el único proxy delante; sin esto, toda la comunidad
+      # compartiría una IP ante los límites por IP.
+      TRUST_PROXY=true
+      PORT=5000
+      DATABASE_PATH=/data/app.db
+      DEFAULT_STORAGE_PATH=/data/uploads
+      NODE_ENV=production
+      # Copias programadas dentro del servidor. La frase vive en un fichero
+      # del volumen de datos (sobrevive a recrear el contenedor) y jamás
+      # junto a las copias del bucket. Guárdala también fuera de la VM.
+      BACKUP_INTERVAL_HOURS=24
+      BACKUP_KEEP=${backup_keep}
+      BACKUP_PASSPHRASE_FILE=/data/backup-passphrase
+      # Aparecer en Explorar/NodeInfo es una decisión, no un default:
+      # descomenta para optar por el descubrimiento público.
+      # PUBLIC_DISCOVERY_ENABLED=true
+      # AUTH_SECRET, TURN_SECRET y TURN_URL los añade firstboot.sh al final
+      # de este fichero: se generan en la VM, nunca viajan por Terraform.
+
+  # Compose propio del despliegue Oracle (fuera de /opt/distop/src para no
+  # estorbar al clone). El compose de la raíz del repo exige AUTH_SECRET por
+  # variable y publica el 5000 en 0.0.0.0; aquí ninguna de las dos cosas vale.
+  - path: /opt/distop/docker-compose.oracle.yml
+    permissions: "0644"
+    content: |
+      services:
+        instance:
+          build:
+            context: /opt/distop/src
+            dockerfile: apps/node-server/Dockerfile
+          # image: ghcr.io/superkirbo64/distop@sha256:...
+          # ^ reservada para v2: pull por digest cuando el job `docker` de
+          #   release.yml publique la imagen; el build en la VM desaparecerá.
+          env_file: /etc/distop/distop.env
+          ports:
+            # Loopback a propósito: Docker hace su propio NAT (DNAT en
+            # PREROUTING) y se salta las reglas INPUT del host; publicar en
+            # 0.0.0.0 dejaría la instancia desnuda en Internet aunque
+            # iptables "no abra" el 5000. Caddy es el único camino.
+            - "127.0.0.1:5000:5000"
+          volumes:
+            - /data:/data
+          restart: unless-stopped
+
+  # Caddy: HTTPS automático (ACME HTTP-01 por el 80) y proxy a loopback.
+  # SIN límites de body ni de streaming a propósito: el techo de subida lo
+  # decide MAX_UPLOAD_SIZE_MB en la instancia, y los WebSocket de voz/vídeo
+  # llevan frames de hasta ~1,5 MB que un límite "prudente" rompería. Caddy
+  # tampoco recorta query strings (?media=video viaja intacto).
+  - path: /etc/caddy/Caddyfile
+    permissions: "0644"
+    content: |
+      ${public_hostname} {
+        encode zstd gzip
+        reverse_proxy 127.0.0.1:5000
+      }
+
+  # coturn con credenciales efímeras (use-auth-secret). El placeholder
+  # __TURN_SECRET__ lo sella firstboot.sh con sed: aquí no puede haber
+  # secretos porque este fichero viaja en el user_data.
+  - path: /etc/turnserver.conf
+    permissions: "0600"
+    content: |
+      listening-port=3478
+      fingerprint
+      use-auth-secret
+      static-auth-secret=__TURN_SECRET__
+      realm=${public_hostname}
+      min-port=49160
+      max-port=49260
+      no-cli
+      no-multicast-peers
+      no-loopback-peers
+      stale-nonce=600
+      # Un relay abierto no debe poder tocar la red interna: sin estas listas,
+      # un cliente con credencial válida usaría TURN como proxy hacia el
+      # metadata de OCI (SSRF), loopback o RFC1918.
+      denied-peer-ip=169.254.0.0-169.254.255.255
+      denied-peer-ip=127.0.0.0-127.255.255.255
+      denied-peer-ip=10.0.0.0-10.255.255.255
+      denied-peer-ip=172.16.0.0-172.31.255.255
+      denied-peer-ip=192.168.0.0-192.168.255.255
+      # external-ip=<pública>/<privada> lo añade firstboot.sh desde el
+      # metadata: sin ese mapeo coturn anuncia candidatos inalcanzables.
+
+  - path: /etc/systemd/system/distop.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Distop (docker compose)
+      Wants=network-online.target
+      After=network-online.target docker.service
+      Requires=docker.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      WorkingDirectory=/opt/distop
+      # --build: el primer arranque compila el tag clonado (10-20 min);
+      # TimeoutStartSec=0 evita que systemd mate ese build.
+      ExecStart=/usr/bin/docker compose -f /opt/distop/docker-compose.oracle.yml up -d --build
+      ExecStop=/usr/bin/docker compose -f /opt/distop/docker-compose.oracle.yml down
+      TimeoutStartSec=0
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/distop-backup-upload.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Sube las copias cifradas de Distop a Object Storage
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/distop-backup-upload.sh
+
+  - path: /etc/systemd/system/distop-backup-upload.timer
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Subida diaria de copias al bucket
+
+      [Timer]
+      # El planificador interno del servidor crea la copia; este timer sube lo
+      # que haya. RandomizedDelaySec reparte la carga; Persistent recupera un
+      # día perdido si la VM estuvo apagada.
+      OnCalendar=daily
+      RandomizedDelaySec=1h
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+
+  # Unidades DuckDNS: se escriben siempre, pero solo firstboot.sh las activa
+  # cuando hay token (con dominio propio quedan inertes).
+  - path: /etc/systemd/system/duckdns-update.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Refresco del registro A en DuckDNS
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      Type=oneshot
+      EnvironmentFile=/etc/distop/duckdns.env
+      ExecStart=/usr/bin/curl -fsS --max-time 30 "https://www.duckdns.org/update?domains=$${DUCKDNS_DOMAIN}&token=$${DUCKDNS_TOKEN}&ip="
+
+  - path: /etc/systemd/system/duckdns-update.timer
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Refresco periódico de DuckDNS
+
+      [Timer]
+      # La IP reservada no cambia; el refresco mantiene vivo el subdominio
+      # gratuito (DuckDNS caduca dominios sin actividad).
+      OnBootSec=2min
+      OnUnitActiveSec=30min
+      RandomizedDelaySec=2min
+
+      [Install]
+      WantedBy=timers.target
+
+  - path: /opt/distop/firstboot.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, firstboot_sh)}
+
+  - path: /usr/local/bin/distop-backup-upload.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, backup_upload_sh)}
+
+runcmd:
+  # firstboot primero: espera el egress, instala paquetes, abre el firewall,
+  # genera secretos y clona el tag. coturn y caddy arrancan al instalarse con
+  # la config de write_files, pero el secreto TURN se sella con sed DESPUÉS:
+  # de ahí los restart.
+  - [bash, -c, "set -o pipefail; /opt/distop/firstboot.sh 2>&1 | tee -a /var/log/distop-firstboot.log"]
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, --now, coturn]
+  - [systemctl, restart, coturn]
+  - [systemctl, enable, --now, caddy]
+  - [systemctl, restart, caddy]
+  - [systemctl, enable, --now, distop.service]
+  - [systemctl, enable, --now, distop-backup-upload.timer]
