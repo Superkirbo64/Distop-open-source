@@ -7,6 +7,8 @@
 # Android: APK. Se firma solo si existen los secretos del keystore
 # (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
 # ANDROID_KEY_PASSWORD); sin ellos se publica sin firmar, y se dice.
+# Docker: imagen multi-arch del servidor en GHCR (arm64 para Oracle A1 + amd64).
+# OCI stack: zip del Terraform de infrastructure/oracle con checksum.
 name: release
 
 on:
@@ -97,3 +99,73 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" distop-host-bundle.zip scripts/termux-host.sh --clobber
+
+  # Imagen multi-arch del servidor: linux/arm64 (Oracle A1, Raspberry Pi) y
+  # linux/amd64. Corre en paralelo, sin needs: no toca la release de GitHub,
+  # solo publica en GHCR. metadata-action pasa el owner a minúsculas
+  # (ghcr.io/superkirbo64/distop) y NO se emite `latest` flotante: un
+  # despliegue debe fijar versión o digest, nunca "lo último que haya".
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      # qemu solo emula la etapa final arm64; la etapa client del Dockerfile
+      # compila la web en la arquitectura nativa del runner gracias a
+      # --platform=$BUILDPLATFORM (el resultado es JS, igual en ambas).
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/distop
+          # `latest` existe para el "docker compose up" casual de la página de
+          # descarga; los despliegues serios (cloud-init) fijan versión o digest
+          # — docs/nube-oracle.md lo exige y el compose del stack lo respeta.
+          flavor: |
+            latest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/node-server/Dockerfile
+          platforms: linux/arm64,linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # El zip del stack Terraform para el futuro botón "Deploy to Oracle Cloud":
+  # Resource Manager exige main.tf en la RAÍZ del zip, por eso se empaqueta
+  # desde dentro de infrastructure/oracle. Tras windows por la misma razón que
+  # android: electron-builder crea la release del tag y este job le añade
+  # ficheros; al revés no habría release a la que subirlos.
+  oci-stack:
+    needs: windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Empaquetar, verificar y publicar el stack
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd infrastructure/oracle
+          zip -rq "$GITHUB_WORKSPACE/distop-oci-stack-${GITHUB_REF_NAME}.zip" . \
+            -x ".terraform/*" -x "*.tfstate*" -x "rendered/*"
+          cd "$GITHUB_WORKSPACE"
+          # Cinturón y tirantes: el mismo assert que hace infra.yml en seco.
+          unzip -Z1 "distop-oci-stack-${GITHUB_REF_NAME}.zip" | grep -qx "main.tf" \
+            || { echo "::error::main.tf no está en la raíz del zip"; exit 1; }
+          sha256sum "distop-oci-stack-${GITHUB_REF_NAME}.zip" \
+            > "distop-oci-stack-${GITHUB_REF_NAME}.zip.sha256"
+          gh release upload "$GITHUB_REF_NAME" \
+            "distop-oci-stack-${GITHUB_REF_NAME}.zip" \
+            "distop-oci-stack-${GITHUB_REF_NAME}.zip.sha256" --clobber

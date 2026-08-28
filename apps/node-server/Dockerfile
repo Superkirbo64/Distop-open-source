@@ -1,7 +1,11 @@
 # Build context = raíz del repo (necesita packages/protocol y el cliente compilado).
 # Node 24 ejecuta TypeScript directamente, así que el servidor no necesita compilarse.
 
-FROM node:24-alpine AS client
+# --platform=$BUILDPLATFORM: la web compilada es JS/CSS independiente de la
+# arquitectura, así que esta etapa corre en la nativa del runner y el build
+# multi-arch (linux/arm64 + amd64 del job `docker` de release.yml) no paga
+# el peaje de qemu más que en la etapa final.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS client
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/

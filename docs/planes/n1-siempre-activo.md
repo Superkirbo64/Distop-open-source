@@ -39,7 +39,7 @@ nunca antes ni a mitad.
       `infrastructure/oracle/` completo (VM A1, IP reservada única, bucket,
       cloud-init sin secretos en user_data, coturn, timer de subida de copias)
       más el workflow `infra.yml` sin credenciales en CI.
-- [ ] 6. `ci: imagen multi-arch y zip del stack en cada release`
+- [x] 6. `ci: imagen multi-arch y zip del stack en cada release`
       release.yml gana los jobs `docker` (ghcr arm64+amd64, tags semver) y
       `oci-stack` (zip con `main.tf` en raíz + sha256). Solo entonces
       `ORACLE_STACK_URL` deja de ser `null` en el cliente.

@@ -28,7 +28,7 @@ export const HTML_LANG: Record<Locale, string> = {
 /** Solo aparece dentro de la sección plegada de la página de descarga. */
 const COMPOSE = `services:
   distop:
-    image: ghcr.io/distop/distop:latest
+    image: ghcr.io/superkirbo64/distop:latest
     environment:
       AUTH_SECRET: \${AUTH_SECRET}
       PUBLIC_URL: https://mi-comunidad.example
