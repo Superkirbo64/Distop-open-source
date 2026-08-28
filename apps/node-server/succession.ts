@@ -362,12 +362,16 @@ export function findHandover(id: string): HandoverRow | undefined {
 
 export function setHandoverState(id: string, state: HandoverState, errorCode: string | null = null): void {
   const cerrado = state === "COMPLETED" || state === "ABORTED" || state === "FAILED";
-  db.prepare("UPDATE handovers SET state = ?, error_code = ?, finished_at = ? WHERE id = ?").run(
-    state,
-    errorCode,
-    cerrado ? Date.now() : null,
-    id,
-  );
+  /* Solo se mueve un relevo que siga VIVO. Cerrado es cerrado: la copia se
+     prepara en segundo plano y puede terminar DESPUÉS de que el anfitrión
+     cancelara. Sin este filtro, ese trabajo tardío reescribía el ABORTED con
+     STANDBY_SYNC y resucitaba un relevo que ya nadie quería; a partir de ahí
+     todo intento de arrancar otro moría con HANDOVER_IN_PROGRESS y la única
+     salida era reiniciar la instancia. */
+  db.prepare(
+    `UPDATE handovers SET state = ?, error_code = ?, finished_at = ?
+      WHERE id = ? AND state IN (${VIVOS.map(() => "?").join(",")})`,
+  ).run(state, errorCode, cerrado ? Date.now() : null, id, ...VIVOS);
 }
 
 /**

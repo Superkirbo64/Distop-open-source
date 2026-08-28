@@ -34,7 +34,7 @@ const { server } = await import("./server.ts");
 const { db } = await import("./db.ts");
 const { stopIntegrityWork } = await import("./integrity.ts");
 const { adopt, promote, AdoptError } = await import("./adopt.ts");
-const { currentIdentity, verifySuccessionChain } = await import("./succession.ts");
+const { currentIdentity, verifySuccessionChain, setHandoverState, findHandover } = await import("./succession.ts");
 const { instanceEpoch, instanceRole } = await import("./identity.ts");
 
 const ORIGEN_B = "https://equipo-nuevo.example";
@@ -240,6 +240,25 @@ test("cancelar antes del corte deja la línea exactamente donde estaba", async (
 
   const sinRelevo = await call("GET", "/api/v1/instance/handover", { token });
   assert.equal(sinRelevo.json.state, "NONE");
+});
+
+test("una copia que acaba tarde no resucita un relevo ya cancelado", () => {
+  /* La copia del relevo se prepara en segundo plano y puede terminar DESPUÉS de
+     que el anfitrión cancele. Antes, ese trabajo tardío escribía STANDBY_SYNC
+     encima del ABORTED: el relevo volvía a estar vivo, y a partir de ahí
+     cualquier intento de arrancar otro moría con HANDOVER_IN_PROGRESS sin que
+     nada lo explicara. Se veía solo donde la copia es rápida —Linux en CI, no
+     Windows—, que es la peor forma de tener un fallo. */
+  const relevo = db
+    .prepare("SELECT id, state FROM handovers ORDER BY started_at DESC LIMIT 1")
+    .get() as { id: string; state: string };
+  assert.equal(relevo.state, "ABORTED", "el test anterior lo dejó cancelado");
+
+  setHandoverState(relevo.id, "STANDBY_SYNC");
+
+  const despues = findHandover(relevo.id)!;
+  assert.equal(despues.state, "ABORTED", "cerrado es cerrado: nada tardío lo revive");
+  assert.notEqual(despues.finished_at, null, "y conserva la hora a la que se cerró");
 });
 
 test("el relevo de emergencia se salta el aviso, pero hay que decirlo en voz alta", async () => {

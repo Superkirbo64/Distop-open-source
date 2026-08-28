@@ -103,7 +103,9 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y -q cloud-init
-          cloud-init schema --config-file - --annotate < rendered/cloud-init.yaml
+          # --config-file quiere una RUTA: pasarle "-" y redirigir stdin falla
+          # con "Config file - does not exist". El fichero ya está en disco.
+          cloud-init schema --config-file rendered/cloud-init.yaml --annotate
 
       - name: Dry-run del zip del stack (main.tf debe quedar en la raíz)
         # Resource Manager exige la configuración en la raíz del zip: este es
