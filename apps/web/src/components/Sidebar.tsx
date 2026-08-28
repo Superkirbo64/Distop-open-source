@@ -51,8 +51,6 @@ export function Sidebar({
   const [creating, setCreating] = useState(false);
   const [convocando, setConvocando] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  /* Cerrado por defecto: el historial es consulta, no agenda. */
-  const [historialAbierto, setHistorialAbierto] = useState(false);
 
   /* Sin los estados no se puede separar lo vivo de lo terminado, y los canales
      del bootstrap no los traen. Una petición por comunidad; los cambios
@@ -88,14 +86,14 @@ export function Sidebar({
   const conversacion = data.channels.filter((channel) => !esReunion(channel));
   const reuniones = data.channels.filter(esReunion);
 
-  /* Una reunión terminada no es basura ni agenda: es acta (§8.4). Se aparta a
-     un historial plegado en vez de quedarse mezclada con las próximas. */
+  /* Una reunión terminada no es basura ni agenda: es acta (§8.4). Se aparta al
+     historial de Ajustes → Reuniones en vez de quedarse mezclada con las
+     próximas en la barra lateral. */
   const terminada = (channel: Channel) => {
     const meeting = meetings[channel.id];
     return !!meeting && (meeting.state === "ENDED" || meeting.state === "CANCELLED");
   };
   const reunionesVivas = reuniones.filter((channel) => !terminada(channel));
-  const reunionesPasadas = reuniones.filter(terminada);
 
   const uncategorised = conversacion.filter((channel) => !channel.category_id);
   const grouped = data.categories
@@ -220,6 +218,16 @@ export function Sidebar({
                 <UserPlus size={15} /> {t("community.invite")}
               </MenuItem>
             ) : null}
+            {canCallMeetings ? (
+              <MenuItem
+                onClick={() => {
+                  close();
+                  setConvocando(true);
+                }}
+              >
+                <CalendarClock size={15} /> {t("meeting.create")}
+              </MenuItem>
+            ) : null}
             {canManage ? (
               <MenuItem
                 onClick={() => {
@@ -271,35 +279,16 @@ export function Sidebar({
           </section>
         ))}
 
-        {reuniones.length > 0 || canCallMeetings ? (
+        {/* Convocar vive en el menú del nombre de la comunidad, y el historial
+            en Ajustes → Reuniones: lo único que queda en la barra es la
+            reunión que está pasando ahora mismo, para poder entrar. */}
+        {reunionesVivas.length > 0 ? (
           <section className="mb-2">
             <p className="flex items-center gap-1 px-2 py-1 text-[0.72rem] font-semibold tracking-wide text-muted">
               <CalendarClock size={12} className="shrink-0" />
               <span className="truncate">{t("meeting.section")}</span>
             </p>
             <ul className="flex flex-col gap-0.5">{reunionesVivas.map(renderChannel)}</ul>
-            {canCallMeetings ? (
-              <button
-                onClick={() => setConvocando(true)}
-                className="mt-1 flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-sm text-muted transition-colors hover:bg-raise hover:text-ink"
-              >
-                <Cross size={15} /> {t("meeting.create")}
-              </button>
-            ) : null}
-            {reunionesPasadas.length > 0 ? (
-              <>
-                <button
-                  onClick={() => setHistorialAbierto(!historialAbierto)}
-                  aria-expanded={historialAbierto}
-                  className="mt-1 flex w-full items-center gap-1 px-2 py-1 text-[0.72rem] font-semibold tracking-wide text-muted transition-colors hover:text-ink"
-                >
-                  <ChevronDown size={12} className={`transition-transform ${historialAbierto ? "" : "-rotate-90"}`} />
-                  <span className="truncate">{t("meeting.history")}</span>
-                  <span aria-hidden="true">({reunionesPasadas.length})</span>
-                </button>
-                {historialAbierto ? <ul className="flex flex-col gap-0.5">{reunionesPasadas.map(renderChannel)}</ul> : null}
-              </>
-            ) : null}
           </section>
         ) : null}
 

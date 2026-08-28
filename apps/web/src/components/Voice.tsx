@@ -16,6 +16,7 @@ import {
   Minimize2,
   LayoutGrid,
   MonitorUp,
+  Replace,
   Orbit,
   PhoneOff,
   Pin,
@@ -49,6 +50,7 @@ import type { Racer } from "../lib/marbleRace.ts";
 import type { MessageKey } from "../i18n.ts";
 import {
   canShareScreen,
+  changeScreenSource,
   leaveVoice,
   onVoice,
   playSound,
@@ -440,6 +442,17 @@ export function VoiceBar() {
               {local.video === "screen"
                 ? t("voice.screenOff")
                 : t("voice.screen")}
+            </button>
+          ) : null}
+          {/* Cambiar de ventana sin cortar: la sala no ve ningún parpadeo. */}
+          {canScreen && local.video === "screen" ? (
+            <button
+              onClick={() => void changeScreenSource()}
+              title={t("voice.screenSwitch")}
+              aria-label={t("voice.screenSwitch")}
+              className="btn btn-ghost h-9 min-h-9 w-9 px-0"
+            >
+              <Replace size={14} />
             </button>
           ) : null}
         </div>

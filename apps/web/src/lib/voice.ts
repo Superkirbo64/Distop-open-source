@@ -1281,6 +1281,76 @@ export async function setCameraOverlay(on: boolean): Promise<void> {
 }
 
 /**
+ * Cambiar de ventana o de monitor SIN dejar de compartir.
+ * Vuelve a pedir la fuente y sustituye la pista saliente: para la sala es el
+ * mismo flujo de siempre —no hay apagón ni aviso de "dejó de compartir"— y el
+ * recuadro de la cámara, si estaba puesto, sigue puesto. Cancelar el diálogo
+ * deja lo que ya se estaba compartiendo.
+ */
+export async function changeScreenSource(): Promise<void> {
+  if (!state.channelId || state.video !== "screen" || !rawScreen) return;
+  state.videoError = null;
+
+  let stream: MediaStream;
+  try {
+    stream = await capture("screen");
+  } catch (err) {
+    state.videoError = err instanceof DOMException && err.name === "NotAllowedError" ? "denied" : "nodevice";
+    emit();
+    return;
+  }
+  const track = stream.getVideoTracks()[0];
+  if (!track) {
+    for (const t of stream.getTracks()) t.stop();
+    state.videoError = "nodevice";
+    emit();
+    return;
+  }
+  const hint = relay.videoPriority();
+  track.contentHint = hint === "fluid" ? "motion" : "detail";
+  track.addEventListener("ended", () => void setVideoSource(null));
+
+  const anterior = { screen: rawScreen, overlay };
+  let saliente = stream;
+  if (anterior.overlay) {
+    const compuesto = composeScreenAndCamera(
+      stream,
+      anterior.overlay.cam,
+      Math.min(relay.videoProfile("screen").fps, 30),
+    );
+    saliente = compuesto.stream;
+    overlay = { cam: anterior.overlay.cam, stop: compuesto.stop };
+  }
+
+  // El sonido va con la fuente: la ventana nueva puede traerlo o no.
+  relay.setShareAudio(stream);
+  state.shareAudio = relay.hasShareAudio();
+
+  if (!(await swapOutgoing(saliente))) {
+    // Por la instancia, swapOutgoing ya soltó el codificador anterior: no queda
+    // nada a lo que volver, así que se apaga entero y se dice por qué.
+    if (overlay !== anterior.overlay) {
+      overlay?.stop();
+      overlay = anterior.overlay;
+    }
+    for (const t of stream.getTracks()) t.stop();
+    await setVideoSource(null);
+    state.videoError = "unsupported";
+    emit();
+    return;
+  }
+
+  // Ya nadie mira lo viejo: el canvas de la composición y la captura anterior.
+  // La cámara del recuadro NO se toca, se reutiliza en la composición nueva.
+  anterior.overlay?.stop();
+  for (const t of anterior.screen.getTracks()) t.stop();
+  rawScreen = stream;
+  videoStream = saliente;
+  state.localVideo = saliente;
+  emit();
+}
+
+/**
  * Lo que está pasando de verdad, no lo que se pidió.
  * Dos cosas que solo se saben preguntándole a la conexión: por dónde va la
  * llamada (directa o por relevo) y a cuántos fotogramas sale el vídeo, que no es

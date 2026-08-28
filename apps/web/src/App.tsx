@@ -177,9 +177,12 @@ export function App() {
 
   // Al cambiar a una sala de voz, el lateral se convierte en su chat y se abre
   // una vez. Si la persona lo cierra después, se respeta hasta cambiar de canal.
+  // Una reunión entra sin el chat delante: se viene a ver caras, no mensajes.
   useEffect(() => {
-    if (voiceChat && !isMobile) setMembersOpen(true);
-  }, [activeChannelId, voiceChat, isMobile, setMembersOpen]);
+    if (isMobile) return;
+    if (activeChannel?.kind === "voice") setMembersOpen(true);
+    else if (activeChannel?.kind === "meeting") setMembersOpen(false);
+  }, [activeChannelId, activeChannel?.kind, isMobile, setMembersOpen]);
 
   useEffect(() => {
     // Empaquetado y sin instancia elegida no hay a quién preguntar todavía.

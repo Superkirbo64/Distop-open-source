@@ -72,6 +72,41 @@ export function Button({
   return <button {...props} className={`btn btn-${variant} ${className}`} />;
 }
 
+/**
+ * La burbuja de un tooltip, sola: separada de `Tooltip` para que
+ * `IconButton` pueda montarla sin envolverse dos veces en su propio grupo.
+ * `pointer-events-none` porque es texto de apoyo, no algo que se pueda pulsar.
+ */
+function TooltipBubble({ label }: { label: string }) {
+  return (
+    <span
+      role="tooltip"
+      // Debajo del disparador, no encima: la mayoría de los botones-icono de
+      // esta app viven en una barra superior (cabecera de canal, de reunión),
+      // y un tooltip hacia arriba ahí se corta contra el borde de la ventana
+      // — se vio literalmente así al medirlo con una captura real.
+      className="pointer-events-none absolute top-full left-1/2 z-50 mt-1.5 -translate-x-1/2 -translate-y-1 scale-95 whitespace-nowrap rounded-md bg-ink px-2 py-1 text-[0.7rem] font-medium text-bg opacity-0 shadow-[var(--shadow)] transition-all duration-150 group-hover/tt:translate-y-0 group-hover/tt:scale-100 group-hover/tt:opacity-100 group-focus-visible/tt:translate-y-0 group-focus-visible/tt:scale-100 group-focus-visible/tt:opacity-100"
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * Tooltip propio en vez del `title` del navegador: mismo texto, pero con la
+ * tipografía y el color de la aplicación, y sin el retraso ni el estilo que
+ * pone cada sistema operativo. Para envolver cualquier botón-icono, no solo
+ * `IconButton` — el botón grande de "Empezar" reducido a icono también lo usa.
+ */
+export function Tooltip({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span className="group/tt relative inline-flex">
+      {children}
+      <TooltipBubble label={label} />
+    </span>
+  );
+}
+
 /** Botón sólo-icono: sigue necesitando nombre accesible, por eso `label` es obligatorio. */
 export function IconButton({
   label,
@@ -85,24 +120,26 @@ export function IconButton({
   pressed?: boolean;
 }) {
   return (
-    <button
-      {...props}
-      aria-label={label}
-      title={label}
-      // Un interruptor tiene que decir en qué posición está, no solo qué hace.
-      {...(pressed === undefined ? {} : { "aria-pressed": pressed })}
-      // Se centra con flex y no con `place-items`: quien use este botón puede
-      // cambiarle el display desde className (`wide:inline-flex`, por ejemplo), y
-      // en flex `justify-items` no hace nada — el icono se quedaba pegado al
-      // borde izquierdo. `items-center justify-center` centra en los dos casos.
-      className={`icon-btn flex h-9 w-9 items-center justify-center rounded-[10px] ${
-        pressed
-          ? "bg-accent-soft text-accent"
-          : "text-muted hover:bg-raise hover:text-ink"
-      } ${className}`}
-    >
-      {children}
-    </button>
+    <span className="group/tt relative inline-flex">
+      <button
+        {...props}
+        aria-label={label}
+        // Un interruptor tiene que decir en qué posición está, no solo qué hace.
+        {...(pressed === undefined ? {} : { "aria-pressed": pressed })}
+        // Se centra con flex y no con `place-items`: quien use este botón puede
+        // cambiarle el display desde className (`wide:inline-flex`, por ejemplo), y
+        // en flex `justify-items` no hace nada — el icono se quedaba pegado al
+        // borde izquierdo. `items-center justify-center` centra en los dos casos.
+        className={`icon-btn flex h-9 w-9 items-center justify-center rounded-[10px] ${
+          pressed
+            ? "bg-accent-soft text-accent"
+            : "text-muted hover:bg-raise hover:text-ink"
+        } ${className}`}
+      >
+        {children}
+      </button>
+      <TooltipBubble label={label} />
+    </span>
   );
 }
 
@@ -1106,16 +1143,19 @@ export function MenuItem({
   onClick,
   children,
   danger,
+  disabled,
 }: {
   onClick: () => void;
   children: ReactNode;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       role="menuitem"
       onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-raise ${
+      disabled={disabled}
+      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-raise disabled:pointer-events-none disabled:opacity-40 ${
         danger ? "text-danger" : "text-ink"
       }`}
     >

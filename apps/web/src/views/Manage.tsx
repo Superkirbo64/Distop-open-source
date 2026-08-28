@@ -12,6 +12,7 @@ import {
   has,
   toBits,
   type AuditLogEntry,
+  type Channel,
   type Community,
   type CustomEmoji,
   type EmojiKind,
@@ -45,7 +46,7 @@ import {
  */
 const EMPTY: never[] = [];
 
-type Tab = "overview" | "roles" | "emojis" | "invites" | "audit" | "data";
+type Tab = "overview" | "roles" | "emojis" | "invites" | "audit" | "meetings" | "data";
 
 export function Manage({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT();
@@ -62,6 +63,7 @@ export function Manage({ open, onClose }: { open: boolean; onClose: () => void }
     ["emojis", t("emoji.title"), has(permissions, PERMISSIONS.MANAGE_COMMUNITY)],
     ["invites", t("manage.invites"), has(permissions, PERMISSIONS.MANAGE_INVITES)],
     ["audit", t("manage.audit"), has(permissions, PERMISSIONS.VIEW_AUDIT_LOG)],
+    ["meetings", t("meeting.section"), has(permissions, PERMISSIONS.MANAGE_MEETINGS)],
     ["data", t("manage.data"), has(permissions, PERMISSIONS.MANAGE_COMMUNITY)],
   ];
   const visible = tabs.filter(([, , allowed]) => allowed);
@@ -93,6 +95,9 @@ export function Manage({ open, onClose }: { open: boolean; onClose: () => void }
           {tab === "emojis" ? <Expressions communityId={communityId} emojis={data.emojis} /> : null}
           {tab === "invites" ? <Invites communityId={communityId} /> : null}
           {tab === "audit" ? <Audit communityId={communityId} /> : null}
+          {tab === "meetings" ? (
+            <MeetingHistoryTab communityId={communityId} channels={data.channels} onClose={onClose} />
+          ) : null}
           {tab === "data" ? <DataTab community={data.community} onClose={onClose} /> : null}
         </div>
       </div>
@@ -431,6 +436,96 @@ function Audit({ communityId }: { communityId: string }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+/**
+ * El historial de reuniones (§8.4), mudado aquí desde la barra lateral: una
+ * reunión terminada es acta, no agenda, y consultar el acta es cosa de
+ * Ajustes, no de la lista de canales. La barra solo enseña la que está
+ * pasando ahora mismo.
+ */
+function MeetingHistoryTab({
+  communityId,
+  channels,
+  onClose,
+}: {
+  communityId: string;
+  channels: Channel[];
+  onClose: () => void;
+}) {
+  const t = useT();
+  const locale = useLocale();
+  const errorText = useErrorText();
+  const { confirm, element } = useConfirm();
+  const meetings = useStore((s) => s.meetings);
+  const loadMeetings = useStore((s) => s.loadMeetings);
+  const openChannel = useStore((s) => s.openChannel);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void loadMeetings(communityId);
+  }, [communityId, loadMeetings]);
+
+  const terminadas = channels
+    .filter((channel) => channel.kind === "meeting")
+    .filter((channel) => {
+      const reunion = meetings[channel.id];
+      return reunion && (reunion.state === "ENDED" || reunion.state === "CANCELLED");
+    });
+
+  const eliminar = async (channel: Channel) => {
+    if (!(await confirm(t("meeting.deleteConfirm", { name: channel.name })))) return;
+    try {
+      await api("DELETE", `/api/v1/channels/${channel.id}`);
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted">{t("meeting.historyHint")}</p>
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+
+      {terminadas.length === 0 ? (
+        <p className="text-sm text-muted">{t("meeting.historyEmpty")}</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {terminadas.map((channel) => {
+            const reunion = meetings[channel.id];
+            return (
+              <li
+                key={channel.id}
+                className="flex items-center gap-2 rounded-[10px] border border-line px-3 py-2 text-sm"
+              >
+                <button
+                  onClick={() => {
+                    void openChannel(channel.id);
+                    onClose();
+                  }}
+                  className="min-w-0 flex-1 truncate text-left hover:underline"
+                >
+                  {channel.name}
+                </button>
+                <span className="shrink-0 text-xs text-muted">
+                  {t(reunion?.state === "CANCELLED" ? "meeting.state.cancelled" : "meeting.state.ended")}
+                  {reunion?.closed_at ? ` · ${formatDate(locale, reunion.closed_at)}` : ""}
+                </span>
+                <button
+                  onClick={() => void eliminar(channel)}
+                  aria-label={t("common.delete")}
+                  className="shrink-0 rounded-[8px] p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {element}
+    </div>
   );
 }
 

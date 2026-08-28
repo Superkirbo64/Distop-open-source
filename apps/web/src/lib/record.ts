@@ -6,29 +6,42 @@
  * y solo cuando la instancia lo confirma empieza la captura y se declara
  * RECORDING. Avisar después de grabar el primer segundo no es avisar.
  *
- * Primera versión: audio de la reunión (lo que suena + mi micrófono tal y como
- * sale a la sala, ver `startRecordTap`). Es ligero de verdad —opus a 96 kbps
- * son ~43 MB por hora— así que los trozos viven en memoria sin el riesgo que
- * §8.9 teme para el vídeo.
+ * Se graba el audio de la reunión (lo que suena + mi micrófono tal y como sale
+ * a la sala, ver `startRecordTap`) y la imagen que quien graba elija en el
+ * selector del sistema: la ventana de la reunión, otra ventana o el monitor
+ * entero. Sin selector, o si lo cancela, queda la grabación de solo audio.
+ *
+ * El vídeo pesa —VP9 a 2,5 Mbps son ~1,1 GB por hora— y los trozos viven en
+ * memoria hasta que se para, que es justo el riesgo que §8.9 avisa: reuniones
+ * largas grabadas en pantalla se llevan la RAM del que graba.
+ * ponytail: si molesta, `recorder.start(1000)` ya trocea; volcar cada trozo a
+ * un File System Access handle en vez de a `chunks` quita el techo.
  */
 import type { MeetingRecording, Snowflake } from "@distop/protocol";
 import { sendCommand } from "./gateway.ts";
 import { startRecordTap, stopRecordTap } from "./relay.ts";
 import { currentChannel } from "./voice.ts";
 
-type Phase = "idle" | "waiting" | "recording" | "saving";
+type Phase = "idle" | "waiting" | "starting" | "recording" | "saving";
 
 let phase: Phase = "idle";
 let channelId: Snowflake | null = null;
 let startedAt = 0;
 let recorder: MediaRecorder | null = null;
 let chunks: Blob[] = [];
+let pantalla: MediaStream | null = null;
 
 function ordenar(canal: Snowflake, state: MeetingRecording["state"]): void {
   sendCommand({ t: "MEETING_RECORD", d: { channel_id: canal, state } });
 }
 
+function soltar(stream: MediaStream | null): void {
+  for (const track of stream?.getTracks() ?? []) track.stop();
+}
+
 function reposo(): void {
+  soltar(pantalla);
+  pantalla = null;
   phase = "idle";
   channelId = null;
   startedAt = 0;
@@ -68,7 +81,7 @@ export function requestRecording(canal: Snowflake): void {
  *   quien graba desde cualquier estado vivo.
  */
 export function stopRecording(canal: Snowflake): void {
-  if (channelId === canal && phase === "waiting") {
+  if (channelId === canal && (phase === "waiting" || phase === "starting")) {
     ordenar(canal, "FAILED");
     reposo();
     return;
@@ -95,7 +108,7 @@ export function onRecordingUpdate(
     grabacion?.recorder_id === selfId &&
     grabacion.state === "CONSENTING"
   ) {
-    empezar(canal);
+    void empezar(canal);
     return;
   }
 
@@ -111,27 +124,76 @@ export function onRecordingUpdate(
   }
 }
 
-function empezar(canal: Snowflake): void {
+/**
+ * La imagen la elige quien graba en el selector del propio sistema (en el
+ * escritorio, el de la app): la reunión entera, una ventana o una pestaña. Si
+ * lo cancela, o el navegador no sabe capturar pantalla —móvil—, se graba solo
+ * el audio, que es lo que había antes: cancelar el selector no debe tirar una
+ * grabación ya anunciada a la sala.
+ */
+async function pedirPantalla(): Promise<MediaStream | null> {
+  if (typeof navigator.mediaDevices?.getDisplayMedia !== "function") return null;
+  try {
+    return await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: 30, max: 30 } },
+      // El sonido de la sala ya viene por el tap; el del sistema duplicaría voces.
+      audio: false,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function elegirMime(conVideo: boolean): string | undefined {
+  const candidatos = conVideo
+    ? ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]
+    : ["audio/webm;codecs=opus", "audio/webm"];
+  return candidatos.find(
+    (candidate) => typeof MediaRecorder.isTypeSupported !== "function" || MediaRecorder.isTypeSupported(candidate),
+  );
+}
+
+async function empezar(canal: Snowflake): Promise<void> {
+  phase = "starting";
+  const video = await pedirPantalla();
+  // Pararon mientras el selector estaba abierto: `reposo` ya dejó esto en idle.
+  if (phase !== "starting" || channelId !== canal) {
+    soltar(video);
+    return;
+  }
+
   let stream: MediaStream;
   try {
     stream = startRecordTap();
   } catch {
+    soltar(video);
     ordenar(canal, "FAILED");
     reposo();
     return;
   }
 
-  const mime = ["audio/webm;codecs=opus", "audio/webm"].find(
-    (candidate) => typeof MediaRecorder.isTypeSupported !== "function" || MediaRecorder.isTypeSupported(candidate),
-  );
+  pantalla = video;
+  const pistaVideo = video?.getVideoTracks()[0] ?? null;
+  const mezcla = new MediaStream([...stream.getAudioTracks(), ...(pistaVideo ? [pistaVideo] : [])]);
+  const mime = elegirMime(Boolean(pistaVideo));
   try {
-    recorder = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), audioBitsPerSecond: 96_000 });
+    recorder = new MediaRecorder(mezcla, {
+      ...(mime ? { mimeType: mime } : {}),
+      audioBitsPerSecond: 96_000,
+      ...(pistaVideo ? { videoBitsPerSecond: 2_500_000 } : {}),
+    });
   } catch {
     stopRecordTap();
     ordenar(canal, "FAILED");
     reposo();
     return;
   }
+
+  // "Dejar de compartir" desde el aviso del navegador es parar de grabar: lo ya
+  // grabado se entrega, seguir en audio a solas sorprendería a quien lo cortó.
+  pistaVideo?.addEventListener("ended", () => {
+    if (phase === "recording") terminar(true);
+  });
 
   chunks = [];
   startedAt = Date.now();

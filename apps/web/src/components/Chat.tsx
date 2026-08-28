@@ -11,8 +11,8 @@ import { useStore } from "../store.ts";
 import { api, upload } from "../lib/api.ts";
 import { Picker } from "./Picker.tsx";
 import { renderContent, type RenderContext } from "../lib/markdown.tsx";
-import { StageLayoutPicker, VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLocal } from "./Voice.tsx";
-import { MeetingPanel } from "./Meeting.tsx";
+import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLocal } from "./Voice.tsx";
+import { MeetingHeaderBadges, MeetingHeaderControls, MeetingPanel } from "./Meeting.tsx";
 import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
 import { formatBytes, formatDayHeading, formatTime } from "../i18n.ts";
 import { Avatar, Button, EmptyState, ErrorNote, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, Spinner, useConfirm, useLocale, useT, useErrorText } from "./ui.tsx";
@@ -184,9 +184,11 @@ export function Chat({
 
   /* Una reunión es la misma sala de voz con reglas encima, así que el escenario
      de vídeo es literalmente el mismo componente: lo que cambia es todo lo que
-     lo rodea —sala de espera, papeles, manos, grabación, turno—, y eso vive en
-     su propio panel. En pantalla ancha van uno al lado del otro; en estrecha, el
-     panel primero, porque quien espera fuera solo tiene eso que mirar. */
+     lo rodea. Papeles, manos y sala de espera ya viven en la cabecera; lo que
+     queda —agenda, grabación, presupuesto de vídeo, turno de palabra— es una
+     franja que se acomoda por encima del escenario, no una columna lateral.
+     El único lateral de una reunión es el de chat, igual que en una llamada de
+     voz normal. */
   if (channel.kind === "meeting") {
     return (
       <main data-pane="main" className="flex min-w-0 flex-1 flex-col bg-bg">
@@ -195,20 +197,22 @@ export function Chat({
             <CornerUpLeft size={18} />
           </button>
           <Icon size={18} className="shrink-0 text-muted" />
-          <h1 className="display truncate text-[0.95rem] font-bold">{channel.name}</h1>
+          <h1 className="display min-w-0 flex-1 truncate text-[0.95rem] font-bold">{channel.name}</h1>
+          {/* Estado y papel a la izquierda, pegados al título; los mandos, a la
+              derecha. La disposición del escenario vive dentro del menú de
+              ajustes: ya no hace falta la fila de tres píldoras aparte. */}
+          <MeetingHeaderBadges channelId={channel.id} />
           <span className="flex-1" />
-          <StageLayoutPicker />
+          <MeetingHeaderControls channelId={channel.id} communityId={communityId} />
           <IconButton label={t("voice.chatTitle")} onClick={onToggleMembers} pressed={membersOpen}>
             <MessageSquareText size={17} />
           </IconButton>
         </header>
 
-        <div className="flex min-h-0 flex-1 flex-col wide:flex-row">
+        <div className="flex min-h-0 flex-1 flex-col">
+          <MeetingPanel channelId={channel.id} communityId={communityId} />
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <VoiceStage channelId={channel.id} mode="meeting" />
-          </div>
-          <div className="flex min-h-0 shrink-0 flex-col border-line wide:w-[22rem] wide:border-l">
-            <MeetingPanel channelId={channel.id} communityId={communityId} />
           </div>
         </div>
 
@@ -422,11 +426,22 @@ function ChatVoiceHeader({
   const voiceLocal = useVoiceLocal();
   const meeting = useStore((s) => (channel.kind === "meeting" ? s.meetings[channel.id] : undefined));
   const [voiceNoteOff, setVoiceNoteOff] = useState(false);
+  const [voiceNoteHover, setVoiceNoteHover] = useState(false);
   /* Se descarta la nota, no el aviso: vuelve a aparecer la próxima vez que
      entres a una sala de voz, que es cuando otra vez importa. */
   useEffect(() => {
     if (voiceLocal.channelId) setVoiceNoteOff(false);
   }, [voiceLocal.channelId]);
+
+  /* Se quita sola a los 5s: es un aviso de una vez, no algo que deba quedarse
+     estorbando toda la llamada. Pasar el ratón por encima (o el foco, para
+     quien navega con teclado) la retiene — quien la está leyendo no debe
+     verla desaparecer a mitad de lectura. */
+  useEffect(() => {
+    if (voiceNoteOff || voiceNoteHover) return;
+    const timer = setTimeout(() => setVoiceNoteOff(true), 5000);
+    return () => clearTimeout(timer);
+  }, [voiceNoteOff, voiceNoteHover, voiceLocal.channelId]);
 
   return (
     <div className="flex flex-col items-center gap-2 px-4 py-4">
@@ -479,7 +494,13 @@ function ChatVoiceHeader({
       )}
       <VoiceSoundError error={voiceLocal.soundError} />
       {voiceNoteOff ? null : (
-        <div className="flex max-w-md items-center gap-1 rounded-2xl border border-line bg-surface/50 py-1.5 pr-1.5 pl-3.5 backdrop-blur-md">
+        <div
+          className="flex max-w-md items-center gap-1 rounded-2xl border border-line bg-surface/50 py-1.5 pr-1.5 pl-3.5 backdrop-blur-md"
+          onMouseEnter={() => setVoiceNoteHover(true)}
+          onMouseLeave={() => setVoiceNoteHover(false)}
+          onFocus={() => setVoiceNoteHover(true)}
+          onBlur={() => setVoiceNoteHover(false)}
+        >
           <p className="text-xs leading-relaxed text-muted">{t("voice.limits")}</p>
           <IconButton label={t("common.close")} onClick={() => setVoiceNoteOff(true)} className="shrink-0">
             <X size={15} />

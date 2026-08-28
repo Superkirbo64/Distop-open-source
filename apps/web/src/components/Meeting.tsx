@@ -18,16 +18,19 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
-  CalendarClock,
   CalendarPlus,
   Check,
   CircleDot,
   Clock,
   DoorOpen,
   Hand,
+  LayoutGrid,
   Link2,
   Mic,
   Play,
+  Presentation,
+  SquareUser,
+  Settings2,
   Square,
   Trash2,
   UserCheck,
@@ -54,7 +57,22 @@ import { sendCommand } from "../lib/gateway.ts";
 import { holdFloor, joinVoice, raiseHand, setPushToTalkMode } from "../lib/voice.ts";
 import { recordingSupported, requestRecording, stopRecording } from "../lib/record.ts";
 import { useVoiceLocal } from "./Voice.tsx";
-import { Avatar, Button, ErrorNote, Field, IconButton, Modal, Select, Spinner, useConfirm, useErrorText, useT } from "./ui.tsx";
+import {
+  Avatar,
+  Button,
+  ErrorNote,
+  Field,
+  IconButton,
+  Menu,
+  MenuItem,
+  Modal,
+  Select,
+  Spinner,
+  Tooltip,
+  useConfirm,
+  useErrorText,
+  useT,
+} from "./ui.tsx";
 import type { MessageKey } from "../i18n.ts";
 
 /** Referencia estable: un `?? []` nuevo en cada lectura repinta en bucle (React #185). */
@@ -118,43 +136,37 @@ function MeetingBody({ meeting, communityId }: { meeting: Meeting; communityId: 
   const papel = useStore((s) => s.meetingRole[meeting.id]) ?? "attendee";
   const esperando = useStore((s) => s.meetingWaiting[meeting.channel_id]) ?? false;
 
-  /* Modera quien tiene papel de coanfitrión para arriba, o quien administra la
-     comunidad. Los dos ejes existen a propósito (§8.2): organizar no da poder
-     sobre el servidor, y administrar el servidor no te hace organizador. */
-  const permisos = toBits(data?.permissions ?? "0");
-  const autoridad = has(permisos, PERMISSIONS.ADMINISTRATOR) || has(permisos, PERMISSIONS.MANAGE_MEETINGS);
-  const modero = meetingCanModerate(papel) || autoridad;
-
   if (esperando) return <SalaDeEspera meeting={meeting} />;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4">
-      <header className="flex flex-wrap items-start gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <CalendarClock size={18} className="shrink-0 text-muted" />
-            <h2 className="display truncate text-base font-bold">{meeting.title}</h2>
-            <EstadoPastilla state={meeting.state} />
-          </div>
+    // Franja compacta encima del escenario, no una columna lateral: `shrink-0`
+    // para no pelearle altura al vídeo, y `empty:hidden` para no dejar un
+    // hueco con solo el padding cuando no hay nada que avisar (el caso
+    // normal: sin agenda, sin grabación, sin cola de vídeo, sin turno).
+    <div className="flex shrink-0 flex-col gap-2 px-3 py-3 empty:hidden">
+      {/* Título, estado, papel y la cola de espera ya viven en la cabecera del
+          canal (`MeetingHeaderBadges`/`MeetingHeaderControls`): repetirlos aquí
+          era el sidebar que sobraba. Lo que queda es lo que la cabecera no
+          dice — el horario y la agenda. */}
+      {meeting.starts_at !== null || meeting.agenda ? (
+        <header>
           {meeting.starts_at !== null ? (
-            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
+            <p className="flex items-center gap-1.5 text-xs text-muted">
               <Clock size={12} />
               {cuando(meeting.starts_at, locale)}
               {meeting.timezone ? <span className="opacity-70">· {meeting.timezone}</span> : null}
             </p>
           ) : null}
           {meeting.agenda ? <p className="mt-2 whitespace-pre-wrap text-sm text-muted">{meeting.agenda}</p> : null}
-        </div>
-        <MiPapel role={papel} />
-      </header>
+        </header>
+      ) : null}
 
       <AvisoDeGrabacion channelId={meeting.channel_id} selfId={selfId} />
       <NotaDePresupuesto channelId={meeting.channel_id} />
 
-      {modero ? <ControlesDeModeracion meeting={meeting} papel={papel} autoridad={autoridad} /> : null}
-      {modero ? <SalaDeEsperaPanel meeting={meeting} /> : null}
-
-      <ColaDeManos channelId={meeting.channel_id} members={data?.members ?? []} />
+      {/* Levantar la mano ya no es una tarjeta fija aquí: cuelga del icono de
+          mano en la cabecera (`BotonManosLevantadas`), igual que la sala de
+          espera cuelga del icono de personas. */}
 
       {meeting.state === "LIVE" ? (
         <TurnoDePalabra meeting={meeting} papel={papel} members={data?.members ?? []} />
@@ -178,11 +190,18 @@ function EstadoPastilla({ state }: { state: Meeting["state"] }) {
   );
 }
 
-function MiPapel({ role }: { role: MeetingRole }) {
+function MiPapel({ role, compacto }: { role: MeetingRole; compacto?: boolean }) {
   const t = useT();
   return (
-    <span className="shrink-0 rounded-[10px] border border-line px-2 py-1 text-xs text-muted">
-      {t("meeting.yourRole")}: <strong className="text-ink">{t(PAPEL_CLAVE[role])}</strong>
+    <span
+      className={`shrink-0 rounded-[10px] border border-line text-muted ${
+        compacto ? "px-2 py-0.5 text-[0.7rem]" : "px-2 py-1 text-xs"
+      }`}
+    >
+      {/* En la cabecera compite con el título del canal: por debajo de `md` se
+          queda solo el papel, que es el dato, no la etiqueta. */}
+      <span className={compacto ? "hidden md:inline" : ""}>{t("meeting.yourRole")}: </span>
+      <strong className="text-ink">{t(PAPEL_CLAVE[role])}</strong>
     </span>
   );
 }
@@ -201,7 +220,10 @@ function SalaDeEspera({ meeting }: { meeting: Meeting }) {
   const grabacion = useStore((s) => s.recording[meeting.channel_id]) ?? null;
 
   return (
-    <div className="grid flex-1 place-items-center p-6">
+    // `shrink-0`, no `flex-1`: ahora comparte columna con el escenario en vez
+    // de tener toda una lateral para ella sola, así que no debe pelearle el
+    // espacio — el escenario es lo que tiene que crecer.
+    <div className="grid shrink-0 place-items-center px-6 py-8">
       <div className="max-w-sm text-center">
         <DoorOpen size={32} className="mx-auto mb-3 text-muted" />
         <h2 className="display text-base font-bold">{meeting.title}</h2>
@@ -280,6 +302,12 @@ function SalaDeEsperaPanel({ meeting }: { meeting: Meeting }) {
 
 /* ── manos levantadas ─────────────────────────────────────────────────── */
 
+/**
+ * La cola de manos levantadas. Ya no es una tarjeta fija en el panel — eso era
+ * el sidebar de más — sino el contenido de un desplegable colgado del icono de
+ * mano en la cabecera (`BotonManosLevantadas`), igual que la sala de espera
+ * cuelga del icono de personas.
+ */
 function ColaDeManos({ channelId, members }: { channelId: string; members: { user: { id: string; display_name: string }; nickname: string | null }[] }) {
   const t = useT();
   const local = useVoiceLocal();
@@ -292,17 +320,15 @@ function ColaDeManos({ channelId, members }: { channelId: string; members: { use
   const manos = (estados ?? [])
     .filter((estado) => estado.hand_raised_at !== null)
     .sort((a, b) => (a.hand_raised_at ?? 0) - (b.hand_raised_at ?? 0));
+  const miMano = manos.some((estado) => estado.user_id === selfId);
 
   const nombre = (id: string) => {
     const miembro = members.find((m) => m.user.id === id);
     return miembro?.nickname ?? miembro?.user.display_name ?? id;
   };
-  const miMano = manos.some((estado) => estado.user_id === selfId);
-
-  if (!dentro && manos.length === 0) return null;
 
   return (
-    <section className="rounded-[12px] border border-line bg-surface p-3">
+    <section className="p-3">
       <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
         <Hand size={15} className="text-muted" />
         {t("meeting.handsTitle")}
@@ -319,7 +345,10 @@ function ColaDeManos({ channelId, members }: { channelId: string; members: { use
       ) : (
         <ol className="flex flex-col gap-1">
           {manos.map((estado, indice) => (
-            <li key={estado.user_id} className="flex items-center gap-2 text-sm">
+            <li
+              key={estado.user_id}
+              className={`flex items-center gap-2 text-sm ${estado.user_id === selfId ? "font-semibold text-accent" : ""}`}
+            >
               <span className="w-4 shrink-0 text-center text-xs text-muted">{indice + 1}</span>
               <Avatar name={nombre(estado.user_id)} size={22} />
               <span className="min-w-0 flex-1 truncate">{nombre(estado.user_id)}</span>
@@ -505,7 +534,168 @@ function NotaDePresupuesto({ channelId }: { channelId: string }) {
 
 /* ── mandos de quien organiza ─────────────────────────────────────────── */
 
-function ControlesDeModeracion({ meeting, papel, autoridad }: { meeting: Meeting; papel: MeetingRole; autoridad: boolean }) {
+/**
+ * Las dos píldoras de identidad — estado y papel —, para el lado izquierdo de
+ * la cabecera del canal, pegadas al título. Ya no viven también en el panel
+ * (`MeetingBody`): repetirlas ahí era el sidebar de más.
+ *
+ * Lee del store por su cuenta porque quien lo pinta es la cabecera del canal
+ * (`Chat`), que no sabe nada de papeles ni de reuniones.
+ */
+export function MeetingHeaderBadges({ channelId }: { channelId: string }) {
+  const meeting = useStore((s) => s.meetings[channelId]);
+  const papel = useStore((s) => (meeting ? s.meetingRole[meeting.id] : undefined)) ?? "attendee";
+  if (!meeting) return null;
+
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <EstadoPastilla state={meeting.state} />
+      <MiPapel role={papel} compacto />
+    </span>
+  );
+}
+
+/** Los mandos de la reunión, para el lado derecho de la cabecera del canal. */
+export function MeetingHeaderControls({ channelId, communityId }: { channelId: string; communityId: string | null }) {
+  const meeting = useStore((s) => s.meetings[channelId]);
+  const data = useStore((s) => (communityId ? s.data[communityId] : undefined));
+  const papel = useStore((s) => (meeting ? s.meetingRole[meeting.id] : undefined)) ?? "attendee";
+
+  const permisos = toBits(data?.permissions ?? "0");
+  const autoridad = has(permisos, PERMISSIONS.ADMINISTRATOR) || has(permisos, PERMISSIONS.MANAGE_MEETINGS);
+  if (!meeting) return null;
+  const modero = meetingCanModerate(papel) || autoridad;
+
+  return <ControlesDeReunion meeting={meeting} papel={papel} modero={modero} members={data?.members ?? []} />;
+}
+
+/** La misma lista de la puerta que el panel, colgando de la cabecera. */
+function BotonSalaDeEspera({ meeting }: { meeting: Meeting }) {
+  const t = useT();
+  const espera = useStore((s) => s.lobby[meeting.channel_id]) ?? SIN_ESPERA;
+
+  return (
+    <Menu
+      flush
+      trigger={(props) => (
+        <IconButton {...props} label={t("meeting.lobbyTitle")} className="relative h-7 w-7">
+          <Users size={16} />
+          {espera.length > 0 ? (
+            <span className="absolute -top-1 -right-1 grid h-[16px] min-w-[16px] place-items-center rounded-full bg-danger px-1 text-[0.6rem] font-bold text-white tabular-nums">
+              {espera.length}
+            </span>
+          ) : null}
+        </IconButton>
+      )}
+    >
+      {/* Sin `close`: admitir a alguien no debe cerrar la cola, que casi nunca
+          tiene a una sola persona. */}
+      {() => (
+        <div className="w-72 max-w-[80vw]">
+          <SalaDeEsperaPanel meeting={meeting} />
+        </div>
+      )}
+    </Menu>
+  );
+}
+
+/**
+ * La cola de manos levantadas, colgando del icono de mano en la cabecera.
+ * Visible aunque no haya nadie con la mano levantada mientras se esté dentro
+ * de la llamada —es de ahí desde donde se levanta la propia—, y también desde
+ * fuera si ya hay manos levantadas por ver.
+ */
+function BotonManosLevantadas({
+  channelId,
+  members,
+}: {
+  channelId: string;
+  members: { user: { id: string; display_name: string }; nickname: string | null }[];
+}) {
+  const t = useT();
+  const local = useVoiceLocal();
+  const estados = useStore((s) => s.voice[channelId]);
+  const manos = (estados ?? []).filter((estado) => estado.hand_raised_at !== null);
+  const dentro = local.channelId === channelId;
+
+  if (!dentro && manos.length === 0) return null;
+
+  return (
+    <Menu
+      flush
+      trigger={(props) => (
+        <IconButton {...props} label={t("meeting.handsTitle")} className="relative h-7 w-7">
+          <Hand size={16} />
+          {manos.length > 0 ? (
+            <span className="absolute -top-1 -right-1 grid h-[16px] min-w-[16px] place-items-center rounded-full bg-danger px-1 text-[0.6rem] font-bold text-white tabular-nums">
+              {manos.length}
+            </span>
+          ) : null}
+        </IconButton>
+      )}
+    >
+      {/* Sin `close`: levantar la mano y ver la cola son cosas que se hacen
+          mirando cómo cambia, no de un solo toque. */}
+      {() => (
+        <div className="w-64 max-w-[80vw]">
+          <ColaDeManos channelId={channelId} members={members} />
+        </div>
+      )}
+    </Menu>
+  );
+}
+
+/** Las tres disposiciones del escenario, como entradas de un menú en vez de
+ *  tres píldoras sueltas: es la mitad del ahorro de botones de este bloque. */
+function OpcionesDeVista({ close }: { close: () => void }) {
+  const t = useT();
+  const layout = useStore((s) => s.stageLayout);
+  const setLayout = useStore((s) => s.setStageLayout);
+  const opciones = [
+    { value: "gallery", icon: <LayoutGrid size={15} />, key: "voice.layoutGallery" },
+    { value: "speaker", icon: <SquareUser size={15} />, key: "voice.layoutSpeaker" },
+    { value: "presentation", icon: <Presentation size={15} />, key: "voice.layoutPresentation" },
+  ] as const;
+  return (
+    <>
+      {opciones.map((opcion) => (
+        <MenuItem
+          key={opcion.value}
+          onClick={() => {
+            setLayout(layout === opcion.value ? "auto" : opcion.value);
+            close();
+          }}
+        >
+          {opcion.icon} {t(opcion.key)}
+          {layout === opcion.value ? <Check size={14} className="ml-auto text-accent" /> : null}
+        </MenuItem>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Los mandos de la llamada: la única acción de estado que toca ahora mismo
+ * (Empezar, Terminar…), las dos colas —manos y sala de espera— y un menú con
+ * el resto. Antes eran hasta seis botones sueltos —dos de estado, grabar,
+ * terminar, ajustes y las tres píldoras de vista— compitiendo con el título
+ * del canal en la misma fila, más una tarjeta fija de manos en el panel.
+ *
+ * El menú de ajustes es visible para todo el mundo, no solo para quien modera:
+ * la disposición del escenario es cosa de cada persona; convocar, grabar y
+ * terminar solo aparecen si se pueden usar de verdad.
+ */
+function ControlesDeReunion({
+  meeting,
+  papel,
+  modero,
+  members,
+}: {
+  meeting: Meeting;
+  papel: MeetingRole;
+  modero: boolean;
+  members: { user: { id: string; display_name: string }; nickname: string | null }[];
+}) {
   const t = useT();
   const errorText = useErrorText();
   const { confirm, element } = useConfirm();
@@ -536,70 +726,115 @@ function ControlesDeModeracion({ meeting, papel, autoridad }: { meeting: Meeting
   const puedeGrabar = !grabando || !recordingIsLive(grabando.state);
   const dentroDeLaLlamada = voiceLocal.channelId === meeting.channel_id;
 
+  const terminar = async () => {
+    /* Terminar es irreversible: `ENDED` no tiene salida en la tabla de
+       transiciones, porque reabrir falsearía asistencia y duración. */
+    if (await confirm(t("meeting.endConfirm"))) void cambiarEstado("ENDED");
+  };
+
+  /* Un único botón visible: el que de verdad hace avanzar la reunión ahora
+     mismo. El resto de acciones de estado —convocar la sala antes de tiempo,
+     terminar antes de empezar— son la excepción, no la regla, y viven en el
+     menú. Solo icono: el texto se dice en el tooltip, no ocupando sitio. */
+  const primaria =
+    modero && (meeting.state === "DRAFT" || meeting.state === "SCHEDULED" || meeting.state === "LOBBY")
+      ? { icon: <Play size={15} />, key: "meeting.start" as const, variant: "primary" as const, onClick: () => void cambiarEstado("LIVE", true) }
+      : modero && meeting.state === "LIVE"
+        ? { icon: <Square size={15} />, key: "meeting.end" as const, variant: "danger" as const, onClick: () => void terminar() }
+        : null;
+
   return (
-    <section className="flex flex-wrap items-center gap-2 rounded-[12px] border border-line bg-surface p-3">
-      {meeting.state === "DRAFT" || meeting.state === "SCHEDULED" ? (
-        <>
-          {/* Que llegue alguien no abre la reunión: la abre una persona. */}
-          <Button variant="ghost" disabled={ocupado} onClick={() => void cambiarEstado("LOBBY")}>
-            <DoorOpen size={15} /> {t("meeting.openLobby")}
-          </Button>
-          <Button variant="primary" disabled={ocupado} onClick={() => void cambiarEstado("LIVE", true)}>
-            <Play size={15} /> {t("meeting.start")}
-          </Button>
-        </>
+    <>
+      {primaria ? (
+        <Tooltip label={t(primaria.key)}>
+          <button
+            type="button"
+            aria-label={t(primaria.key)}
+            disabled={ocupado}
+            onClick={primaria.onClick}
+            // `.btn` trae `min-height: 2.75rem` para el objetivo táctil normal;
+            // sin anularlo con `min-h-0`, `h-7` no lo baja de 44px porque
+            // min-height siempre gana sobre height cuando es mayor.
+            className={`btn btn-${primaria.variant} flex h-7 w-7 min-h-0 items-center justify-center gap-0 p-0`}
+          >
+            {primaria.icon}
+          </button>
+        </Tooltip>
       ) : null}
 
-      {meeting.state === "LOBBY" ? (
-        <Button variant="primary" disabled={ocupado} onClick={() => void cambiarEstado("LIVE", true)}>
-          <Play size={15} /> {t("meeting.start")}
-        </Button>
+      {/* Manos levantadas y sala de espera, justo a la derecha del botón de
+          estado: las dos son colas sobre la reunión, no ajustes. */}
+      <BotonManosLevantadas channelId={meeting.channel_id} members={members} />
+      {modero && meeting.lobby ? <BotonSalaDeEspera meeting={meeting} /> : null}
+
+      <Menu
+        trigger={(props) => (
+          <IconButton {...props} label={t("meeting.settings")} className="h-7 w-7">
+            <Settings2 size={16} />
+          </IconButton>
+        )}
+      >
+        {(close) => (
+          <>
+            <OpcionesDeVista close={close} />
+
+            {modero ? (
+              <div className="mt-1 border-t border-line pt-1">
+                {meeting.state === "DRAFT" || meeting.state === "SCHEDULED" ? (
+                  /* Que llegue alguien no abre la reunión: la abre una persona. */
+                  <MenuItem onClick={() => { void cambiarEstado("LOBBY"); close(); }}>
+                    <DoorOpen size={15} /> {t("meeting.openLobby")}
+                  </MenuItem>
+                ) : null}
+                {meeting.state === "LOBBY" ? (
+                  <MenuItem danger onClick={() => { void terminar(); close(); }}>
+                    <Square size={15} /> {t("meeting.end")}
+                  </MenuItem>
+                ) : null}
+                {meeting.state === "LIVE" && puedeGrabar ? (
+                  <MenuItem
+                    disabled={!dentroDeLaLlamada || !recordingSupported()}
+                    onClick={() => { requestRecording(meeting.channel_id); close(); }}
+                  >
+                    <CircleDot size={15} />
+                    {dentroDeLaLlamada ? t("meeting.recordStart") : t("meeting.recordNeedsCall")}
+                  </MenuItem>
+                ) : null}
+              </div>
+            ) : null}
+
+            {/* Papeles, invitaciones y asistencia son ajustes de la reunión, no
+                acciones de la llamada: van aparte para no mezclar registros. */}
+            {modero ? (
+              <div className="mt-1 border-t border-line pt-1">
+                <MenuItem onClick={() => { setPanel("roles"); close(); }}>
+                  <Users size={15} /> {t("meeting.roles")}
+                </MenuItem>
+                <MenuItem onClick={() => { setPanel("invites"); close(); }}>
+                  <Link2 size={15} /> {t("meeting.invites")}
+                </MenuItem>
+                <MenuItem onClick={() => { setPanel("attendance"); close(); }}>
+                  <Check size={15} /> {t("meeting.attendance")}
+                </MenuItem>
+              </div>
+            ) : null}
+          </>
+        )}
+      </Menu>
+
+      {/* El fallo se enseña donde se pulsó, pero sin romper la altura fija de la
+          cabecera: una línea corta con el texto completo en el tooltip. */}
+      {error ? (
+        <span role="alert" title={error} className="max-w-[12rem] truncate text-xs text-danger">
+          {error}
+        </span>
       ) : null}
-
-      {meeting.state === "LOBBY" || meeting.state === "LIVE" ? (
-        <Button
-          variant="danger"
-          disabled={ocupado}
-          onClick={async () => {
-            /* Terminar es irreversible: `ENDED` no tiene salida en la tabla de
-               transiciones, porque reabrir falsearía asistencia y duración. */
-            if (await confirm(t("meeting.endConfirm"))) void cambiarEstado("ENDED");
-          }}
-        >
-          <Square size={15} /> {t("meeting.end")}
-        </Button>
-      ) : null}
-
-      {meeting.state === "LIVE" && puedeGrabar ? (
-        <Button
-          variant="ghost"
-          disabled={!dentroDeLaLlamada || !recordingSupported()}
-          title={dentroDeLaLlamada ? undefined : t("meeting.recordNeedsCall")}
-          onClick={() => requestRecording(meeting.channel_id)}
-        >
-          <CircleDot size={15} /> {t("meeting.recordStart")}
-        </Button>
-      ) : null}
-
-      <span className="flex-1" />
-
-      <Button variant="ghost" onClick={() => setPanel("roles")}>
-        <Users size={15} /> {t("meeting.roles")}
-      </Button>
-      <Button variant="ghost" onClick={() => setPanel("invites")}>
-        <Link2 size={15} /> {t("meeting.invites")}
-      </Button>
-      <Button variant="ghost" onClick={() => setPanel("attendance")}>
-        <Check size={15} /> {t("meeting.attendance")}
-      </Button>
-
-      {error ? <ErrorNote>{error}</ErrorNote> : null}
 
       <PanelDeRoles meeting={meeting} papel={papel} open={panel === "roles"} onClose={() => setPanel(null)} />
       <PanelDeInvitaciones meeting={meeting} open={panel === "invites"} onClose={() => setPanel(null)} />
       <PanelDeAsistencia meeting={meeting} open={panel === "attendance"} onClose={() => setPanel(null)} />
       {element}
-    </section>
+    </>
   );
 }
 
