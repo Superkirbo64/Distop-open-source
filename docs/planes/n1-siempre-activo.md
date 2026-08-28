@@ -21,11 +21,13 @@ nunca antes ni a mitad.
       inexistente, copia sin mecanismo, NodeInfo que hoy devuelve index.html),
       añade "Lo que 'remoto' cambia en la instancia", la entrada en
       `docs/decisions.md` y el teaser del README. Esta carpeta nace aquí.
-- [ ] 2. `feat(server): versión desde package.json, nodeinfo 2.1 y turn efímero`
+- [x] 2. `feat(server): versión desde package.json, nodeinfo 2.1 y turn efímero`
       `VERSION` deja de estar horneada a "0.1.0"; NodeInfo 2.1 gated por
       `PUBLIC_DISCOVERY_ENABLED` con `/.well-known/*` fuera del fallback SPA;
       credenciales TURN efímeras (use-auth-secret) como campo `secret` del modo custom.
-- [ ] 3. `feat(server): copias programadas que sobreviven al proxy`
+- [x] 3. `feat(server): copias programadas que sobreviven al proxy`
+      (2 y 3 cerrados en un único commit: config.ts, api.ts y server.ts llevan
+      cambios de ambos y separarlos por trozos dejaba un árbol que no compila.)
       Planificador interno con cortesía hacia llamadas activas, passphrase en
       fichero 0600 que mata el boot si falta o es débil, poda conservando K, y
       el GET de copias relajado a requireHost-only. Restore sigue siendo CLI.

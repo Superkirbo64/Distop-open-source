@@ -14,6 +14,7 @@ import { handleRequest } from "./http.ts";
 import { closeGateway, handleUpgrade } from "./gateway.ts";
 import { setState, VERSION } from "./instance.ts";
 import { startIntegrityWork, stopIntegrityWork } from "./integrity.ts";
+import { startBackupScheduler, stopBackupScheduler } from "./backup-scheduler.ts";
 import { announceStartup, startPushHeartbeat } from "./push.ts";
 import { sweepGuests } from "./meetings.ts";
 import { freezeWrites, registerShutdownHandler, waitForRequests } from "./lifecycle.ts";
@@ -86,7 +87,12 @@ function serveStatic(req: import("node:http").IncomingMessage, res: import("node
 
 export const server = createServer((req, res) => {
   const pathname = (req.url ?? "/").split("?")[0]!;
-  const isApi = pathname.startsWith("/api/") || pathname === "/health";
+  /* /.well-known/ y /nodeinfo/ van a la API como prefijos enteros: son
+     direcciones para máquinas, y contestarlas con el shell del SPA —que es lo
+     que hacía el fallback— confunde a cualquier rastreador que pregunte (§19).
+     Una ruta well-known que no exista debe ser un 404 de verdad, no un 200 con
+     HTML dentro. */
+  const isApi = pathname.startsWith("/api/") || pathname === "/health" || pathname.startsWith("/.well-known/") || pathname.startsWith("/nodeinfo/");
 
   if (!isApi && (req.method === "GET" || req.method === "HEAD") && serveStatic(req, res)) return;
   void handleRequest(req, res);
@@ -119,6 +125,7 @@ server.listen(config.port, config.host, () => {
   const barrido = sweepIncoming();
   if (barrido.removed > 0) console.log(`Limpiadas ${barrido.removed} subidas a medias del arranque anterior.`);
   startIntegrityWork();
+  startBackupScheduler();
 
   /* "Tu comunidad volvió", con la aplicación cerrada (A2).
      Va aquí y no antes: solo cuando ya se escucha es verdad que volvió. Si no
@@ -182,6 +189,7 @@ export function shutdown(reason = "signal"): Promise<void> {
        estar leyendo un fichero del disco por su cuenta, sin una petición que
        lo sostenga, y por tanto el único al que `waitForRequests` no ve. */
     await stopIntegrityWork();
+    await stopBackupScheduler();
 
     const httpClosed = new Promise<void>((resolveClosed) => {
       server.close(() => resolveClosed());

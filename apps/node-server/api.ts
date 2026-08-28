@@ -82,6 +82,7 @@ import {
 import { instanceHealth, invalidateStorageCache, VERSION } from "./instance.ts";
 import { DiscordImportError, importDiscord, previewDiscord } from "./discord-import.ts";
 import { BACKUP_DIR, backupJob, listBackupFiles, recentBackupJobs, startBackup } from "./backup.ts";
+import { backupSchedule } from "./backup-scheduler.ts";
 import { BackupError } from "./backup-format.ts";
 import { inspectBackup } from "./restore.ts";
 import { successionRecord } from "./succession.ts";
@@ -2987,8 +2988,18 @@ route("POST", "/api/v1/instance/backups", async (ctx) => {
 
 route("GET", "/api/v1/instance/backups", (ctx) => {
   requireHost(ctx);
-  if (!isLocalRequest(ctx)) throw forbidden("Las copias solo se consultan desde el propio equipo anfitrión.");
-  return { jobs: recentBackupJobs(), files: listBackupFiles() };
+  /* Listar sí se puede desde fuera: son nombres y tamaños de ficheros ya
+     cifrados, y es exactamente lo que la interfaz necesita para decir si la
+     copia diaria está viva en un despliegue donde nada es "local" (nube,
+     `docs/nube-oracle.md`). Crear (POST) y abrir (inspect) siguen siendo del
+     equipo anfitrión. `manual_available` lo calcula el servidor porque el
+     cliente no puede saber cómo le ve la instancia a través de un proxy. */
+  return {
+    jobs: recentBackupJobs(),
+    files: listBackupFiles(),
+    schedule: backupSchedule(),
+    manual_available: isLocalRequest(ctx),
+  };
 });
 
 route("GET", "/api/v1/instance/backups/:job_id", (ctx) => {
@@ -3199,6 +3210,7 @@ route("PUT", "/api/v1/instance/relay", async (ctx) => {
     ...text("url"),
     ...text("username"),
     ...text("credential"),
+    ...text("secret"),
     ...text("keyId"),
     ...text("apiToken"),
     ...text("appName"),
@@ -3303,3 +3315,5 @@ route("GET", "/api/v1/communities/:id/export", (ctx) => {
 /* Las rutas del relevo viven aparte: son otro público y otra forma de
    autenticar, y api.ts ya es bastante largo. */
 import "./succession-api.ts";
+/* NodeInfo también: es la cara para máquinas de fuera, no para el cliente. */
+import "./nodeinfo.ts";

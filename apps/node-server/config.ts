@@ -3,7 +3,7 @@
  * Si algo falta o es inválido el proceso muere aquí, no a mitad de una petición.
  */
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { KLIPY_API_KEY } from "./klipy-key.ts";
 
@@ -92,6 +92,75 @@ function loadPreviousSecret(databasePath: string): { secret: string; expiresAt: 
 }
 
 const databasePath = str("DATABASE_PATH", "./data/app.db");
+
+/**
+ * TURN propio por entorno (coturn con `use-auth-secret`), para despliegues
+ * donde cloud-init configura coturn y la instancia a la vez (§9.4, §22).
+ * Van juntos o ninguno: con TURN_URL solo, la instancia anunciaría un relevo
+ * sin credenciales que "parece configurado" y falla; con TURN_SECRET solo,
+ * guardaría un secreto que no releva nada. Las credenciales que ven los
+ * navegadores se derivan del secreto y caducan solas; el secreto no viaja.
+ */
+const turnUrls = list("TURN_URL", []);
+const turnSecret = str("TURN_SECRET", "");
+if (turnUrls.length > 0 !== (turnSecret !== "")) {
+  throw new Error("TURN_URL y TURN_SECRET van juntos: define los dos o ninguno.");
+}
+for (const entry of turnUrls) {
+  if (!/^turns?:/.test(entry)) throw new Error(`TURN_URL debe empezar por turn: o turns:, recibido: ${entry}`);
+}
+
+/**
+ * Copias programadas (§21). Apagadas de fábrica: quien hospeda en su PC ya
+ * tiene el botón local. Existen porque detrás de un proxy con TRUST_PROXY y
+ * PUBLIC_URL ninguna petición es "local" (http.ts:isLocalRequest) y la ruta
+ * HTTP de crear copias queda fuera de alcance a propósito: sin esto, el
+ * despliegue en nube no tendría ninguna forma de hacer su copia diaria.
+ */
+const backupIntervalHours = int("BACKUP_INTERVAL_HOURS", 0);
+if (backupIntervalHours < 0) throw new Error(`BACKUP_INTERVAL_HOURS no puede ser negativo, recibido: ${backupIntervalHours}`);
+const backupKeep = int("BACKUP_KEEP", 7);
+if (backupKeep < 1) throw new Error(`BACKUP_KEEP debe ser al menos 1, recibido: ${backupKeep}`);
+
+/**
+ * La frase vive en un FICHERO, nunca en el .env: un .env se abre, se comparte
+ * en capturas y se sube por error (misma razón que AUTH_SECRET). Si las copias
+ * están activas y la frase falta o es débil, el proceso muere AQUÍ: descubrir
+ * "copias desactivadas + una línea de log" el día que muere el disco es el
+ * peor momento posible. Se quita exactamente un salto de línea final —los
+ * ficheros casi siempre acaban en uno— y nada más: lo que queda es, byte a
+ * byte, lo que irá en DISTOP_BACKUP_PASSPHRASE al restaurar (restore.ts).
+ */
+function loadBackupPassphrase(): string {
+  const file = str("BACKUP_PASSPHRASE_FILE", "");
+  if (file === "") {
+    throw new Error("BACKUP_INTERVAL_HOURS está activo pero falta BACKUP_PASSPHRASE_FILE: sin frase no hay copia cifrada.");
+  }
+  const ruta = resolve(file);
+  let contenido: string;
+  try {
+    contenido = readFileSync(ruta, "utf8");
+  } catch {
+    throw new Error(`No se pudo leer BACKUP_PASSPHRASE_FILE (${file}): la copia programada no puede arrancar a ciegas.`);
+  }
+  const frase = contenido.replace(/\r?\n$/, "");
+  if (frase.length < 12) {
+    throw new Error("La frase de BACKUP_PASSPHRASE_FILE necesita al menos 12 caracteres (backup-format.ts exige lo mismo).");
+  }
+  if (process.platform !== "win32") {
+    try {
+      // El fichero lo crea la infraestructura, no nosotros: se avisa, no se
+      // corrige en silencio un permiso que su dueño puso a propósito.
+      if ((statSync(ruta).mode & 0o077) !== 0) {
+        console.warn(`[config] ${file} es legible por otros usuarios del equipo; debería tener permisos 0600.`);
+      }
+    } catch {
+      // Sistema de ficheros sin permisos POSIX: nada que avisar.
+    }
+  }
+  return frase;
+}
+const backupPassphrase = backupIntervalHours > 0 ? loadBackupPassphrase() : "";
 
 export const config = {
   port: int("PORT", 5000),
@@ -212,6 +281,15 @@ export const config = {
    * lo hospede. Por eso es una lista abierta y no una decisión tomada aquí:
    *   ICE_SERVERS=stun:stun.ejemplo.org:3478,turn:usuario:clave@turn.ejemplo.org:3478
    */
+  /** TURN propio con credenciales efímeras; validados arriba, juntos o ninguno. */
+  turnUrls,
+  turnSecret,
+
+  /** Copias programadas; validadas arriba, con la frase leída de su fichero. */
+  backupIntervalHours,
+  backupKeep,
+  backupPassphrase,
+
   iceServers: list("ICE_SERVERS", []).map((entry) => {
     const at = entry.lastIndexOf("@");
     if (at === -1) return { urls: entry };

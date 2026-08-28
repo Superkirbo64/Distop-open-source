@@ -20,6 +20,7 @@
  *           dónde pasan, no qué llevan.
  *   SFU   — reenvía y además procesa. No lo hay aquí (fase 3).
  */
+import { createHmac } from "node:crypto";
 import { config } from "./config.ts";
 import { meta, setMeta } from "./db.ts";
 import { badRequest } from "./http.ts";
@@ -51,6 +52,14 @@ interface Relay {
   url: string;
   username: string;
   credential: string;
+  /**
+   * Secreto compartido con un coturn en `use-auth-secret` (§9.4, §22).
+   * Con él, la instancia acuña credenciales que caducan solas en vez de
+   * repartir un usuario y contraseña fijos que cualquier miembro puede copiar
+   * y usar fuera de Distop hasta que alguien se acuerde de rotarlos. El secreto
+   * no sale de aquí jamás: al navegador solo viajan las credenciales derivadas.
+   */
+  secret: string;
   /** Cloudflare Realtime: la clave larga se queda aquí y nunca sale al navegador. */
   keyId: string;
   apiToken: string;
@@ -67,6 +76,7 @@ const DEFAULT: Relay = {
   url: "",
   username: "",
   credential: "",
+  secret: "",
   keyId: "",
   apiToken: "",
   appName: "",
@@ -89,6 +99,42 @@ function stored(): Relay {
 /** Si quien hospeda puso ICE_SERVERS a mano, manda eso: es una decisión explícita. */
 function fromEnv(): boolean {
   return config.iceServers.length > 0;
+}
+
+/**
+ * TURN por variables de entorno (TURN_URL + TURN_SECRET), pensado para el
+ * despliegue en nube: cloud-init genera el secreto, se lo da a coturn y a la
+ * instancia, y una edición desde la interfaz no podría rotar el de coturn —
+ * desincronizarlos en silencio sería peor que bloquear el panel. Por eso, si
+ * está, manda sobre lo guardado en la base y el panel aparece `locked`.
+ * config.ts ya garantizó al arrancar que van los dos juntos o ninguno (§33).
+ */
+function envTurnConfigured(): boolean {
+  return config.turnUrls.length > 0 && config.turnSecret !== "";
+}
+
+/**
+ * Credenciales efímeras del convenio REST de coturn (`use-auth-secret`).
+ *
+ * El usuario es `<caducidad-unix>:<etiqueta>` y la contraseña es
+ * base64(HMAC-SHA1(secreto, usuario)). HMAC-SHA1 no es una elección nuestra:
+ * es lo que coturn verifica, y un MAC con clave sobre credenciales de un día no
+ * depende de la resistencia a colisiones de SHA-1. La etiqueta es fija y
+ * anónima a propósito: /api/v1/info es anónimo, así que una etiqueta por
+ * usuario sería mentira.
+ *
+ * Se acuña por petición, sin caché: un HMAC sobre veinte bytes es gratis, y así
+ * cada visita recibe credenciales válidas 24 h completas desde ese momento.
+ */
+export function turnRestCredentials(
+  secret: string,
+  opts: { ttlS?: number; label?: string; nowMs?: number } = {},
+): { username: string; credential: string } {
+  const ttlS = opts.ttlS ?? TTL_SECONDS;
+  const nowMs = opts.nowMs ?? Date.now();
+  const username = `${Math.floor((nowMs + ttlS * 1000) / 1000)}:${opts.label ?? "distop"}`;
+  const credential = createHmac("sha1", secret).update(username).digest("base64");
+  return { username, credential };
 }
 
 /* ── proveedores con cuenta ───────────────────────────────────────────────
@@ -155,6 +201,11 @@ function configured(relay: Relay): boolean {
 
 export async function iceServers(): Promise<IceServer[]> {
   if (fromEnv()) return config.iceServers;
+  // El par TURN_URL/TURN_SECRET va después de ICE_SERVERS y antes que la base:
+  // es una decisión del despliegue, no del panel.
+  if (envTurnConfigured()) {
+    return [...STUN, { urls: config.turnUrls, ...turnRestCredentials(config.turnSecret) }];
+  }
   const relay = stored();
 
   if (configured(relay)) {
@@ -167,12 +218,20 @@ export async function iceServers(): Promise<IceServer[]> {
     }
   }
   if (relay.mode === "custom" && relay.url) {
-    return [...STUN, { urls: relay.url, username: relay.username, credential: relay.credential }];
+    if (relay.secret) {
+      return [...STUN, { urls: relay.url, ...turnRestCredentials(relay.secret) }];
+    }
+    if (relay.username || relay.credential) {
+      return [...STUN, { urls: relay.url, username: relay.username, credential: relay.credential }];
+    }
+    /* Sin secreto y sin credenciales, una entrada TURN "parece configurada" y
+       falla igual: mejor solo STUN, que al menos dice la verdad. */
   }
   return STUN;
 }
 
-/** Nunca devuelve secretos: ni la contraseña del TURN ni las claves de los proveedores. */
+/** Nunca devuelve secretos: ni la contraseña del TURN, ni las claves de los
+    proveedores, ni el secreto compartido de coturn. */
 export function relayState(): {
   mode: RelayMode;
   video: VideoMode;
@@ -181,6 +240,7 @@ export function relayState(): {
   keyId: string;
   appName: string;
   locked: boolean;
+  ephemeral: boolean;
 } {
   const relay = stored();
   return {
@@ -190,7 +250,10 @@ export function relayState(): {
     username: relay.username,
     keyId: relay.keyId,
     appName: relay.appName,
-    locked: fromEnv(),
+    locked: fromEnv() || envTurnConfigured(),
+    /* La interfaz necesita saber si las credenciales rotan solas, no el secreto
+       con el que rotan. */
+    ephemeral: envTurnConfigured() || (relay.mode === "custom" && relay.secret !== ""),
   };
 }
 
@@ -219,6 +282,11 @@ export async function setRelay(next: Partial<Relay>): Promise<ReturnType<typeof 
     // Un "stun:" donde va un TURN no relevaría nada: quedaría con aspecto de
     // configurado y fallando igual. Mejor rechazarlo que fingir.
     if (!/^turns?:/.test(relay.url)) throw badRequest("La dirección tiene que empezar por turn: o turns:");
+    // Dieciséis caracteres es el suelo, no una recomendación: un secreto corto
+    // convierte el HMAC en una contraseña adivinable por fuerza bruta.
+    if (relay.secret !== "" && relay.secret.length < 16) {
+      throw badRequest("El secreto compartido necesita al menos 16 caracteres.");
+    }
   } else {
     relay.mode = "direct";
     minted = null;

@@ -1087,6 +1087,8 @@ export const CAPABILITIES = [
   "meeting_calendar_v1",
   /** Turno de palabra arbitrado por el servidor (push-to-talk de reunión). */
   "push_to_talk_v1",
+  /** NodeInfo 2.1 en /.well-known/nodeinfo cuando el descubrimiento público está activo. */
+  "nodeinfo_v1",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];

@@ -49,12 +49,13 @@ export const PREFIJO_ADJUNTOS = "uploads/";
 /**
  * Lo que se quita de la copia, dicho en el manifiesto.
  *
- * `voice_relay` guarda credenciales de un TURN de pago. Es lo único de pago que
- * hay en todo el proyecto, es opcional, y quien lo tenga contratado lo paga de
- * su bolsillo: meterlo en un fichero que acabará en un disco externo o en el
- * correo de alguien significaría que quien encuentre esa copia factura a su
- * cuenta. Se apunta que falta, para que al restaurar nadie se pregunte por qué
- * la voz dejó de encontrar caminos: hay que volver a escribirlas.
+ * `voice_relay` guarda credenciales de relevo: las de un TURN de pago o el
+ * secreto compartido de un coturn propio (`use-auth-secret`). Meterlas en un
+ * fichero que acabará en un disco externo o en el correo de alguien
+ * significaría que quien encuentre esa copia factura a la cuenta del dueño o
+ * usa su relay para lo que quiera. Se apunta que falta, para que al restaurar
+ * nadie se pregunte por qué la voz dejó de encontrar caminos: hay que volver a
+ * escribirlas.
  */
 const CLAVES_META_REDACTADAS = ["voice_relay", "public.fixed"];
 

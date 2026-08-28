@@ -2,6 +2,8 @@
  * Estado observable de la instancia (§26).
  * Los fallos se nombran, no se esconden detrás de un mensaje genérico.
  */
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cpus, freemem, totalmem, loadavg } from "node:os";
 import { PROTOCOL_VERSION } from "@distop/protocol";
 import type { InstanceHealth, InstanceState } from "@distop/protocol";
@@ -11,7 +13,24 @@ import { integrityReport } from "./integrity.ts";
 import { storageFreeMb, storageUsedMb } from "./storage.ts";
 import { hostUserId } from "./auth.ts";
 
-export const VERSION = "0.1.0";
+/**
+ * La versión sale de package.json, no de una constante: la constante derivó dos
+ * veces porque las releases suben package.json y nadie se acuerda de este
+ * fichero. El respaldo existe para los empaquetados donde package.json puede no
+ * viajar junto a las fuentes (el motor Node embebido en el APK), misma razón
+ * que la variable WEB_DIST_PATH en server.ts.
+ */
+function versionDePackage(): string {
+  try {
+    const parsed = JSON.parse(readFileSync(join(import.meta.dirname, "package.json"), "utf8")) as { version?: unknown };
+    if (typeof parsed.version === "string" && parsed.version !== "") return parsed.version;
+  } catch {
+    // Sin package.json al lado: vale el respaldo.
+  }
+  return "0.1.2";
+}
+
+export const VERSION = versionDePackage();
 const STARTED_AT = Date.now();
 
 let state: InstanceState = "STARTING";
