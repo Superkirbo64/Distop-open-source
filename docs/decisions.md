@@ -124,3 +124,32 @@ Además se restauraron en `claude.md` las secciones §12 (bots, plugins) y §13
 (Minecraft) que un resumen anterior había reducido a punteros hacia skills
 inexistentes — esa pérdida de contexto fue la raíz de que estos tópicos
 quedaran fuera de los planes. No volver a resumirlas.
+
+## 2026-08: Oracle Cloud Always Free como despliegue de referencia en la nube (y no VPS de pago)
+
+Una comunidad hospedada en un PC se apaga con el PC, y §3 prohíbe depender de
+VPS pagos — el coste cero es regla dura, no aspiración. Oracle Cloud Always
+Free es la única capa gratuita vigente con una VM persistente capaz de correr
+la instancia entera (A1 de 1 OCPU/6 GB, IPv4 reservada, 10 TB de salida al
+mes): ni Workers ni Vercel pueden (§29.3 — la instancia mantiene WebSockets,
+SQLite y archivos en disco), y cualquier VPS de pago rompería la regla.
+
+Decisión: la referencia "siempre encendida" es una VM Always Free descrita en
+`docs/nube-oracle.md`, operada por el mismo dueño con Terraform + cloud-init,
+Caddy, coturn y copias cifradas que salen de la máquina (§21, §22). Es un
+**tercer modo opcional** junto al PC de casa y al teléfono — mismo dueño,
+mismos datos, coste cero — y no "Distop-en-la-nube": nadie hospeda por ti y no
+aparece ninguna plataforma central obligatoria.
+
+Consecuencias: sin SLA y con riesgo de reclamación por inactividad (tres
+condiciones en Y; el right-sizing legítimo la evita, la carga falsa no se
+acepta); detrás del proxy nada es "local", así que la copia por HTTP y el
+relevo web no existen ahí (§26 exige decirlo) — de ahí el planificador interno
+de copias y el restore por CLI; y la copia debe salir periódicamente de la
+cuenta de Oracle, porque una suspensión se lleva VM, IP y bucket a la vez.
+
+Consecuencia aceptada: el primer arranque compila desde el código en la VM
+(10–20 minutos) mientras no exista imagen Docker publicada, y la
+disponibilidad depende de un proveedor que puede cambiar sus cuotas cuando
+quiera. Mitigación: la comunidad nunca queda cautiva — copia cifrada portable,
+identidad exportable y el PC de casa sigue siendo el modo por defecto.

@@ -177,6 +177,13 @@ docker compose up --build
 Queda todo en **http://localhost:5000**: la misma instancia sirve la API, el gateway
 y el cliente compilado. Tus datos viven en `./data` — ese directorio **es** tu copia de seguridad.
 
+### Siempre encendida, gratis, en Oracle Cloud
+
+La misma instancia Docker en una VM del Always Free de Oracle: IP fija, HTTPS con
+Caddy, TURN propio y copias cifradas que salen de la máquina — para que la comunidad
+no se apague con tu PC, sin pagar nada y sabiendo qué puede fallar:
+**[docs/nube-oracle.md](docs/nube-oracle.md)**.
+
 ## Verificar
 
 ```bash
