@@ -100,6 +100,39 @@ WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THE DATA FILES OR
 SOFTWARE.
 
+## MediaPipe Tasks Vision and the Selfie Segmenter model
+
+The camera background feature (blur or replace what is behind you in a call)
+runs Google's MediaPipe Image Segmenter locally in the viewer's own browser. Two
+pieces come from Google:
+
+- The `@mediapipe/tasks-vision` npm package, whose WebAssembly runtime Vite
+  bundles into `dist/assets/`.
+- The Selfie Segmenter model (landscape, float16) checked in at
+  `apps/web/public/models/selfie_segmenter_landscape.tflite`, downloaded by
+  `scripts/fetch-segmenter-model.mjs`. It is versioned in the repository so that
+  cloning and self-hosting do not depend on Google continuing to serve the file,
+  and so that no request leaves the host mid-call.
+
+Copyright 2023 The MediaPipe Authors. Licensed under the Apache License,
+Version 2.0. A copy of the licence is available at
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+No image is sent anywhere: the segmentation runs on the viewer's own machine,
+and what the call transmits is the already-composed frame.
+
+**Unresolved before a release:** the MediaPipe repository is Apache-2.0 and
+several listings give that same licence to the model, but no licence file was
+found attached to the specific `.tflite` binary served from Google's storage. As
+Distop ships under AGPL-3.0 and that file is versioned inside the repository,
+confirm the model's licence before publishing a release. See
+`docs/fondo-de-camara.md`.
+
 ## Noto Emoji animations
 
 The Lottie animations in `apps/web/public/emoji-animated/`, played when an
