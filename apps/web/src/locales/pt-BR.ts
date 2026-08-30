@@ -185,6 +185,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "share.tailscale.ready": "O Tailscale está conectado. O próximo passo ativa o Funnel e mantém este endereço para sempre.",
   "share.tailscale.active": "Endereço fixo ativo. Ele sobrevive a reinicializações e os convites continuam usando a mesma URL.",
   "share.tailscale.error": "Ainda falta concluir uma etapa no Tailscale. Abra o link indicado e tente novamente.",
+  "share.tailscale.down": "Seu endereço fixo está escolhido, mas o Tailscale não o está publicando agora: ninguém chega ao seu servidor de fora. Toque em «Continuar / tentar de novo» para reativá-lo.",
   "share.tutorial.install": "Instale o Tailscale, crie sua conta e entre.",
   "share.tutorial.continue": "Clique em “Continuar / tentar novamente” aqui; não procure o Funnel no console.",
   "share.tutorial.authorize": "Se for necessária autorização, o Distop abre diretamente a página “Enable Funnel”.",

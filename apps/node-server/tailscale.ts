@@ -61,6 +61,28 @@ function status(bin: string): { running: boolean; url: string; error: string } {
   }
 }
 
+/**
+ * ¿Está el Funnel publicando de verdad?
+ *
+ * Guardar la dirección no la mantiene viva: `tailscale funnel --bg` sobrevive a
+ * reinicios de la instancia, pero no siempre a los de tailscaled, a una
+ * actualización o a un `funnel reset` de otro programa. Comparar la dirección
+ * guardada con la del nodo —lo único que se hacía— siempre daba «activa»,
+ * aunque no hubiera ninguna configuración de serve. La aplicación anunciaba una
+ * dirección muerta: las invitaciones no llevaban a ninguna parte y el índice
+ * público rechazaba la instancia por inalcanzable, las dos cosas en silencio.
+ */
+function funnelOn(bin: string): boolean {
+  const result = run(bin, ["serve", "status", "--json"]);
+  if (!result.ok) return false;
+  try {
+    const parsed = JSON.parse(result.output) as { AllowFunnel?: Record<string, boolean> };
+    return Object.values(parsed.AllowFunnel ?? {}).some(Boolean);
+  } catch {
+    return false;
+  }
+}
+
 function firstUrl(text: string): string {
   return text.match(/https:\/\/[^\s)\]]+/)?.[0]?.replace(/[.,;]+$/, "") ?? "";
 }
@@ -73,7 +95,10 @@ export function tailscaleState(): TailscaleState {
     return { step: 3, state: "login", url: "", error: current.error, hint_url: firstUrl(current.error) };
   }
   if (current.url && fixedPublicUrl() === current.url) {
-    return { step: 7, state: "active", url: current.url, error: "", hint_url: "" };
+    if (funnelOn(bin)) return { step: 7, state: "active", url: current.url, error: "", hint_url: "" };
+    /* La dirección está elegida pero nadie la sirve. Se vuelve al paso del
+       asistente, que ya tiene el botón de reintentar: pulsarlo la repara. */
+    return { step: 4, state: "ready", url: current.url, error: "TAILSCALE_FUNNEL_DOWN", hint_url: "" };
   }
   return { step: 4, state: "ready", url: current.url, error: "", hint_url: "" };
 }
@@ -125,5 +150,13 @@ export function restoreTailscale(): void {
   const bin = binary();
   if (!bin) return;
   const current = status(bin);
-  if (current.running) run(bin, ["funnel", "--bg", "--yes", String(config.port)], 30_000);
+  if (!current.running) {
+    console.warn("[funnel] Tailscale no está conectado: la dirección fija no publica nada hasta que lo esté.");
+    return;
+  }
+  run(bin, ["funnel", "--bg", "--yes", String(config.port)], 30_000);
+  /* Comprobar, no suponer: el intento se ignoraba y una instancia podía pasar
+     días anunciando una dirección que no servía nadie. */
+  if (funnelOn(bin)) console.log(`[funnel] publicando ${fixed} otra vez.`);
+  else console.warn(`[funnel] ${fixed} NO está publicada: Tailscale no aceptó activarla. Ábrelo en «Tu servidor» y pulsa reintentar.`);
 }

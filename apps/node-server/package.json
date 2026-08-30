@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env --watch server.ts",
     "start": "node --env-file-if-exists=../../.env server.ts",
-    "test": "node --test \"*.test.ts\""
+    "test": "node --env-file=.env.test --test \"*.test.ts\""
   },
   "dependencies": {
     "@distop/protocol": "*",

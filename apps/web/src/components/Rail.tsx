@@ -1038,7 +1038,7 @@ function ShareInstance() {
                 {t("share.officialTutorial")}
               </a>
               <p className="text-xs text-muted">
-                {t(tailscaleTextKey[tailscale?.state ?? "ready"])}
+                {t(tailscale?.error === "TAILSCALE_FUNNEL_DOWN" ? "share.tailscale.down" : tailscaleTextKey[tailscale?.state ?? "ready"])}
               </p>
               {tailscale?.url ? <code className="truncate rounded bg-sunken p-2 text-xs">{tailscale.url}</code> : null}
               {tailscale?.hint_url ? (

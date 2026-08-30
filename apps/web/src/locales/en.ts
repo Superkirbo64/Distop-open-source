@@ -182,6 +182,7 @@ export const en: Record<keyof typeof es, string> = {
   "share.tailscale.ready": "Tailscale is connected. The next step enables Funnel and keeps this address permanently.",
   "share.tailscale.active": "Fixed address active. It survives restarts and invites keep using the same URL.",
   "share.tailscale.error": "A Tailscale step still needs attention. Open the indicated link and retry.",
+  "share.tailscale.down": "Your fixed address is set, but Tailscale is not serving it right now: nobody can reach your server from outside. Press \"Continue / retry\" to bring it back up.",
   "share.tutorial.install": "Install Tailscale, create your account and sign in.",
   "share.tutorial.continue": "Press “Continue / retry” here; do not look for Funnel in the admin console.",
   "share.tutorial.authorize": "If authorization is needed, Distop opens the “Enable Funnel” page directly.",

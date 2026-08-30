@@ -185,6 +185,7 @@ export const es = {
   "share.tailscale.ready": "Tailscale está conectado. El siguiente paso activa Funnel y fija esta dirección para siempre.",
   "share.tailscale.active": "Dirección fija activa. Se conserva al reiniciar y las invitaciones seguirán usando la misma URL.",
   "share.tailscale.error": "Falta completar un paso en Tailscale. Abre el enlace indicado y vuelve a intentarlo.",
+  "share.tailscale.down": "Tu dirección fija está elegida pero Tailscale no la está publicando ahora mismo: nadie llega a tu servidor desde fuera. Pulsa «Continuar / reintentar» para volver a activarla.",
   "share.tutorial.install": "Instala Tailscale, crea tu cuenta e inicia sesión.",
   "share.tutorial.continue": "Pulsa «Continuar / reintentar» aquí; no busques Funnel en la consola.",
   "share.tutorial.authorize": "Si hace falta autorización, Distop abrirá directamente la página «Enable Funnel».",
