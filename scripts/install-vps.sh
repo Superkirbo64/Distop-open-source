@@ -4,7 +4,7 @@
 #   sha256sum -c install-vps.sh.sha256 && sudo bash install-vps.sh
 set -Eeuo pipefail
 
-VERSION="0.1.5"
+VERSION="0.1.4"
 IMAGE="ghcr.io/superkirbo64/distop"
 INSTANCE_NAME="Mi comunidad Distop"
 PUBLIC_URL=""
@@ -14,7 +14,7 @@ INSTALL_TAILSCALE=true
 usage() {
   cat <<'EOF'
 Uso: sudo bash install-vps.sh [opciones]
-  --version VERSION       Etiqueta de la imagen (por defecto 0.1.5)
+  --version VERSION       Etiqueta de la imagen (por defecto 0.1.4)
   --image IMAGEN          Imagen OCI alternativa
   --name NOMBRE           Nombre inicial de la instancia
   --public-url HTTPS_URL  URL estable si ya tienes proxy/dominio
@@ -39,15 +39,8 @@ done
 
 [ "${EUID:-$(id -u)}" -eq 0 ] || { echo "Ejecuta este script con sudo." >&2; exit 1; }
 [ -r /etc/os-release ] || { echo "No se pudo identificar el sistema." >&2; exit 1; }
-# /etc/os-release define VERSION, NAME e ID. Sourcearlo aquí dentro pisaba la
-# VERSION de Distop con la del sistema —"24.04.3 LTS (Noble Numbat)", con
-# espacios y paréntesis— y la validación de tres líneas más abajo la rechazaba:
-# el instalador moría con «VERSION no válida» en TODA máquina Ubuntu o Debian.
-# Se leen en un subshell los dos únicos campos que hacen falta, para que un
-# fichero que no controlamos no pueda volver a pisar nada nuestro.
-OS_ID=$(. /etc/os-release && printf '%s' "${ID:-}")
-OS_CODENAME=$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}")
-case "$OS_ID" in ubuntu|debian) ;; *) echo "Solo se admiten Ubuntu y Debian." >&2; exit 1 ;; esac
+. /etc/os-release
+case "${ID:-}" in ubuntu|debian) ;; *) echo "Solo se admiten Ubuntu y Debian." >&2; exit 1 ;; esac
 case "$(dpkg --print-architecture)" in amd64|arm64) ;; *) echo "Solo se admiten amd64 y arm64." >&2; exit 1 ;; esac
 case "$VERSION" in *[!A-Za-z0-9._-]*|'') echo "VERSION no válida." >&2; exit 2 ;; esac
 case "$IMAGE" in *[!a-z0-9./:_-]*|'') echo "IMAGEN no válida." >&2; exit 2 ;; esac
@@ -79,7 +72,18 @@ if $INSTALL_TAILSCALE && [ ! -x /usr/bin/tailscale ]; then
 fi
 
 install -d -m 0750 /etc/distop
-install -d -m 0750 /var/lib/distop
+# /etc/distop se queda de root: el fichero de entorno lo lee el cliente de
+# Docker en el host, antes de arrancar nada, y el contenedor nunca lo abre.
+#
+# /var/lib/distop NO puede quedarse de root. Se monta como /data y la imagen
+# corre con USER node —uid 1000, sin privilegios (§22)—, y en un montaje de este
+# tipo manda el dueño del host, no el chown que hizo el Dockerfile. Con root:root
+# 0750, SQLite no podía ni crear app.db: «unable to open database file», reinicio
+# en bucle, y una instalación de VPS que nunca llegó a levantar.
+#
+# Va el número y no el nombre a propósito: `node` es un usuario de la imagen,
+# no del host, así que aquí no existe y `chown node` fallaría.
+install -d -m 0750 -o 1000 -g 1000 /var/lib/distop
 ENV_FILE=/etc/distop/distop.env
 
 get_env() {
