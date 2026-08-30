@@ -4,10 +4,14 @@ on:
   push:
     paths:
       - "apps/directory/**"
+      - "deno.json"
+      - "deno.lock"
       - ".github/workflows/directory.yml"
   pull_request:
     paths:
       - "apps/directory/**"
+      - "deno.json"
+      - "deno.lock"
       - ".github/workflows/directory.yml"
 
 permissions:

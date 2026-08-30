@@ -1,0 +1,8 @@
+{
+  "//": "Solo para Deno. El monorepo es de npm; aquí únicamente vive apps/directory, el índice público que corre en Deno Deploy. Deno Deploy lee los miembros del workspace desde este fichero: sin él no encuentra la carpeta. Las compilerOptions van en la raíz porque en un workspace de Deno las de un miembro se ignoran.",
+  "workspace": ["./apps/directory"],
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.ns", "deno.unstable", "dom", "es2023"]
+  }
+}

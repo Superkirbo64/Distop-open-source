@@ -1,0 +1,102 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@std/assert@1": "1.0.19",
+    "jsr:@std/internal@^1.0.12": "1.0.14"
+  },
+  "jsr": {
+    "@std/assert@1.0.19": {
+      "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.14": {
+      "integrity": "291516b3d4c35024d6ffbc0a9df5bf4c64116e05b50012cf846710152d2ffdf7"
+    }
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:concurrently@9.1.2",
+        "npm:typescript@5.7.3"
+      ]
+    },
+    "members": {
+      "apps/desktop": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@types/node@22.10.5",
+            "npm:electron-builder@^26.0.12",
+            "npm:electron-updater@^6.6.2",
+            "npm:electron@40.10.6"
+          ]
+        }
+      },
+      "apps/marketing": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@astrojs/check@0.9.6",
+            "npm:@fontsource-variable/inter@5.3.0",
+            "npm:@fontsource/press-start-2p@5.3.0",
+            "npm:@fontsource/silkscreen@5.3.0",
+            "npm:astro@7.1.6",
+            "npm:gsap@3.15.0",
+            "npm:lenis@1.3.25"
+          ]
+        }
+      },
+      "apps/mobile": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@capacitor/android@^7.4.0",
+            "npm:@capacitor/assets@^3.0.5",
+            "npm:@capacitor/cli@^7.4.0",
+            "npm:@capacitor/core@^7.4.0",
+            "npm:node-sqlite3-wasm@~0.8.60"
+          ]
+        }
+      },
+      "apps/node-server": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@distop/protocol@*",
+            "npm:@types/node@22.10.5",
+            "npm:@types/ws@8.5.13",
+            "npm:ws@8.21.3"
+          ]
+        }
+      },
+      "apps/web": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@capacitor/core@^7.6.8",
+            "npm:@distop/protocol@*",
+            "npm:@fontsource-variable/bricolage-grotesque@5.3.0",
+            "npm:@fontsource-variable/inter@5.3.0",
+            "npm:@fontsource/press-start-2p@5.3.0",
+            "npm:@fontsource/silkscreen@5.3.0",
+            "npm:@mediapipe/tasks-vision@1.0.1",
+            "npm:@tailwindcss/vite@4.3.3",
+            "npm:@tsparticles/engine@^4.3.2",
+            "npm:@tsparticles/plugin-interactivity@^4.3.2",
+            "npm:@tsparticles/preset-bubbles@^4.3.2",
+            "npm:@tsparticles/preset-fireworks@^4.3.2",
+            "npm:@tsparticles/preset-snow@^4.3.2",
+            "npm:@tsparticles/react@^4.3.2",
+            "npm:@types/react-dom@19.0.3",
+            "npm:@types/react@19.0.7",
+            "npm:@vitejs/plugin-react@4.3.4",
+            "npm:lottie-web@5.13.0",
+            "npm:lucide-react@0.469.0",
+            "npm:react-dom@19.0.0",
+            "npm:react@19.0.0",
+            "npm:tailwindcss@4.3.3",
+            "npm:vite@6.4.3",
+            "npm:zustand@5.0.3"
+          ]
+        }
+      }
+    }
+  }
+}
