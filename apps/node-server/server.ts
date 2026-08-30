@@ -3,10 +3,11 @@
  * Un solo proceso: API v1 + gateway en tiempo real + (si existe el build) el
  * cliente web. Así self-hostear es "docker compose up", no orquestar tres cosas.
  */
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createGzip } from "node:zlib";
 import { createServer } from "node:http";
-import { extname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { extname, join, resolve, sep } from "node:path";
 import { config } from "./config.ts";
 import { countOwners, hostUserId, pruneSessions } from "./auth.ts";
 import { closeDatabase } from "./db.ts";
@@ -29,6 +30,57 @@ import "./api.ts"; // registra las rutas
    como el motor Node embebido en el APK de Android. */
 const WEB_DIST = process.env.WEB_DIST_PATH ? resolve(process.env.WEB_DIST_PATH) : resolve(import.meta.dirname, "..", "web", "dist");
 const hasClient = existsSync(join(WEB_DIST, "index.html"));
+
+/**
+ * Cabeceras del documento que ejecuta todo el cliente (§22).
+ *
+ * La API ya las mandaba; la página que corre el JavaScript, no: salía con
+ * `nosniff` y nada más. Sin `frame-ancestors` cualquier web podía meter Distop
+ * en un iframe invisible y cazar clics sobre «expulsar» o «borrar comunidad».
+ *
+ * El hash del script en línea —el que evita el parpadeo de tema— se calcula al
+ * arrancar leyendo el propio index.html, para que la política no caduque cada
+ * vez que ese script cambie.
+ *
+ * `connect-src` queda abierto a propósito y no por descuido: el cliente habla
+ * con la instancia que elija cada persona, con otras instancias del índice y
+ * con las galerías de la propia instancia. Una lista cerrada aquí sería falsa.
+ */
+function documentPolicy(): string {
+  const hashes: string[] = [];
+  try {
+    const html = readFileSync(join(WEB_DIST, "index.html"), "utf8");
+    for (const found of html.matchAll(/<script(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g)) {
+      /* El navegador normaliza los saltos de línea del script antes de calcular
+         su hash. Con un index.html en CRLF —lo normal en Windows— el hash del
+         fichero no coincide con el suyo y bloquea el script sin decir por qué. */
+      const cuerpo = (found[1] ?? "").replace(/\r\n?/g, "\n");
+      hashes.push(`'sha256-${createHash("sha256").update(cuerpo, "utf8").digest("base64")}'`);
+    }
+  } catch {
+    /* Sin cliente compilado no hay documento que proteger. */
+  }
+  return [
+    "default-src 'self'",
+    "base-uri 'none'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    `script-src 'self' 'wasm-unsafe-eval' ${hashes.join(" ")}`.trim(),
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https:",
+    "media-src 'self' data: blob: https:",
+    "font-src 'self' data:",
+    "worker-src 'self' blob:",
+    "connect-src * data: blob:",
+  ].join("; ");
+}
+
+const DOCUMENT_HEADERS: Record<string, string> = {
+  "content-security-policy": documentPolicy(),
+  "x-frame-options": "DENY",
+  "referrer-policy": "no-referrer",
+};
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -65,7 +117,11 @@ function serveStatic(req: import("node:http").IncomingMessage, res: import("node
   const pathname = (req.url ?? "/").split("?")[0]!;
 
   const candidate = resolve(WEB_DIST, `.${decodeURIComponent(pathname)}`);
-  const isAsset = candidate.startsWith(WEB_DIST) && existsSync(candidate) && statSync(candidate).isFile();
+  /* Con `startsWith` a secas, una carpeta hermana llamada `dist-viejo` o un
+     `dist.zip` cumplían el prefijo y se servían enteros sin pedir nada. El
+     separador es lo que convierte el prefijo en «dentro de». */
+  const dentro = candidate === WEB_DIST || candidate.startsWith(WEB_DIST + sep);
+  const isAsset = dentro && existsSync(candidate) && statSync(candidate).isFile();
   // SPA: cualquier ruta desconocida devuelve el shell y el router del cliente decide.
   const file = isAsset ? candidate : join(WEB_DIST, "index.html");
   const ext = extname(file);
@@ -74,6 +130,7 @@ function serveStatic(req: import("node:http").IncomingMessage, res: import("node
 
   res.writeHead(200, {
     "content-type": MIME[ext] ?? "application/octet-stream",
+    ...(ext === ".html" ? DOCUMENT_HEADERS : {}),
     "cache-control": isAsset && ext !== ".html" ? "public, max-age=31536000, immutable" : "no-cache",
     "x-content-type-options": "nosniff",
     vary: "accept-encoding",
