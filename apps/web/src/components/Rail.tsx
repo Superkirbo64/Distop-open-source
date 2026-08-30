@@ -5,11 +5,12 @@
  */
 import { useState } from "react";
 import { useEffect, useMemo } from "react";
-import { Link as LinkIcon, Server } from "lucide-react";
-import { Compass, Cross } from "./icons.tsx";
+import { Bell, Compass, Cross, ServerCog } from "./icons.tsx";
 import { useStore } from "../store.ts";
+import { unreadNotices } from "../lib/notices.ts";
 import { Button, ErrorNote, ExternalLinkButton, Field, IconButton, Modal, Select, Spinner, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
 import { Explore } from "./Explore.tsx";
+import { Notices } from "./Notices.tsx";
 import { api } from "../lib/api.ts";
 import { CLOUD_GUIDE_URL, RASPBERRY_GUIDE_URL, VPS_INSTALL_GUIDE_URL, detectLane, hasStablePublicAddress } from "../lib/publish.ts";
 import { describeSchedule, sortBackupFiles, type BackupJob, type BackupsView } from "../lib/backups.ts";
@@ -63,6 +64,7 @@ export function Rail({
 }) {
   const t = useT();
   const communities = useStore((s) => s.communities);
+  const sinLeer = useStore((s) => unreadNotices(s.notices));
   const activeId = useStore((s) => s.activeCommunityId);
   const openCommunity = useStore((s) => s.openCommunity);
   const user = useStore((s) => s.user);
@@ -70,6 +72,7 @@ export function Rail({
 
   const [status, setStatus] = useState(false);
   const [explore, setExplore] = useState(false);
+  const [notices, setNotices] = useState(false);
   const [knownRevision, setKnownRevision] = useState(0);
   const [unavailable, setUnavailable] = useState<{ community: CachedCommunity; url: string } | null>(null);
 
@@ -168,21 +171,29 @@ export function Rail({
         <Cross size={20} />
       </IconButton>
 
-      <IconButton label={t("community.join")} onClick={onJoin} className="h-10 w-10">
-        <LinkIcon size={18} />
-      </IconButton>
 
       <IconButton label={t("explore.open")} onClick={() => setExplore(true)} className="h-10 w-10">
         <Compass size={18} />
       </IconButton>
 
+      {/* Historial de avisos. Junto al del servidor porque las dos cosas
+          responden a la misma pregunta: ¿qué ha pasado mientras no miraba? */}
+      <IconButton label={t("notice.title")} onClick={() => setNotices(true)} className="relative h-10 w-10">
+        <Bell size={18} />
+        {sinLeer > 0 ? (
+          <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-accent" aria-hidden />
+        ) : null}
+        {sinLeer > 0 ? <span className="sr-only">{t("notice.unread", { count: sinLeer })}</span> : null}
+      </IconButton>
+
       <IconButton label={t("instance.status")} onClick={() => setStatus(true)} className="h-10 w-10">
-        <Server size={18} />
+        <ServerCog size={18} />
       </IconButton>
       <ConnectionDot />
 
       <InstanceStatus open={status} onClose={() => setStatus(false)} />
-      <Explore open={explore} onClose={() => setExplore(false)} />
+      <Notices open={notices} onClose={() => setNotices(false)} />
+      <Explore open={explore} onClose={() => setExplore(false)} onJoinWithLink={onJoin} />
       <UnavailableCommunity
         target={unavailable}
         user={user}

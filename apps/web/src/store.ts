@@ -30,8 +30,9 @@ import type {
 } from "@distop/protocol";
 import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
 import { connect, disconnect, onEvent, onStatus, sendCommand, type ConnectionStatus } from "./lib/gateway.ts";
-import { detectLocale, loadLocale, type Locale } from "./i18n.ts";
+import { detectLocale, loadLocale, translate, type Locale, type MessageKey } from "./i18n.ts";
 import { notify, setSoundsEnabled, type NotifyLevel } from "./lib/notify.ts";
+import { addNotice, loadNotices, saveNotices, type Notice, type NoticeKind } from "./lib/notices.ts";
 import { configureVoice, currentChannel, handleSignal, leaveVoice, rejectVoiceJoin, resumeVoice, setSoundError, setVideoMode, setVoiceMode, syncPeers } from "./lib/voice.ts";
 import { playClip } from "./lib/relay.ts";
 import { onRecordingUpdate } from "./lib/record.ts";
@@ -185,6 +186,8 @@ interface State {
   setStageLayout: (layout: State["stageLayout"]) => void;
 
   communities: Community[];
+  /** Historial de avisos, del más nuevo al más viejo. */
+  notices: Notice[];
   data: Record<string, CommunityData>;
   messages: Record<string, Message[]>;
   hasMore: Record<string, boolean>;
@@ -224,6 +227,9 @@ interface State {
   send: (channelId: string, content: string, attachmentIds: string[], replyToId: string | null) => Promise<void>;
   notifyTyping: (channelId: string) => void;
   markRead: (channelId: string) => void;
+  pushNotice: (input: { kind: NoticeKind; title: string; body: string; target?: Notice["target"] }) => void;
+  readNotices: () => void;
+  clearNotices: () => void;
   /** Poner al día un canal que quizá ni se ha abierto (menú de la barra lateral). */
   catchUp: (channelId: string) => Promise<void>;
   loadExpressions: () => Promise<void>;
@@ -376,6 +382,7 @@ export const useStore = create<State>()((set, get) => ({
   tuner: false,
 
   communities: [],
+  notices: loadNotices(),
   data: {},
   messages: {},
   hasMore: {},
@@ -681,6 +688,37 @@ export const useStore = create<State>()((set, get) => ({
    * El contador se apaga aquí sin esperar a la instancia —la barra lateral tiene
    * que responder al instante—, y READ_UPDATE lo confirma para las demás pestañas.
    */
+  /**
+   * Deja constancia de algo que ha pasado y lo asoma en pantalla.
+   *
+   * Todo lo que avisa pasa por aquí: así el historial no se queda a medias y
+   * añadir un aviso nuevo no obliga a tocar la interfaz.
+   */
+  pushNotice(input) {
+    const notice: Notice = {
+      id: crypto.randomUUID(),
+      kind: input.kind,
+      title: input.title,
+      body: input.body,
+      at: Date.now(),
+      read: false,
+      target: input.target,
+    };
+    const notices = addNotice(get().notices, notice);
+    saveNotices(notices);
+    set({ notices });
+  },
+
+  readNotices() {
+    const notices = get().notices.map((notice) => (notice.read ? notice : { ...notice, read: true }));
+    saveNotices(notices);
+    set({ notices });
+  },
+
+  clearNotices() {
+    saveNotices([]);
+    set({ notices: [] });
+  },
   markRead(channelId) {
     const state = get();
     const list = state.messages[channelId];
@@ -741,11 +779,33 @@ export const useStore = create<State>()((set, get) => ({
   },
 }));
 
+/** Traducir fuera de React: el store avisa, y un aviso en inglés fijo sería peor. */
+function mensaje(key: MessageKey, vars?: Record<string, string | number>): string {
+  return translate(useStore.getState().prefs.locale, key, vars);
+}
+
 /* ── el gateway alimenta el estado ─────────────────────────────────── */
 
 onStatus((status) => {
+  const anterior = useStore.getState().status;
   useStore.setState({ status });
   if (status !== "online") void setDesktopAvailabilityStatus(false);
+  /* Solo los dos bordes: perder el servidor y recuperarlo. Avisar de cada
+     intento de reconexión sería ruido en mitad de un problema. */
+  if (anterior === "online" && status === "offline") {
+    useStore.getState().pushNotice({
+      kind: "instance",
+      title: mensaje("notice.offlineTitle"),
+      body: mensaje("notice.offlineBody"),
+    });
+  }
+  if (anterior !== "online" && anterior !== "connecting" && status === "online") {
+    useStore.getState().pushNotice({
+      kind: "instance",
+      title: mensaje("notice.onlineTitle"),
+      body: mensaje("notice.onlineBody"),
+    });
+  }
 });
 
 onEvent((event: ServerEvent) => {
@@ -835,6 +895,17 @@ onEvent((event: ServerEvent) => {
         sound: state.prefs.sounds,
         onClick: () => void useStore.getState().openChannel(message.channel_id),
       });
+
+      /* El mismo criterio que la notificación del sistema: si tienes puesto
+         «solo menciones», el historial tampoco se llena de todo lo demás. */
+      if (state.prefs.notify === "all" || mention) {
+        useStore.getState().pushNotice({
+          kind: mention ? "mention" : "message",
+          title: channel ? `#${channel.name}` : (data?.community.name ?? ""),
+          body: `${author?.nickname ?? author?.user.display_name ?? "…"}: ${message.content || "…"}`,
+          target: { channelId: message.channel_id, communityId: message.community_id },
+        });
+      }
       return;
     }
 
@@ -1052,6 +1123,19 @@ onEvent((event: ServerEvent) => {
     case "MEMBER_UPDATE": {
       const data = state.data[event.d.community_id];
       if (!data) return;
+      /* Que alguien acepte tu invitación es la razón por la que la mandaste:
+         enterarte al volver, y no solo si mirabas la lista, es el mínimo. */
+      if (event.t === "MEMBER_JOIN" && event.d.user.id !== state.user?.id) {
+        useStore.getState().pushNotice({
+          kind: "member",
+          title: mensaje("notice.memberTitle"),
+          body: mensaje("notice.memberBody", {
+            name: event.d.nickname ?? event.d.user.display_name,
+            community: data.community.name,
+          }),
+          target: { communityId: event.d.community_id },
+        });
+      }
       const members = data.members.some((m) => m.user.id === event.d.user.id)
         ? data.members.map((m) => (m.user.id === event.d.user.id ? event.d : m))
         : [...data.members, event.d];

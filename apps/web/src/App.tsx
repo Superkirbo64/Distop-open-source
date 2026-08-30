@@ -6,6 +6,7 @@
 import { Suspense, lazy, useEffect, useState } from "react";
 import { useStore } from "./store.ts";
 import { CreateCommunity, JoinCommunity, Rail } from "./components/Rail.tsx";
+import { NoticeToaster } from "./components/Notices.tsx";
 import { Sidebar } from "./components/Sidebar.tsx";
 import { VoiceBar } from "./components/Voice.tsx";
 import { UserBar } from "./components/UserBar.tsx";
@@ -372,6 +373,8 @@ export function App() {
       data-members={membersOpen ? "on" : "off"}
       data-right={voiceChat ? "voice-chat" : "members"}
     >
+      {/* Fuera de la rejilla: se pinta encima de todo y no empuja nada. */}
+      <NoticeToaster />
       <Rail onNavigate={() => setMobilePane("main")} onCreate={() => setCreating(true)} onJoin={() => setJoining(true)} />
 
       <Sidebar

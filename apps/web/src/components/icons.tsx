@@ -5,6 +5,9 @@
  * (MIT + Commons Clause; ver THIRD_PARTY_NOTICES.md):
  * https://github.com/imskyleen/animate-ui/tree/main/apps/www/registry/icons
  *
+ * La campana y el server-cog vienen de pqoqubbw/icons (MIT), con la misma
+ * geometría de Lucide y su coreografía traducida a CSS como el resto.
+ *
  * Las coreografías viven en styles.css (bloque "Iconos animados"), no aquí:
  * antes las orquestaba motion/react con listeners sobre el botón ancestro, y
  * este fichero era su único importador en todo el repo — moverlas a CSS saca
@@ -151,6 +154,41 @@ export function Compass({ size = 18, className }: IconProps) {
     <svg width={size} height={size} className={cls("ai ai-compass", className)} {...svgProps}>
       <circle cx={12} cy={12} r={10} />
       <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" data-anim="needle" />
+    </svg>
+  );
+}
+
+/** Animate UI: bell. La cúpula se balancea y el badajo va a contratiempo. */
+export function Bell({ size = 18, className }: IconProps) {
+  return (
+    <svg width={size} height={size} className={cls("ai ai-bell", className)} {...svgProps}>
+      <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" data-anim="dome" />
+      <path d="M10.268 21a2 2 0 0 0 3.464 0" data-anim="clapper" />
+    </svg>
+  );
+}
+
+/**
+ * pqoqubbw/icons: server-cog. La caja se queda quieta y solo gira el engranaje,
+ * que es lo que se lee como «esto se está configurando» y no como «esto se cae».
+ */
+export function ServerCog({ size = 18, className }: IconProps) {
+  return (
+    <svg width={size} height={size} className={cls("ai ai-server-cog", className)} {...svgProps}>
+      <g data-anim="cog">
+        <path d="m10.852 14.772-.383.923" />
+        <path d="M13.148 14.772a3 3 0 1 0-2.296-5.544l-.383-.923" />
+        <path d="m13.148 9.228.383-.923" />
+        <path d="m13.53 15.696-.382-.924a3 3 0 1 1-2.296-5.544" />
+        <path d="m14.772 10.852.923-.383" />
+        <path d="m14.772 13.148.923.383" />
+        <path d="m9.228 10.852-.923-.383" />
+        <path d="m9.228 13.148-.923.383" />
+      </g>
+      <path d="M4.5 10H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-.5" />
+      <path d="M4.5 14H4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-.5" />
+      <path d="M6 18h.01" />
+      <path d="M6 6h.01" />
     </svg>
   );
 }

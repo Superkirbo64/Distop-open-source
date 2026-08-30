@@ -18,7 +18,14 @@ application, website, or product, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
-### Commons Clause Restriction
+### pqoqubbw/icons
+
+Las coreografías de `Bell`, `ServerCog` y el giro de la brújula en
+`apps/web/src/components/icons.tsx` están portadas de
+[pqoqubbw/icons](https://github.com/pqoqubbw/icons) (MIT). La geometría es de
+Lucide (ISC); la animación se reescribió en CSS para no traer motion/react.
+
+## Commons Clause Restriction
 
 You may use this Software, including for any commercial purpose, so long as you
 do not sell or redistribute the components themselves in their original

@@ -5,13 +5,14 @@ import { api } from "../lib/api.ts";
 import { collectDirectory, directorySources, enterDirectoryCommunity, type DirectoryListing } from "../lib/directory.ts";
 import { Button, EmptyState, ErrorNote, Modal, Spinner, useErrorText, useT } from "./ui.tsx";
 
-export function Explore({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function Explore({ open, onClose, onJoinWithLink }: { open: boolean; onClose: () => void; onJoinWithLink?: () => void }) {
   const t = useT();
   const errorText = useErrorText();
   const enabled = useStore((s) => s.publicDiscoveryEnabled);
   const directoryUrl = useStore((s) => s.directoryUrl);
   const reloadCommunities = useStore((s) => s.reloadCommunities);
   const openCommunity = useStore((s) => s.openCommunity);
+  const mine = useStore((s) => s.communities);
 
   const [isHost, setIsHost] = useState(false);
   const [listing, setListing] = useState<DirectoryListing | null>(null);
@@ -69,7 +70,13 @@ export function Explore({ open, onClose }: { open: boolean; onClose: () => void 
                     {community.origin ? ` · ${new URL(community.origin).host}` : ""}
                   </p>
                 </div>
-                {community.join_policy === "open" || community.join_policy === "request" ? (
+                {mine.some((item) => item.id === community.id) ? (
+                  /* Tu propia comunidad también aparece aquí en cuanto la publicas.
+                     Ofrecer «Entrar» a un sitio donde ya estás no significa nada. */
+                  <Button variant="ghost" onClick={() => { void openCommunity(community.id); onClose(); }}>
+                    {t("explore.openMine")}
+                  </Button>
+                ) : community.join_policy === "open" || community.join_policy === "request" ? (
                   <Button
                     variant="primary"
                     disabled={joining !== null}
@@ -107,6 +114,14 @@ export function Explore({ open, onClose }: { open: boolean; onClose: () => void 
             ))}
           </ul>
           {joinError ? <ErrorNote>{joinError}</ErrorNote> : null}
+          {onJoinWithLink ? (
+            /* Vivía en el carril, entre los iconos de comunidades. Su sitio es
+               este: quien no encuentra la suya en la lista es quien tiene un
+               enlace en el bolsillo. */
+            <Button variant="ghost" onClick={() => { onClose(); onJoinWithLink(); }}>
+              {t("community.join")}
+            </Button>
+          ) : null}
         </div>
       )}
     </Modal>

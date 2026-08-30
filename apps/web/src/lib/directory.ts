@@ -129,7 +129,11 @@ export async function collectDirectory(sources: DirectorySource[]): Promise<Dire
     const source = sources[index]!;
     if (result.status === "fulfilled") {
       for (const community of result.value) {
-        const key = `${community.instance_id ?? community.origin ?? source.id}:${community.id}`;
+        /* Por id a secas: son únicos en todo el mundo (§20). Con el nodo dentro
+           de la clave, tu propia comunidad salía dos veces en cuanto la
+           publicabas —una por la instancia y otra por el índice— y la segunda
+           te ofrecía «Entrar» en un sitio donde ya estás. */
+        const key = community.id;
         if (seen.has(key)) continue;
         seen.add(key);
         communities.push(community);
