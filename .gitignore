@@ -6,6 +6,9 @@ data/
 .env.local
 *.log
 .DS_Store
+# bytecode de los scripts sueltos de Python que se usan de andamio y se tiran
+__pycache__/
+*.pyc
 
 # app de escritorio: artefactos de electron-builder y protocolo transpilado
 apps/desktop/release/
