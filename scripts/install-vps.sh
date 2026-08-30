@@ -39,8 +39,15 @@ done
 
 [ "${EUID:-$(id -u)}" -eq 0 ] || { echo "Ejecuta este script con sudo." >&2; exit 1; }
 [ -r /etc/os-release ] || { echo "No se pudo identificar el sistema." >&2; exit 1; }
-. /etc/os-release
-case "${ID:-}" in ubuntu|debian) ;; *) echo "Solo se admiten Ubuntu y Debian." >&2; exit 1 ;; esac
+# /etc/os-release define VERSION, NAME e ID. Sourcearlo aquí dentro pisaba la
+# VERSION de Distop con la del sistema —"24.04.3 LTS (Noble Numbat)", con
+# espacios y paréntesis— y la validación de tres líneas más abajo la rechazaba:
+# el instalador moría con «VERSION no válida» en TODA máquina Ubuntu o Debian.
+# Se leen en un subshell los dos únicos campos que hacen falta, para que un
+# fichero que no controlamos no pueda volver a pisar nada nuestro.
+OS_ID=$(. /etc/os-release && printf '%s' "${ID:-}")
+OS_CODENAME=$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}")
+case "$OS_ID" in ubuntu|debian) ;; *) echo "Solo se admiten Ubuntu y Debian." >&2; exit 1 ;; esac
 case "$(dpkg --print-architecture)" in amd64|arm64) ;; *) echo "Solo se admiten amd64 y arm64." >&2; exit 1 ;; esac
 case "$VERSION" in *[!A-Za-z0-9._-]*|'') echo "VERSION no válida." >&2; exit 2 ;; esac
 case "$IMAGE" in *[!a-z0-9./:_-]*|'') echo "IMAGEN no válida." >&2; exit 2 ;; esac
@@ -58,14 +65,14 @@ if ! command -v docker >/dev/null 2>&1; then apt-get install -y docker.io; fi
 systemctl enable --now docker
 
 if $INSTALL_TAILSCALE && [ ! -x /usr/bin/tailscale ]; then
-  CODENAME="${VERSION_CODENAME:-}"
+  CODENAME="$OS_CODENAME"
   [ -n "$CODENAME" ] || { echo "La versión no expone VERSION_CODENAME; usa --no-tailscale." >&2; exit 1; }
   install -d -m 0755 /usr/share/keyrings
   curl --fail --silent --show-error --location \
-    "https://pkgs.tailscale.com/stable/${ID}/${CODENAME}.noarmor.gpg" \
+    "https://pkgs.tailscale.com/stable/${OS_ID}/${CODENAME}.noarmor.gpg" \
     --output /usr/share/keyrings/tailscale-archive-keyring.gpg
   curl --fail --silent --show-error --location \
-    "https://pkgs.tailscale.com/stable/${ID}/${CODENAME}.tailscale-keyring.list" \
+    "https://pkgs.tailscale.com/stable/${OS_ID}/${CODENAME}.tailscale-keyring.list" \
     --output /etc/apt/sources.list.d/tailscale.list
   apt-get update
   apt-get install -y tailscale
