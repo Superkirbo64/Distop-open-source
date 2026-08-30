@@ -27,7 +27,7 @@ function versionDePackage(): string {
   } catch {
     // Sin package.json al lado: vale el respaldo.
   }
-  return "0.1.4";
+  return "0.1.5";
 }
 
 export const VERSION = versionDePackage();

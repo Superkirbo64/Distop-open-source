@@ -4,7 +4,7 @@
 #   sha256sum -c install-vps.sh.sha256 && sudo bash install-vps.sh
 set -Eeuo pipefail
 
-VERSION="0.1.4"
+VERSION="0.1.5"
 IMAGE="ghcr.io/superkirbo64/distop"
 INSTANCE_NAME="Mi comunidad Distop"
 PUBLIC_URL=""
@@ -14,7 +14,7 @@ INSTALL_TAILSCALE=true
 usage() {
   cat <<'EOF'
 Uso: sudo bash install-vps.sh [opciones]
-  --version VERSION       Etiqueta de la imagen (por defecto 0.1.4)
+  --version VERSION       Etiqueta de la imagen (por defecto 0.1.5)
   --image IMAGEN          Imagen OCI alternativa
   --name NOMBRE           Nombre inicial de la instancia
   --public-url HTTPS_URL  URL estable si ya tienes proxy/dominio
