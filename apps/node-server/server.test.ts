@@ -554,3 +554,32 @@ test("el backfill avanza aunque el primer archivo haya desaparecido", async () =
   const row = db.prepare("SELECT content_hash FROM attachments WHERE id = ?").get(validId) as { content_hash: string };
   assert.match(row.content_hash, /^sha256:[0-9a-f]{64}$/);
 });
+
+test("el índice público se enciende y se apaga desde la aplicación", async () => {
+  /* Antes esto solo se podía tocar con PUBLIC_DISCOVERY_ENABLED en el entorno,
+     que en la aplicación de escritorio no existe: marcar una comunidad como
+     pública no hacía nada y nadie decía por qué. */
+  const ana = await call("POST", "/api/v1/auth/login", {
+    body: { username: "ana", password: "contrasena-larga-1" },
+  });
+  const anfitriona = ana.json.access_token as string;
+
+  const apagar = await call("PUT", "/api/v1/instance/discovery", { token: anfitriona, body: { enabled: false } });
+  assert.equal(apagar.json.enabled, false);
+  const apagado = await call("GET", "/api/v1/discovery");
+  assert.deepEqual(apagado.json, [], "apagado, el índice local no enseña ninguna comunidad");
+  assert.equal((await call("GET", "/api/v1/info")).json.public_discovery_enabled, false);
+
+  const forastera = await call("POST", "/api/v1/auth/register", {
+    body: { username: "curiosa", password: "contrasena-larga-8" },
+  });
+  const ajena = await call("PUT", "/api/v1/instance/discovery", {
+    token: forastera.json.access_token,
+    body: { enabled: true },
+  });
+  assert.equal(ajena.status, 403, "no lo enciende quien no hospeda");
+
+  const encender = await call("PUT", "/api/v1/instance/discovery", { token: anfitriona, body: { enabled: true } });
+  assert.equal(encender.json.enabled, true);
+  assert.ok((await call("GET", "/api/v1/discovery")).json.length > 0, "y vuelve a enseñarlas");
+});

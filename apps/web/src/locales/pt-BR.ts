@@ -161,6 +161,8 @@ export const ptBR: Record<keyof typeof es, string> = {
   "share.autostart": "Abrir o link público ao iniciar",
   "share.autostartHint":
     "Sua comunidade ficará acessível pela internet enquanto o aplicativo estiver aberto. Se desligar, só funciona neste computador até você abrir na mão.",
+  "share.discovery": "Aparecer no índice público",
+  "share.discoveryHint": "Deixa as comunidades que você marcar como públicas se anunciarem no Explorar, para qualquer pessoa encontrá-las. Só vão o nome, a descrição e o endereço; nunca as mensagens nem os arquivos. Ao desligar, saem do índice na hora.",
   "share.closeLink": "Fechar o link público",
   "share.opening": "Abrindo o túnel…",
   "share.needsCloudflared":
@@ -271,6 +273,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "community.joinPolicy.invite": "Só com convite",
   "community.joinPolicy.request": "Solicitar acesso",
   "community.publicStableHint": "Para aparecer no Explorar global, a instância precisa de um endereço fixo: Tailscale Funnel, domínio próprio ou PUBLIC_URL. O túnel rápido da Cloudflare muda ao reiniciar e não é publicado.",
+  "community.publicIndexOff": "Esta instância ainda não se anuncia no índice público: ligue isso em «Seu servidor» e a comunidade aparecerá no Explorar. Até lá, marcá-la como pública só a torna visível aqui dentro.",
   "community.publicStableOk": "Seu endereço {host} é fixo: salva como pública, a comunidade aparece no Explorar global em alguns minutos.",
   "community.empty": "Você ainda não está em nenhuma comunidade",
   "community.emptyHint": "Crie a sua ou entre com um link de convite.",

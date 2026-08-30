@@ -1,11 +1,33 @@
 /** Publicación voluntaria y firmada en el directorio global. */
 import { canonicalJson } from "@distop/protocol";
 import { config } from "./config.ts";
-import { db, INSTANCE_ID } from "./db.ts";
+import { db, meta, setMeta, INSTANCE_ID } from "./db.ts";
 import { LINEAGE_ID, instanceEpoch, instanceFingerprint, instancePublicKey, instanceRole, signAsInstance } from "./identity.ts";
 import { fixedPublicUrl } from "./tunnel.ts";
 
 const DAY = 24 * 60 * 60_000;
+
+/**
+ * Si esta instancia se anuncia en el índice público.
+ *
+ * Vive en la base de datos y no solo en el entorno porque quien hospeda desde
+ * la aplicación de escritorio no tiene ningún fichero que editar: dejarlo solo
+ * en PUBLIC_DISCOVERY_ENABLED convertía «marcar la comunidad como pública» en
+ * un botón que no hacía nada y no explicaba por qué.
+ *
+ * La variable de entorno sigue mandando la primera vez, para quien despliega
+ * con una configuración preparada; a partir de ahí manda el interruptor.
+ */
+const CLAVE_DESCUBRIMIENTO = "public_discovery";
+
+export function discoveryEnabled(): boolean {
+  return meta(CLAVE_DESCUBRIMIENTO, () => (config.publicDiscoveryEnabled ? "1" : "0")) === "1";
+}
+
+/** Apagarlo publica una ficha vacía: la comunidad desaparece del índice, no se queda. */
+export function setDiscoveryEnabled(on: boolean): void {
+  setMeta(CLAVE_DESCUBRIMIENTO, on ? "1" : "0");
+}
 const RETRY = 60 * 60_000;
 
 interface Challenge {
@@ -36,7 +58,7 @@ function safeAssetUrl(value: unknown, origin: string): string | null {
 }
 
 function publicCommunities(origin: string): unknown[] {
-  if (!config.publicDiscoveryEnabled) return [];
+  if (!discoveryEnabled()) return [];
   return db.prepare(
     `SELECT c.id, c.name, c.slug, c.description, c.icon_url, c.banner_url,
             c.accent_color, c.visibility, c.join_policy,
@@ -115,7 +137,7 @@ async function cycle(): Promise<void> {
   try {
     const result = await publishDirectoryNow();
     if (result) console.log(`[directorio] ${result.published} comunidad(es) publicadas hasta ${new Date(result.expires_at).toISOString()}.`);
-    else if (config.directoryUrl && config.publicDiscoveryEnabled) next = RETRY;
+    else if (config.directoryUrl && discoveryEnabled()) next = RETRY;
   } catch (error) {
     next = RETRY;
     console.warn(`[directorio] no se pudo renovar: ${error instanceof Error ? error.message : String(error)}`);

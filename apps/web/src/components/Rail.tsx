@@ -800,6 +800,7 @@ function ShareInstance() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [autostart, setAutostart] = useState(true);
+  const publicDiscoveryEnabled = useStore((s) => s.publicDiscoveryEnabled);
   const [mode, setMode] = useState<"cloudflare" | "tailscale" | "cloud">("cloudflare");
   const [tailscale, setTailscale] = useState<TailscaleState | null>(null);
 
@@ -843,6 +844,18 @@ function ShareInstance() {
     } catch (err) {
       setAutostart(!enabled);
       setError(errorText(err));
+    }
+  }
+
+  /* El índice público es cosa de la instancia, no de una comunidad: por eso vive
+     aquí y no en los ajustes de cada una. Al apagarlo la ficha sale del índice
+     en el acto, no se queda hasta que caduque. */
+  async function toggleDiscovery(enabled: boolean): Promise<void> {
+    try {
+      const state = await api<{ enabled: boolean }>("PUT", "/api/v1/instance/discovery", { enabled });
+      useStore.setState({ publicDiscoveryEnabled: state.enabled });
+    } catch (reason) {
+      setError(errorText(reason));
     }
   }
 
@@ -1073,6 +1086,22 @@ function ShareInstance() {
               )}
             </div>
           )}
+
+          {/* El interruptor de la instancia, fuera de los tres carriles porque no
+              depende de por dónde salgas a internet. Sin él, marcar una comunidad
+              como pública no llegaba a ninguna parte y nadie decía por qué. */}
+          <label className="flex items-start gap-2 rounded-[10px] border border-line p-3 text-xs">
+            <input
+              type="checkbox"
+              checked={publicDiscoveryEnabled}
+              onChange={(e) => void toggleDiscovery(e.target.checked)}
+              style={{ accentColor: "var(--accent)" }}
+            />
+            <span>
+              <span className="font-semibold">{t("share.discovery")}</span>
+              <span className="block text-muted">{t("share.discoveryHint")}</span>
+            </span>
+          </label>
 
           {error ? <ErrorNote>{error}</ErrorNote> : null}
         </div>

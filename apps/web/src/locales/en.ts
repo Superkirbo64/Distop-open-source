@@ -159,6 +159,8 @@ export const en: Record<keyof typeof es, string> = {
   "share.autostart": "Open the public link on start-up",
   "share.autostartHint":
     "Your community will be reachable from the internet while the app is open. Turn it off and it only works on this machine until you open it by hand.",
+  "share.discovery": "Appear in the public index",
+  "share.discoveryHint": "Lets the communities you mark as public announce themselves in Explore, so anyone can find them. Only the name, description and address are announced — never messages or files. Turning it off removes them from the index right away.",
   "share.closeLink": "Close public link",
   "share.opening": "Opening the tunnel…",
   "share.needsCloudflared":
@@ -268,6 +270,7 @@ export const en: Record<keyof typeof es, string> = {
   "community.joinPolicy.invite": "Invite only",
   "community.joinPolicy.request": "Request access",
   "community.publicStableHint": "To appear in global Explore, the instance needs a fixed address: Tailscale Funnel, a custom domain or PUBLIC_URL. Cloudflare's quick tunnel changes after restarting and is not published.",
+  "community.publicIndexOff": "This instance is not announcing itself in the public index yet: turn it on under \"Your server\" and the community will show up in Explore. Until then, marking it public only makes it visible in here.",
   "community.publicStableOk": "Your address {host} is stable: saved as public, the community shows up in the global Explore within minutes.",
   "community.empty": "You are not in any community yet",
   "community.emptyHint": "Create your own or join with an invite link.",

@@ -181,6 +181,7 @@ function Overview({ community }: { community: Community }) {
      servidor: solo publica con dirección estable. Aquí se lee el estado real del
      túnel para decirlo antes de guardar, no después. Sin permiso de anfitrión la
      consulta falla y queda el consejo genérico. */
+  const discoveryOn = useStore((s) => s.publicDiscoveryEnabled);
   const [stableAddress, setStableAddress] = useState<string | null>(null);
   useEffect(() => {
     if (form.visibility !== "public") return;
@@ -290,7 +291,7 @@ function Overview({ community }: { community: Community }) {
 
       {form.visibility === "public" ? (
         <p className="rounded-[10px] border border-line bg-sunken p-3 text-xs text-muted">
-          {stableAddress ? t("community.publicStableOk", { host: stableAddress }) : t("community.publicStableHint")}
+          {!discoveryOn ? t("community.publicIndexOff") : stableAddress ? t("community.publicStableOk", { host: stableAddress }) : t("community.publicStableHint")}
         </p>
       ) : null}
 

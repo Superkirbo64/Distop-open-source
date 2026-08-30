@@ -143,7 +143,7 @@ import { statesOfCommunity } from "./voice.ts";
 import { advanceTailscale, stopTailscale, tailscaleState } from "./tailscale.ts";
 import { requestShutdown } from "./lifecycle.ts";
 import { createInstanceProof, instanceEpoch, instanceFingerprint, instancePublicKey, instanceRole, LINEAGE_ID, verifyInstanceProof, type SignedInstanceProof } from "./identity.ts";
-import { queueDirectorySync } from "./directory-publisher.ts";
+import { discoveryEnabled, queueDirectorySync, setDiscoveryEnabled } from "./directory-publisher.ts";
 
 /* ── guardas ───────────────────────────────────────────────────────── */
 
@@ -205,7 +205,7 @@ route("GET", "/api/v1/info", async (ctx) => ({
   version: VERSION,
   registration_enabled: config.registrationEnabled,
   guest_mode_enabled: config.guestModeEnabled,
-  public_discovery_enabled: config.publicDiscoveryEnabled,
+  public_discovery_enabled: discoveryEnabled(),
   /** Vacío = esta distribución no usa un índice global; Explorar sigue local. */
   directory_url: config.directoryUrl,
   max_upload_mb: config.maxUploadMb,
@@ -926,7 +926,7 @@ route("POST", "/api/v1/communities/:id/leave", async (ctx) => {
 });
 
 route("GET", "/api/v1/discovery", (ctx) => {
-  if (!config.publicDiscoveryEnabled) return [];
+  if (!discoveryEnabled()) return [];
   const rows = db
     .prepare(
       `SELECT c.id, c.name, c.slug, c.description, c.icon_url, c.banner_url, c.accent_color,
@@ -3318,6 +3318,17 @@ route("DELETE", "/api/v1/instance/tunnel", (ctx) => {
 /* Que el enlace publico se abra solo al arrancar es decision de quien hospeda:
    comodo por defecto, pero su ordenador queda accesible desde internet mientras
    la aplicacion este abierta, y eso tiene que poder apagarse. */
+/* Anunciarse o no en el índice público. Decisión de quien hospeda y desde la
+   aplicación: al apagarlo se publica una ficha vacía, así que la comunidad sale
+   del índice en vez de quedarse ahí hasta que caduque la lease. */
+route("PUT", "/api/v1/instance/discovery", async (ctx) => {
+  requireHost(ctx);
+  const body = await readJson(ctx);
+  setDiscoveryEnabled(v.bool(body, "enabled", false));
+  queueDirectorySync();
+  return { enabled: discoveryEnabled() };
+});
+
 route("PUT", "/api/v1/instance/tunnel/autostart", async (ctx) => {
   requireTunnelHost(ctx);
   const body = await readJson(ctx);
