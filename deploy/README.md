@@ -1,6 +1,6 @@
 # Plantillas de alojamiento
 
-La pieza común es `ghcr.io/superkirbo64/distop:0.1.5`, con un puerto HTTP
+La pieza común es `ghcr.io/superkirbo64/distop:0.1.6`, con un puerto HTTP
 interno `5000` y un volumen persistente montado en `/data`. Una plataforma no
 es apta si no puede conservar ese volumen después de recrear el contenedor.
 

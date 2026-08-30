@@ -1,6 +1,6 @@
 {
   "name": "@distop/desktop",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "license": "AGPL-3.0-only",
   "private": true,
   "description": "Cliente de escritorio de Distop: el mismo cliente web, con bandeja, instancia local y actividad de juego.",

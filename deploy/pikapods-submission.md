@@ -3,7 +3,7 @@
 - Proyecto: Distop
 - Repositorio: https://github.com/Superkirbo64/Distop-open-source
 - Licencia: AGPL-3.0-only
-- Imagen oficial: `ghcr.io/superkirbo64/distop:0.1.5`
+- Imagen oficial: `ghcr.io/superkirbo64/distop:0.1.6`
 - Arquitecturas: `linux/amd64`, `linux/arm64`
 - Puerto HTTPS externo: uno; el contenedor escucha HTTP en `5000`
 - Healthcheck: `GET /health`

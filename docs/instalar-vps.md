@@ -5,8 +5,8 @@ ejecuta directamente desde Internet: primero se descargan el archivo y su
 checksum, se comprueba y solo entonces se usa `sudo`.
 
 ```sh
-curl -fLO https://github.com/Superkirbo64/Distop-open-source/releases/download/v0.1.5/install-vps.sh
-curl -fLO https://github.com/Superkirbo64/Distop-open-source/releases/download/v0.1.5/install-vps.sh.sha256
+curl -fLO https://github.com/Superkirbo64/Distop-open-source/releases/download/v0.1.6/install-vps.sh
+curl -fLO https://github.com/Superkirbo64/Distop-open-source/releases/download/v0.1.6/install-vps.sh.sha256
 sha256sum -c install-vps.sh.sha256
 sudo bash install-vps.sh
 ```
@@ -47,7 +47,7 @@ Descarga el instalador y checksum de la nueva release y ejecútalo otra vez con
 unidad y reinicia el contenedor.
 
 ```sh
-sudo bash install-vps.sh --version 0.1.5
+sudo bash install-vps.sh --version 0.1.6
 ```
 
 No uses `latest` para una comunidad importante: una versión fija hace posible
