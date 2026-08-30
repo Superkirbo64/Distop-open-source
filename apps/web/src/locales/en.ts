@@ -161,6 +161,7 @@ export const en: Record<keyof typeof es, string> = {
     "Your community will be reachable from the internet while the app is open. Turn it off and it only works on this machine until you open it by hand.",
   "share.discovery": "Appear in the public index",
   "share.discoveryHint": "Lets the communities you mark as public announce themselves in Explore, so anyone can find them. Only the name, description and address are announced — never messages or files. Turning it off removes them from the index right away.",
+  "share.discoveryNeedsStable": "Nothing gets published with your current temporary address: it changes on every restart and the index rejects it. Move up to the fixed-address rung and it will announce itself.",
   "share.closeLink": "Close public link",
   "share.opening": "Opening the tunnel…",
   "share.needsCloudflared":

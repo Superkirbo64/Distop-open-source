@@ -11,7 +11,7 @@ import { useStore } from "../store.ts";
 import { Button, ErrorNote, ExternalLinkButton, Field, IconButton, Modal, Select, Spinner, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
 import { Explore } from "./Explore.tsx";
 import { api } from "../lib/api.ts";
-import { CLOUD_GUIDE_URL, RASPBERRY_GUIDE_URL, VPS_INSTALL_GUIDE_URL, detectLane } from "../lib/publish.ts";
+import { CLOUD_GUIDE_URL, RASPBERRY_GUIDE_URL, VPS_INSTALL_GUIDE_URL, detectLane, hasStablePublicAddress } from "../lib/publish.ts";
 import { describeSchedule, sortBackupFiles, type BackupJob, type BackupsView } from "../lib/backups.ts";
 import {
   clientOrigin,
@@ -949,6 +949,26 @@ function ShareInstance() {
 
       {isHost ? (
         <div className="flex flex-col gap-3">
+          {/* Lo primero después de la dirección, porque es la pregunta que sigue a
+              «tu servidor es alcanzable»: ¿quieres que además se le encuentre? Vivía
+              al final de la tarjeta, debajo del tutorial del carril elegido, y el
+              aviso de los ajustes de la comunidad mandaba aquí a buscar algo que no
+              se veía sin bajar tres pantallas. */}
+          <label className="flex items-start gap-2 rounded-[10px] border border-line p-3 text-xs">
+            <input
+              type="checkbox"
+              checked={publicDiscoveryEnabled}
+              onChange={(e) => void toggleDiscovery(e.target.checked)}
+              style={{ accentColor: "var(--accent)" }}
+            />
+            <span>
+              <span className="font-semibold">{t("share.discovery")}</span>
+              <span className="block text-muted">{t("share.discoveryHint")}</span>
+              {publicDiscoveryEnabled && !hasStablePublicAddress(tunnel) ? (
+                <span className="mt-1 block text-warn">{t("share.discoveryNeedsStable")}</span>
+              ) : null}
+            </span>
+          </label>
           <div className="grid grid-cols-3 gap-2 rounded-[10px] bg-sunken p-1">
             {/* Con dirección fija de la nube, los carriles de túnel se apagan:
                 abrir uno rompería la dirección que la gente ya usa, así que no
@@ -1087,21 +1107,6 @@ function ShareInstance() {
             </div>
           )}
 
-          {/* El interruptor de la instancia, fuera de los tres carriles porque no
-              depende de por dónde salgas a internet. Sin él, marcar una comunidad
-              como pública no llegaba a ninguna parte y nadie decía por qué. */}
-          <label className="flex items-start gap-2 rounded-[10px] border border-line p-3 text-xs">
-            <input
-              type="checkbox"
-              checked={publicDiscoveryEnabled}
-              onChange={(e) => void toggleDiscovery(e.target.checked)}
-              style={{ accentColor: "var(--accent)" }}
-            />
-            <span>
-              <span className="font-semibold">{t("share.discovery")}</span>
-              <span className="block text-muted">{t("share.discoveryHint")}</span>
-            </span>
-          </label>
 
           {error ? <ErrorNote>{error}</ErrorNote> : null}
         </div>

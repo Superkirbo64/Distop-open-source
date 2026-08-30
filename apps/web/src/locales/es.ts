@@ -164,6 +164,7 @@ export const es = {
     "Tu comunidad será accesible desde internet mientras la aplicación esté abierta. Si lo apagas, solo funcionará en este equipo hasta que lo abras a mano.",
   "share.discovery": "Aparecer en el índice público",
   "share.discoveryHint": "Deja que las comunidades que marques como públicas se anuncien en Explorar, para que cualquiera pueda encontrarlas. Solo se anuncian el nombre, la descripción y la dirección; nunca los mensajes ni los archivos. Al apagarlo salen del índice en el acto.",
+  "share.discoveryNeedsStable": "Con la dirección temporal de ahora no se publica nada: cambia en cada reinicio y el índice la rechaza. Sube al peldaño de dirección fija y se anunciará sola.",
   "share.closeLink": "Cerrar el enlace público",
   "share.opening": "Abriendo el túnel…",
   "share.needsCloudflared":

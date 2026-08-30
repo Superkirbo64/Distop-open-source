@@ -163,6 +163,7 @@ export const ptBR: Record<keyof typeof es, string> = {
     "Sua comunidade ficará acessível pela internet enquanto o aplicativo estiver aberto. Se desligar, só funciona neste computador até você abrir na mão.",
   "share.discovery": "Aparecer no índice público",
   "share.discoveryHint": "Deixa as comunidades que você marcar como públicas se anunciarem no Explorar, para qualquer pessoa encontrá-las. Só vão o nome, a descrição e o endereço; nunca as mensagens nem os arquivos. Ao desligar, saem do índice na hora.",
+  "share.discoveryNeedsStable": "Com o endereço temporário de agora nada é publicado: ele muda a cada reinício e o índice o recusa. Suba para o degrau de endereço fixo e ela se anuncia sozinha.",
   "share.closeLink": "Fechar o link público",
   "share.opening": "Abrindo o túnel…",
   "share.needsCloudflared":
