@@ -197,8 +197,17 @@ export const config = {
   registrationEnabled: bool("REGISTRATION_ENABLED", true),
   guestModeEnabled: bool("GUEST_MODE_ENABLED", true),
   publicDiscoveryEnabled: bool("PUBLIC_DISCOVERY_ENABLED", false),
-  /** Directorio global opcional. Vacío mantiene Explorar completamente local. */
-  directoryUrl: str("DIRECTORY_URL", "").replace(/\/+$/, ""),
+  /**
+   * El índice público del proyecto, puesto de fábrica para que Explorar
+   * enseñe algo desde el primer arranque. Solo lee: publicar tu comunidad
+   * ahí exige además abrir el descubrimiento y marcarla como pública, las
+   * dos cosas a mano.
+   *
+   * `DIRECTORY_URL=` vacío lo apaga del todo, y por eso aquí no se usa str():
+   * str() trata el vacío como «sin definir» y devolvería el valor de fábrica,
+   * dejando sin salida a quien quiere desconectarse.
+   */
+  directoryUrl: (process.env.DIRECTORY_URL ?? "https://distop-open-source.superkirbo64.deno.net").replace(/\/+$/, ""),
 
   /**
    * Confiar en X-Forwarded-For solo cuando hay de verdad un proxy delante.

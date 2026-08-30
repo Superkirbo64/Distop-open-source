@@ -1,5 +1,10 @@
 # Directorio público de Distop
 
+En marcha desde el 29 de agosto de 2026 en
+<https://distop-open-source.superkirbo64.deno.net>, que es el valor de fábrica
+de `DIRECTORY_URL`. Cada instancia puede apuntar a otro índice o quedarse sin
+ninguno dejando esa variable vacía.
+
 Este servicio solo guarda fichas públicas firmadas y leases. No transporta
 mensajes, archivos, sesiones, voz ni vídeo. Una caída del directorio elimina
 temporalmente `Explorar`; las instancias y las invitaciones siguen funcionando.
