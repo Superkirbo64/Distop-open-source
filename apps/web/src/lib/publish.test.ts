@@ -7,7 +7,7 @@
  */
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { detectLane, ORACLE_STACK_URL, type TunnelSnapshot } from "./publish.ts";
+import { detectLane, hasStablePublicAddress, type TunnelSnapshot } from "./publish.ts";
 
 const tunel = (partes: Partial<TunnelSnapshot>): TunnelSnapshot => ({
   status: "off",
@@ -49,11 +49,19 @@ test("una dirección fija que no es .ts.net no activa ningún carril especial", 
   );
 });
 
-test("el botón de deploy queda apagado hasta que exista el zip versionado", () => {
-  /* Cuando esto falle será porque alguien puso una URL: entonces tiene que ser
-     una release concreta con checksum, jamás main (docs/nube-oracle.md). */
-  assert.ok(
-    ORACLE_STACK_URL === null || /^https:\/\/github\.com\/.+\/releases\/download\/.+/.test(ORACLE_STACK_URL),
-    "ORACLE_STACK_URL solo puede ser null o el zip de una release publicada",
+test("el túnel rápido de Cloudflare no sirve para publicar en Explorar", () => {
+  assert.equal(
+    hasStablePublicAddress(tunel({ status: "on", public_url: "https://x.trycloudflare.com" })),
+    false,
   );
+});
+
+test("Funnel y PUBLIC_URL sí son direcciones estables para Explorar", () => {
+  assert.equal(hasStablePublicAddress(tunel({ fixed_url: "https://equipo.tailnet.ts.net" })), true);
+  assert.equal(hasStablePublicAddress(tunel({ public_url: "https://comunidad.example" })), true);
+});
+
+test("una instancia local todavía no puede publicarse en Explorar", () => {
+  assert.equal(hasStablePublicAddress(null), false);
+  assert.equal(hasStablePublicAddress(tunel({})), false);
 });

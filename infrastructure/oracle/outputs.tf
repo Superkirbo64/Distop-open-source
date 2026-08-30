@@ -18,3 +18,8 @@ output "backup_bucket" {
   description = "Bucket privado de Object Storage donde el timer diario sube las copias cifradas."
   value       = oci_objectstorage_bucket.backups.name
 }
+
+output "image_ocid" {
+  description = "Imagen que se usó de verdad. Si el stack la resolvió sola, este es el OCID que hay que fijar para repetir el mismo despliegue."
+  value       = local.image_ocid
+}

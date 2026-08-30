@@ -32,7 +32,7 @@ import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
 import { connect, disconnect, onEvent, onStatus, sendCommand, type ConnectionStatus } from "./lib/gateway.ts";
 import { detectLocale, loadLocale, type Locale } from "./i18n.ts";
 import { notify, setSoundsEnabled, type NotifyLevel } from "./lib/notify.ts";
-import { configureVoice, currentChannel, handleSignal, leaveVoice, rejectVoiceJoin, resumeVoice, setSoundError, setVideoMode, syncPeers } from "./lib/voice.ts";
+import { configureVoice, currentChannel, handleSignal, leaveVoice, rejectVoiceJoin, resumeVoice, setSoundError, setVideoMode, setVoiceMode, syncPeers } from "./lib/voice.ts";
 import { playClip } from "./lib/relay.ts";
 import { onRecordingUpdate } from "./lib/record.ts";
 import { forgetCommunity, instanceBase, peekPendingInvite, rememberCommunities, setDesktopAvailabilityStatus, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
@@ -114,6 +114,9 @@ interface State {
   instance: InstanceHealth | null;
   /** Instancia recién instalada, todavía sin nadie que la haya reclamado. */
   setup: { required: boolean; requiresCode: boolean } | null;
+  /** Frase de las copias que la instancia enseña al reclamarla, una sola vez.
+      Se muestra y se olvida: no se guarda en disco ni vuelve a pedirse. */
+  backupPassphrase: string | null;
   /** Quién está en cada canal de voz, por canal. */
   voice: Record<string, VoiceState[]>;
   /** canal → sala de la carrera de canicas, o ausente si no hay ninguna (§9.4). */
@@ -156,6 +159,8 @@ interface State {
   /** El anfitrión encendió el directorio (PUBLIC_DISCOVERY_ENABLED). Apagado de
       fábrica: nada se anuncia sin que quien hospeda lo decida (§19). */
   publicDiscoveryEnabled: boolean;
+  /** Índice global opcional. Vacío = Explorar solo consulta esta instancia. */
+  directoryUrl: string;
   /** El anfitrión configuró clave de Giphy. Sin esto la pestaña de GIF no se enseña. */
   gifEnabled: boolean;
   /** Y la de Klipy, que es la de la galería de stickers. Van por separado. */
@@ -346,6 +351,7 @@ export const useStore = create<State>()((set, get) => ({
   status: "offline",
   instance: null,
   setup: null,
+  backupPassphrase: null,
   voice: {},
   races: {},
   meetings: {},
@@ -358,6 +364,7 @@ export const useStore = create<State>()((set, get) => ({
   guestMeeting: null,
   publicUrl: "",
   publicDiscoveryEnabled: false,
+  directoryUrl: "",
   gifEnabled: false,
   stickerGalleryEnabled: false,
   manageOpen: false,
@@ -397,8 +404,12 @@ export const useStore = create<State>()((set, get) => ({
         setup_requires_code: boolean;
         ice_servers: RTCIceServer[];
         video: { mode: "host" | "direct" };
+        /** Por dónde va la voz. Ausente en instancias anteriores a este cambio:
+            el `?? "host"` de abajo las deja funcionando exactamente igual. */
+        voice?: { mode: "host" | "direct" };
         public_url: string;
         public_discovery_enabled: boolean;
+        directory_url?: string;
         gif_enabled: boolean;
         sticker_gallery_enabled: boolean;
       }>("GET", "/api/v1/info");
@@ -406,12 +417,14 @@ export const useStore = create<State>()((set, get) => ({
         setup: { required: info.setup_required, requiresCode: info.setup_requires_code },
         publicUrl: info.public_url,
         publicDiscoveryEnabled: Boolean(info.public_discovery_enabled),
+        directoryUrl: typeof info.directory_url === "string" ? info.directory_url : "",
         gifEnabled: Boolean(info.gif_enabled),
         stickerGalleryEnabled: Boolean(info.sticker_gallery_enabled),
       });
       pendingIdentityInfo = info;
       iceServers = info.ice_servers ?? [];
       setVideoMode(info.video?.mode ?? "host");
+      setVoiceMode(info.voice?.mode ?? "host");
     } catch {
       // Instancia inalcanzable: el propio cliente lo dirá al intentar entrar.
     }
@@ -452,10 +465,13 @@ export const useStore = create<State>()((set, get) => ({
   },
 
   async authenticate(path, body) {
-    const result = await api<Tokens & { user: SelfUser }>("POST", path, body);
+    const result = await api<Tokens & { user: SelfUser; backup_passphrase?: string }>("POST", path, body);
     setTokens({ access_token: result.access_token, refresh_token: result.refresh_token });
     // Con alguien dentro, la instancia deja de estar sin dueño.
     set({ user: result.user, setup: { required: false, requiresCode: false } });
+    /* Solo llega al reclamar una instancia con copias programadas (la nube).
+       Es la única vez que la instancia la enseña: se pone delante al entrar. */
+    if (result.backup_passphrase) set({ backupPassphrase: result.backup_passphrase });
     if (result.user.theme !== "system") {
       const prefs = { ...get().prefs, theme: result.user.theme as ThemeChoice };
       set({ prefs });

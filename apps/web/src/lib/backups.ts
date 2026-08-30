@@ -1,5 +1,5 @@
 /**
- * Espejo tipado de `GET /api/v1/instance/backups` (§21, docs/nube-oracle.md).
+ * Espejo tipado de `GET /api/v1/instance/backups` (§21, docs/copias-de-seguridad.md).
  *
  * El listado es requireHost-only y por eso funciona también en la nube, donde
  * nada es "local": la interfaz remota puede decir si la copia programada está

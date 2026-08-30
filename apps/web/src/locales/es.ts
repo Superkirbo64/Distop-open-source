@@ -76,6 +76,12 @@ export const es = {
   "setup.noPasswordWarning":
     "Sin contraseña, esta cuenta vive solo en este navegador. Si lo borras, pierdes el acceso de administración.",
 
+  "backupPhrase.title": "Guarda la frase de tus copias",
+  "backupPhrase.body":
+    "Tu servidor cifra una copia cada día con esta frase. Sin ella no se puede restaurar ninguna, ni tú ni nadie. Guárdala ahora en tu gestor de contraseñas, fuera del servidor.",
+  "backupPhrase.fallback": "Si cierras esto sin copiarla, sigue estando en el servidor, en /data/backup-passphrase.",
+  "backupPhrase.saved": "Ya la he guardado",
+
   "instance.connecting": "Conectando…",
   "instance.online": "En línea",
   "instance.offline": "Sin conexión",
@@ -163,6 +169,12 @@ export const es = {
   "share.failed": "No se pudo abrir el túnel. Revisa tu conexión a internet.",
   "share.hostReminder":
     "Mientras este ordenador esté encendido, tu comunidad está en línea. Cuando lo apagues, deja de estarlo.",
+  "share.quick": "Empezar ahora",
+  "share.quickCost": "Gratis · dirección temporal",
+  "share.stable": "Dirección fija",
+  "share.stableCost": "Gratis · cuenta Tailscale",
+  "share.alwaysOn": "Siempre activa",
+  "share.alwaysOnCost": "Equipo propio o desde ~US$1,80/mes",
   "share.cloudflareHint": "Automático y sin cuenta. La dirección cambia al reiniciar, pero tus miembros pueden volver con la dirección nueva sin perder su perfil.",
   "share.fixedStep": "Paso {step} de 7 · Dirección fija",
   "share.tailscale.missing": "Instala Tailscale desde su página oficial. Requiere permiso de administrador porque añade un servicio de red.",
@@ -183,13 +195,21 @@ export const es = {
   "share.tailscaleFairUse": "Tailscale Funnel es gratis y estable, con límites de uso justo. El chat y la voz ligera funcionan bien; para muchos archivos grandes conviene Cloudflare con dominio propio.",
   "share.addressChanged": "La dirección pública cambió al reiniciar. Copia esta nueva dirección para tus miembros o activa Tailscale Funnel para fijarla.",
   "share.cloud": "Nube",
-  "share.cloudTitle": "Siempre disponible (nube, coste cero)",
+  "share.cloudTitle": "Siempre encendida (avanzado)",
   "share.cloudHint":
-    "Una máquina del plan Always Free de Oracle mantiene tu comunidad encendida sin coste recurrente, también con tu ordenador apagado. No hay garantía de servicio: Oracle puede reclamar máquinas que detecte ociosas, y la guía explica cómo evitarlo y cómo recuperarte con copias.",
+    "Una máquina que no se apaga nunca: una Raspberry en tu casa, un mini-PC o una VPS pequeña. Tu comunidad sigue en pie con tu ordenador apagado, y los datos siguen siendo tuyos — es la misma instancia, en otra máquina.",
   "share.cloudLimits":
-    "Oracle pide una tarjeta solo para verificar tu identidad; el plan Always Free no genera cargos. La instancia es la misma que en casa —tus datos siguen siendo tuyos—, solo que corre en su máquina.",
-  "share.cloudGuide": "Ver la guía paso a paso",
-  "share.cloudDeploy": "Desplegar en Oracle Cloud",
+    "No hay atajo gratis y encendido a la vez: o pones el hardware tú, o alquilas una máquina por unos euros al mes. La guía compara lo que hay hoy, con precios, y explica cómo publicarla sin pelearte con DNS ni certificados.",
+  "share.cloudGuide": "Ver la guía, con precios",
+  "share.alwaysOwnTitle": "Tengo una Raspberry o un equipo viejo",
+  "share.alwaysOwnHint": "Sin cuota de alojamiento. Necesita estar encendido y una copia fuera del equipo.",
+  "share.alwaysOwnAction": "Guía para Raspberry",
+  "share.alwaysVpsTitle": "Ya tengo una VPS Ubuntu/Debian",
+  "share.alwaysVpsHint": "El instalador verificable configura Docker, arranque automático y Tailscale Funnel.",
+  "share.alwaysVpsAction": "Instalar paso a paso",
+  "share.alwaysManagedTitle": "Quiero un botón y no administrar Linux",
+  "share.alwaysManagedHint": "El catálogo administrado está pendiente de admisión. No se muestra un botón que todavía no puede completar el despliegue.",
+  "share.cloudDeploy": "Desplegar",
   "share.cloudFixed": "Dirección fija configurada",
   "share.cloudFixedHint":
     "Esta instancia ya corre con dirección pública propia: viene de PUBLIC_URL en el entorno de la máquina. Para cambiarla, edita esa variable y reinicia el servidor.",
@@ -226,6 +246,13 @@ export const es = {
   "explore.needInvite":
     "Para entrar sigue haciendo falta una invitación de alguien de dentro: el directorio enseña, no abre puertas.",
   "explore.sourceInstance": "Esta instancia",
+  "explore.sourceGlobal": "Directorio global",
+  "explore.join": "Entrar",
+  "explore.inviteOnly": "Con invitación",
+  "explore.request": "Solicitar",
+  "explore.requested": "Solicitud enviada. Quien administra la comunidad podrá aceptarla desde su panel.",
+  "explore.identityMismatch": "La identidad de la instancia no coincide con la ficha publicada. No se enviaron credenciales.",
+  "explore.unreachable": "No se pudo verificar la instancia en este momento.",
 
   "community.yours": "Tus comunidades",
   "community.create": "Crear comunidad",
@@ -233,6 +260,18 @@ export const es = {
   "community.name": "Nombre",
   "community.public": "Aparecer en el descubrimiento público",
   "community.publicHint": "Si lo dejas apagado solo se entra por invitación.",
+  "community.visibility": "Quién puede encontrarla",
+  "community.visibilityHint": "Esto controla su aparición; no concede acceso.",
+  "community.visibility.private": "Privada · solo miembros",
+  "community.visibility.unlisted": "No listada · quien tenga el enlace",
+  "community.visibility.public": "Pública · aparece en Explorar",
+  "community.joinPolicy": "Cómo se entra",
+  "community.joinPolicyHint": "La visibilidad y el acceso son decisiones separadas.",
+  "community.joinPolicy.open": "Entrada abierta",
+  "community.joinPolicy.invite": "Solo con invitación",
+  "community.joinPolicy.request": "Solicitar acceso",
+  "community.publicStableHint": "Para aparecer en el Explorar global, la instancia necesita una dirección fija: Tailscale Funnel, un dominio propio o PUBLIC_URL. El túnel rápido de Cloudflare cambia al reiniciar y no se publica.",
+  "community.publicStableOk": "Tu dirección {host} es fija: al guardarla como pública, la comunidad aparece en el Explorar global en unos minutos.",
   "community.empty": "Aún no estás en ninguna comunidad",
   "community.emptyHint": "Crea la tuya o entra con un enlace de invitación.",
   "community.leave": "Salir de la comunidad",
@@ -430,6 +469,9 @@ export const es = {
   "voice.link.disconnected": "sin conexión",
   "voice.link.failed": "no conecta",
   "voice.link.closed": "desconectado",
+  "voice.viaHost": "por el servidor",
+  "voice.viaHostHint":
+    "No hubo forma de conectar en directo con esta persona, así que su voz pasa por el servidor de la comunidad. Se oye igual: solo cambia el camino.",
   "voice.needsStun":
     "No se pudo descubrir vuestra dirección pública, así que el vídeo no llegará. La voz sigue funcionando.",
   "voice.needsTurn":
@@ -546,12 +588,19 @@ export const es = {
     "Este navegador no sabe codificar voz. Prueba con Chrome, Edge o un navegador reciente.",
   "voice.relayTitle": "Cámara y pantalla compartida",
   "voice.relayIntro":
-    "La voz pasa siempre por el servidor y no se configura: si puedes abrir la aplicación, puedes hablar. Para la imagen hay dos caminos, y quien hospeda elige.",
+    "La voz y la imagen tienen cada una dos caminos, y quien hospeda elige. Por el servidor funciona siempre; en directo no consume nada de quien hospeda, pero necesita que las dos redes se dejen hablar.",
+  "voice.voiceWay": "Por dónde va la voz",
+  "voice.voiceHost": "Por el servidor",
+  "voice.voiceHostHint":
+    "Funciona siempre, sin configurar nada: si puedes abrir la aplicación, puedes hablar. Consume subida de quien hospeda, unos 4 KB por segundo y persona — poco, pero se multiplica por cada oyente.",
+  "voice.voiceP2p": "Directa entre navegadores (recomendado)",
+  "voice.voiceP2pHint":
+    "La voz viaja de un aparato a otro y el servidor casi no gasta nada: es lo que permite hospedar en una máquina pequeña. Con quien no se consiga conexión directa, su voz vuelve sola por el servidor. Pasadas ocho o nueve personas en la sala, toda la llamada vuelve por el servidor.",
   "voice.videoWay": "Por dónde va la imagen",
-  "voice.videoHost": "Por el servidor (recomendado)",
+  "voice.videoHost": "Por el servidor",
   "voice.videoHostHint":
     "Igual que la voz: funciona siempre, sin configurar nada. A cambio consume subida de quien hospeda, una copia por cada persona que mire. Para un grupo de amigos no se nota.",
-  "voice.videoP2p": "Directa entre navegadores",
+  "voice.videoP2p": "Directa entre navegadores (recomendado)",
   "voice.videoP2pHint":
     "No consume nada a quien hospeda y da mejor calidad. Pero solo llega si las dos redes se dejan hablar, y muchas no: entre datos móviles y una casa casi nunca funciona.",
   "voice.probe": "Comprobar mi conexión",
@@ -628,7 +677,7 @@ export const es = {
   "voice.device": "Micrófono",
   "voice.deviceDefault": "El del sistema",
   "voice.limits":
-    "La voz va directa entre navegadores. Funciona muy bien hasta unas 6 personas por canal; por encima hace falta un servidor de medios, que llega más adelante.",
+    "La voz va directa entre navegadores. Si un par no conecta, solo esa voz vuelve por el servidor; con una sala grande, toda la voz vuelve al servidor automáticamente.",
 
   "members.title": "Miembros",
   "members.online": "En línea",
@@ -759,6 +808,11 @@ export const es = {
   "manage.audit": "Auditoría",
   "manage.data": "Datos",
   "manage.description": "Descripción",
+  "manage.requests": "Solicitudes",
+  "manage.requestsEmpty": "No hay solicitudes pendientes",
+  "manage.requestsEmptyHint": "Cuando alguien solicite acceso desde Explorar aparecerá aquí.",
+  "manage.approve": "Aceptar",
+  "manage.reject": "Rechazar",
   "manage.rules": "Reglas",
   "manage.icon": "URL del ícono",
   "manage.iconHint":

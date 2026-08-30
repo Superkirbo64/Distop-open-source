@@ -1,5 +1,12 @@
 # Distop en Oracle Cloud Always Free
 
+> **ARCHIVADO — no soportado.** La capa gratuita ARM de Oracle lleva meses sin
+> dar capacidad (`Out of host capacity` una y otra vez), y llegar hasta ese
+> error exige Terraform, DNS y certificados. Para una comunidad hay caminos
+> mucho más cortos: el túnel que la aplicación abre sola, Tailscale Funnel, una
+> Raspberry o una VPS pequeña. Este documento se conserva porque el diseño es
+> correcto y el trabajo recuperable, no porque se recomiende el camino.
+
 Esta guía define el despliegue de referencia de una instancia Distop que debe
 permanecer disponible sin presupuesto recurrente. El objetivo no es prometer
 alta disponibilidad —Oracle no ofrece SLA para Free Tier— sino conseguir que
@@ -225,7 +232,7 @@ tenancy de prueba antes de convertirse en artefacto público.
 
 ```hcl
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.2, < 1.6" # Resource Manager se quedó en 1.5.x (MPL)
   required_providers {
     oci = {
       source  = "oracle/oci"
@@ -531,6 +538,24 @@ Esta es una plantilla de diseño, no el `cloud-init` final. Faltan a propósito:
 La frase de `/data/backup-passphrase` tiene que existir **además fuera de la
 VM** — apuntada en el gestor de contraseñas del dueño en cuanto termina el
 primer arranque. Si solo vive en el disco que se perdió, la copia es ruido.
+
+Pedirle eso a alguien que acaba de crear su servidor por un formulario web
+significaba pedirle una sesión SSH, y una frase que nadie llegó a guardar
+convierte cada copia diaria en un fichero inútil. Por eso la enseña la propia
+aplicación al reclamar la instancia (`api.ts`, ruta `auth/bootstrap`) y solo
+ahí: es el único instante en que no hay nada dentro que perder y quien
+contesta es, por definición, quien reclama. Después no vuelve a salir por
+HTTP; sacarla en cada sesión convertiría robar una sesión en robar el
+descifrado de todas las copias. El fichero sigue siendo la fuente: quien
+cierre el aviso sin copiarla lo lee por SSH, como antes.
+
+Por el mismo motivo el stack acepta un `setup_code` elegido por quien
+despliega: sin él, el código de reclamación se genera aleatorio en cada
+arranque y solo se ve en el log del contenedor, lo que obliga a entrar por
+SSH antes incluso de haber entrado a la aplicación. Con él, el camino normal
+—crear la pila, esperar, abrir la web— no toca una terminal ni una vez. El
+precio es el mismo que el de `duckdns_token` (queda en el state y en el
+user_data) y está acotado: el código muere en cuanto la instancia tiene dueño.
 
 Sobre la tensión compilar-o-descargar: hoy no existe una imagen Docker
 publicada de Distop — el `ghcr.io/distop/distop` que aparece en el sitio de

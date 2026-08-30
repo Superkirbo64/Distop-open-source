@@ -5,7 +5,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { ALL_PERMISSIONS, DEFAULT_MEMBER_PERMISSIONS, seedUuidClock, uuidv7, uuidv7Time } from "@distop/protocol";
+import { ALL_PERMISSIONS, DEFAULT_MEMBER_PERMISSIONS, seedUuidClock, uuidv7, uuidv7Time, type CommunityJoinPolicy, type CommunityVisibility } from "@distop/protocol";
 import { config } from "./config.ts";
 import { MIGRATIONS, SCHEMA_VERSION } from "./migrations.ts";
 
@@ -125,15 +125,30 @@ export function seedCommunity(opts: {
   slug: string;
   ownerId: string;
   isPublic: boolean;
+  visibility?: CommunityVisibility | undefined;
+  joinPolicy?: CommunityJoinPolicy | undefined;
   accentColor?: string | undefined;
 }): string {
   const now = Date.now();
   const communityId = uuidv7();
 
+  const visibility = opts.visibility ?? (opts.isPublic ? "public" : "private");
+  const joinPolicy = opts.joinPolicy ?? "invite";
   db.prepare(
-    `INSERT INTO communities (id, name, slug, accent_color, is_public, owner_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-  ).run(communityId, opts.name, opts.slug, opts.accentColor ?? "#5b7cfa", opts.isPublic ? 1 : 0, opts.ownerId, now);
+    `INSERT INTO communities
+       (id, name, slug, accent_color, is_public, visibility, join_policy, owner_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    communityId,
+    opts.name,
+    opts.slug,
+    opts.accentColor ?? "#5b7cfa",
+    visibility === "public" ? 1 : 0,
+    visibility,
+    joinPolicy,
+    opts.ownerId,
+    now,
+  );
 
   db.prepare(
     `INSERT INTO roles (id, community_id, name, permissions, position, is_default) VALUES (?, ?, ?, ?, ?, 1)`,

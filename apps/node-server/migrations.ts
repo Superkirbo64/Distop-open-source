@@ -585,6 +585,41 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX idx_external_imports_community ON external_imports(community_id);
   `,
+
+  /* Descubrimiento público sin mezclar visibilidad y entrada.
+
+     Antes `is_public` intentaba decir dos cosas a la vez. La migración conserva
+     exactamente la exposición anterior, pero deja TODAS las comunidades por
+     invitación: actualizar Distop nunca abre una puerta que antes estaba
+     cerrada. `is_public` permanece como espejo para clientes antiguos. */
+  `
+  ALTER TABLE communities ADD COLUMN visibility TEXT NOT NULL
+    CHECK (visibility IN ('private','unlisted','public')) DEFAULT 'private';
+  ALTER TABLE communities ADD COLUMN join_policy TEXT NOT NULL
+    CHECK (join_policy IN ('open','invite','request')) DEFAULT 'invite';
+  UPDATE communities
+     SET visibility = CASE WHEN is_public = 1 THEN 'public' ELSE 'private' END,
+         join_policy = 'invite';
+  CREATE INDEX idx_communities_visibility ON communities(visibility, created_at);
+  `,
+
+  /* Solicitudes para comunidades visibles pero no abiertas. Una sola pendiente
+     por persona y comunidad evita que el botón se convierta en spam. */
+  `
+  CREATE TABLE community_join_requests (
+    id           TEXT PRIMARY KEY,
+    community_id TEXT NOT NULL REFERENCES communities(id) ON DELETE CASCADE,
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    state        TEXT NOT NULL CHECK (state IN ('pending','approved','rejected','cancelled')),
+    message      TEXT,
+    created_at   INTEGER NOT NULL,
+    decided_at   INTEGER,
+    decided_by   TEXT REFERENCES users(id)
+  );
+  CREATE UNIQUE INDEX idx_join_request_pending
+    ON community_join_requests(community_id, user_id) WHERE state = 'pending';
+  CREATE INDEX idx_join_requests_community ON community_join_requests(community_id, created_at DESC);
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

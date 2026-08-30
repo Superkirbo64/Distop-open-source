@@ -119,6 +119,48 @@ test("un extraño no ve la comunidad y un invitado sí puede entrar por enlace",
   assert.equal(rejected.status, 404);
 });
 
+test("visibilidad y entrada son políticas separadas", async () => {
+  const owner = await call("POST", "/api/v1/auth/register", {
+    body: { username: "directorio-owner", password: "contrasena-larga-directorio" },
+  });
+  const ownerToken = owner.json.access_token as string;
+
+  const open = await call("POST", "/api/v1/communities", {
+    token: ownerToken,
+    body: { name: "Plaza abierta", visibility: "public", join_policy: "open" },
+  });
+  assert.equal(open.json.visibility, "public");
+  assert.equal(open.json.join_policy, "open");
+
+  const visitor = await call("POST", "/api/v1/auth/guest", { body: { display_name: "visitante-directo" } });
+  const joined = await call("POST", `/api/v1/public-communities/${open.json.id}/join`, { token: visitor.json.access_token });
+  assert.equal(joined.status, 200, "una comunidad abierta no fabrica una invitación escondida");
+
+  const guarded = await call("POST", "/api/v1/communities", {
+    token: ownerToken,
+    body: { name: "Plaza moderada", visibility: "public", join_policy: "request" },
+  });
+  const applicant = await call("POST", "/api/v1/auth/guest", { body: { display_name: "solicitante" } });
+  const requested = await call("POST", `/api/v1/public-communities/${guarded.json.id}/requests`, {
+    token: applicant.json.access_token,
+    body: { message: "Me gustaría entrar" },
+  });
+  assert.equal(requested.status, 200);
+  assert.equal(requested.json.state, "pending");
+
+  const pending = await call("GET", `/api/v1/communities/${guarded.json.id}/join-requests`, { token: ownerToken });
+  assert.equal(pending.json.length, 1);
+  const approved = await call("POST", `/api/v1/join-requests/${pending.json[0].id}/approve`, { token: ownerToken });
+  assert.equal(approved.json.state, "approved");
+  const visible = await call("GET", `/api/v1/communities/${guarded.json.id}/bootstrap`, { token: applicant.json.access_token });
+  assert.equal(visible.status, 200, "aprobar la solicitud crea una membresía real");
+
+  const discovery = await call("GET", "/api/v1/discovery");
+  const profile = discovery.json.find((item: any) => item.id === guarded.json.id);
+  assert.equal(profile.join_policy, "request");
+  assert.equal(typeof profile.fingerprint, "string");
+});
+
 test("nadie puede concederse permisos que no tiene", async () => {
   const owner = await call("POST", "/api/v1/auth/register", {
     body: { username: "carla", password: "contrasena-larga-3" },

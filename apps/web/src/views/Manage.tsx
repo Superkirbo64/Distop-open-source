@@ -14,6 +14,8 @@ import {
   type AuditLogEntry,
   type Channel,
   type Community,
+  type CommunityJoinPolicy,
+  type CommunityVisibility,
   type CustomEmoji,
   type EmojiKind,
   type Invite,
@@ -22,16 +24,17 @@ import {
 import { useStore } from "../store.ts";
 import { api, download, upload } from "../lib/api.ts";
 import { clientOrigin } from "../lib/instance.ts";
+import { hasStablePublicAddress, type TunnelSnapshot } from "../lib/publish.ts";
 import { formatDate } from "../i18n.ts";
 import {
   Button,
   ColorInput,
+  EmptyState,
   ErrorNote,
   Field,
   ImageField,
   Modal,
   Spinner,
-  Toggle,
   useConfirm,
   useLocale,
   useT,
@@ -46,7 +49,7 @@ import {
  */
 const EMPTY: never[] = [];
 
-type Tab = "overview" | "roles" | "emojis" | "invites" | "audit" | "meetings" | "data";
+type Tab = "overview" | "roles" | "emojis" | "invites" | "requests" | "audit" | "meetings" | "data";
 
 export function Manage({ open, onClose }: { open: boolean; onClose: () => void }) {
   const t = useT();
@@ -62,6 +65,7 @@ export function Manage({ open, onClose }: { open: boolean; onClose: () => void }
     ["roles", t("manage.roles"), has(permissions, PERMISSIONS.MANAGE_ROLES)],
     ["emojis", t("emoji.title"), has(permissions, PERMISSIONS.MANAGE_COMMUNITY)],
     ["invites", t("manage.invites"), has(permissions, PERMISSIONS.MANAGE_INVITES)],
+    ["requests", t("manage.requests"), has(permissions, PERMISSIONS.MANAGE_MEMBERS)],
     ["audit", t("manage.audit"), has(permissions, PERMISSIONS.VIEW_AUDIT_LOG)],
     ["meetings", t("meeting.section"), has(permissions, PERMISSIONS.MANAGE_MEETINGS)],
     ["data", t("manage.data"), has(permissions, PERMISSIONS.MANAGE_COMMUNITY)],
@@ -94,6 +98,7 @@ export function Manage({ open, onClose }: { open: boolean; onClose: () => void }
           {tab === "roles" ? <Roles communityId={communityId} roles={data.roles} mine={permissions} /> : null}
           {tab === "emojis" ? <Expressions communityId={communityId} emojis={data.emojis} /> : null}
           {tab === "invites" ? <Invites communityId={communityId} /> : null}
+          {tab === "requests" ? <JoinRequests communityId={communityId} /> : null}
           {tab === "audit" ? <Audit communityId={communityId} /> : null}
           {tab === "meetings" ? (
             <MeetingHistoryTab communityId={communityId} channels={data.channels} onClose={onClose} />
@@ -102,6 +107,57 @@ export function Manage({ open, onClose }: { open: boolean; onClose: () => void }
         </div>
       </div>
     </Modal>
+  );
+}
+
+interface JoinRequestRow {
+  id: string;
+  user_id: string;
+  display_name: string;
+  avatar_url: string | null;
+  message: string | null;
+  created_at: number;
+}
+
+function JoinRequests({ communityId }: { communityId: string }) {
+  const t = useT();
+  const errorText = useErrorText();
+  const [rows, setRows] = useState<JoinRequestRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => void api<JoinRequestRow[]>("GET", `/api/v1/communities/${communityId}/join-requests`)
+    .then(setRows)
+    .catch((reason) => setError(errorText(reason)));
+
+  useEffect(load, [communityId]);
+
+  async function decide(id: string, decision: "approve" | "reject"): Promise<void> {
+    setError(null);
+    try {
+      await api("POST", `/api/v1/join-requests/${id}/${decision}`);
+      setRows((current) => current?.filter((row) => row.id !== id) ?? []);
+    } catch (reason) {
+      setError(errorText(reason));
+    }
+  }
+
+  if (!rows) return <Spinner label={t("common.loading")} />;
+  if (rows.length === 0) return <EmptyState title={t("manage.requestsEmpty")} hint={t("manage.requestsEmptyHint")} />;
+  return (
+    <div className="flex flex-col gap-3">
+      {rows.map((request) => (
+        <div key={request.id} className="flex items-center gap-3 rounded-[10px] border border-line p-3">
+          {request.avatar_url ? <img src={request.avatar_url} alt="" className="h-10 w-10 rounded-full object-cover" /> : null}
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">{request.display_name}</p>
+            {request.message ? <p className="text-xs text-muted">{request.message}</p> : null}
+          </div>
+          <Button variant="ghost" onClick={() => void decide(request.id, "reject")}>{t("manage.reject")}</Button>
+          <Button variant="primary" onClick={() => void decide(request.id, "approve")}>{t("manage.approve")}</Button>
+        </div>
+      ))}
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+    </div>
   );
 }
 
@@ -115,10 +171,23 @@ function Overview({ community }: { community: Community }) {
     banner_url: community.banner_url ?? "",
     accent_color: community.accent_color,
     rules: community.rules ?? "",
-    is_public: community.is_public,
+    visibility: community.visibility ?? (community.is_public ? "public" : "private"),
+    join_policy: community.join_policy ?? "invite",
   });
   const [state, setState] = useState<"idle" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
+
+  /* La regla que decide si esta comunidad llega al Explorar global vive en el
+     servidor: solo publica con dirección estable. Aquí se lee el estado real del
+     túnel para decirlo antes de guardar, no después. Sin permiso de anfitrión la
+     consulta falla y queda el consejo genérico. */
+  const [stableAddress, setStableAddress] = useState<string | null>(null);
+  useEffect(() => {
+    if (form.visibility !== "public") return;
+    void api<TunnelSnapshot>("GET", "/api/v1/instance/tunnel")
+      .then((tunnel) => setStableAddress(hasStablePublicAddress(tunnel) ? new URL(tunnel.fixed_url || tunnel.public_url).host : null))
+      .catch(() => setStableAddress(null));
+  }, [form.visibility]);
 
   async function save() {
     setError(null);
@@ -188,12 +257,42 @@ function Overview({ community }: { community: Community }) {
         )}
       </Field>
 
-      <Toggle
-        checked={form.is_public}
-        onChange={(value) => setForm({ ...form, is_public: value })}
-        label={t("community.public")}
-        hint={t("community.publicHint")}
-      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={t("community.visibility")} hint={t("community.visibilityHint")}>
+          {(id) => (
+            <select
+              id={id}
+              className="field"
+              value={form.visibility}
+              onChange={(event) => setForm({ ...form, visibility: event.target.value as CommunityVisibility })}
+            >
+              <option value="private">{t("community.visibility.private")}</option>
+              <option value="unlisted">{t("community.visibility.unlisted")}</option>
+              <option value="public">{t("community.visibility.public")}</option>
+            </select>
+          )}
+        </Field>
+        <Field label={t("community.joinPolicy")} hint={t("community.joinPolicyHint")}>
+          {(id) => (
+            <select
+              id={id}
+              className="field"
+              value={form.join_policy}
+              onChange={(event) => setForm({ ...form, join_policy: event.target.value as CommunityJoinPolicy })}
+            >
+              <option value="open">{t("community.joinPolicy.open")}</option>
+              <option value="invite">{t("community.joinPolicy.invite")}</option>
+              <option value="request">{t("community.joinPolicy.request")}</option>
+            </select>
+          )}
+        </Field>
+      </div>
+
+      {form.visibility === "public" ? (
+        <p className="rounded-[10px] border border-line bg-sunken p-3 text-xs text-muted">
+          {stableAddress ? t("community.publicStableOk", { host: stableAddress }) : t("community.publicStableHint")}
+        </p>
+      ) : null}
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
 

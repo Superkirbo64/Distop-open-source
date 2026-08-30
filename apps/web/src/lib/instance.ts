@@ -229,6 +229,7 @@ export function clientOrigin(): string {
 /* Una invitación pegada antes de conectar sobrevive a la recarga: se apunta
    aquí y App.tsx la abre en cuanto la aplicación vuelve a estar en pie. */
 const PENDING_INVITE = "distop.pendingInvite";
+const PENDING_PUBLIC_JOIN = "distop.pendingPublicJoin";
 
 function storePendingInvite(code: string): void {
   localStorage.setItem(PENDING_INVITE, code);
@@ -242,6 +243,31 @@ export function takePendingInvite(): string | null {
   const code = localStorage.getItem(PENDING_INVITE);
   if (code) localStorage.removeItem(PENDING_INVITE);
   return code;
+}
+
+export interface PendingPublicJoin {
+  communityId: string;
+  policy: "open" | "request";
+}
+
+export function storePendingPublicJoin(target: PendingPublicJoin): void {
+  localStorage.setItem(PENDING_PUBLIC_JOIN, JSON.stringify(target));
+}
+
+export function peekPendingPublicJoin(): PendingPublicJoin | null {
+  try {
+    const raw = localStorage.getItem(PENDING_PUBLIC_JOIN);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<PendingPublicJoin>;
+    if (typeof value.communityId !== "string" || (value.policy !== "open" && value.policy !== "request")) return null;
+    return value as PendingPublicJoin;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingPublicJoin(): void {
+  localStorage.removeItem(PENDING_PUBLIC_JOIN);
 }
 
 const PENDING_COMMUNITY = "distop.pendingCommunity";

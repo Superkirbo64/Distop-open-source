@@ -1,0 +1,27 @@
+name: Directory
+
+on:
+  push:
+    paths:
+      - "apps/directory/**"
+      - ".github/workflows/directory.yml"
+  pull_request:
+    paths:
+      - "apps/directory/**"
+      - ".github/workflows/directory.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno task check
+        working-directory: apps/directory
+      - run: deno task test
+        working-directory: apps/directory

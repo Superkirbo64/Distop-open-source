@@ -40,11 +40,18 @@ const ficha = (id: string, name: string): DirectoryCommunity => ({
   members: 3,
 });
 
-test("v1 tiene una sola fuente: la instancia activa", () => {
+test("sin directorio configurado solo queda la instancia activa", () => {
   const fuentes = directorySources();
   assert.equal(fuentes.length, 1);
   assert.equal(fuentes[0]!.id, "instance");
   assert.equal(fuentes[0]!.labelKey, "explore.sourceInstance");
+});
+
+test("el directorio global es otra fuente y el local puede estar apagado", () => {
+  const fuentes = directorySources({ localEnabled: false, directoryUrl: "https://directory.example" });
+  assert.equal(fuentes.length, 1);
+  assert.equal(fuentes[0]!.id, "global");
+  assert.equal(fuentes[0]!.labelKey, "explore.sourceGlobal");
 });
 
 test("junta lo de todas las fuentes en su orden", async () => {

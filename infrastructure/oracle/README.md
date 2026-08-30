@@ -1,5 +1,12 @@
 # Distop en Oracle Cloud Always Free
 
+> **ARCHIVADO — no soportado.** La capa gratuita ARM de Oracle lleva meses
+> sin dar capacidad (`Out of host capacity` una y otra vez), y llegar hasta ese
+> error exige Terraform, DNS y certificados. Para una comunidad hay caminos
+> mucho más cortos: el túnel que la aplicación abre sola, Tailscale Funnel, una
+> Raspberry o una VPS pequeña. Este stack se conserva porque funciona y porque
+> el trabajo es recuperable, no porque se recomiende.
+
 Stack Terraform del despliegue de referencia en la nube a coste cero
 (`docs/nube-oracle.md` explica el porqué de cada decisión; aquí está el cómo).
 Crea: VCN + subred pública, una VM `VM.Standard.A1.Flex` (Ubuntu 24.04 ARM),
@@ -16,7 +23,10 @@ por variables de Terraform ni por el user_data.
 
 ## Prerequisitos
 
-- Cuenta de Oracle Cloud (Free Tier vale) y `terraform >= 1.6`.
+- Cuenta de Oracle Cloud (Free Tier vale). Terraform solo hace falta si
+  aplicas desde tu equipo, y tiene que ser **1.5.x**: Resource Manager se
+  quedó en la última versión con licencia MPL y el stack fija ese techo
+  (`versions.tf`). Desde la consola no instalas nada.
 - [`oci` CLI](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/cliconcepts.htm)
   configurado en tu equipo (solo para consultar OCIDs e imágenes; la VM ya
   trae el suyo en un venv).
@@ -35,12 +45,29 @@ primer `terraform init`, commitea `.terraform.lock.hcl` (fija el proveedor).
 | `tenancy_ocid` | Consola → Perfil → Tenancy, o `~/.oci/config` |
 | `compartment_ocid` | Consola → Identity → Compartments (puede ser la tenancy) |
 | `availability_domain` | `oci iam availability-domain list --compartment-id <tenancy>` |
-| `ubuntu_image_ocid` | ver abajo |
+| `ubuntu_image_ocid` | opcional: vacío lo resuelve el stack (ver abajo) |
+
+`distop_release` no tiene valor por defecto: aplicar a mano obliga a decir qué
+versión se despliega. El job `oci-stack` que empaquetaba el zip inyectando ese
+valor **se retiró al archivar este camino**, así que ya no hay zip publicado en
+las releases; para usar el stack hay que empaquetar
+`infrastructure/oracle/` a mano (con `main.tf` en la raíz del zip) o aplicarlo
+desde tu equipo con Terraform 1.5.x.
 
 ## Imagen ARM64 (Ubuntu 24.04 aarch64)
 
-La imagen se pide explícita a propósito: resolver "la última" haría cada
-reconstrucción no reproducible. Lista las candidatas de TU región:
+No hace falta elegirla: con `ubuntu_image_ocid` vacío, el stack resuelve la
+Ubuntu 24.04 más reciente **compatible con `VM.Standard.A1.Flex`**, y ese
+filtro por shape ya garantiza aarch64. Existe porque el desplegable de la
+consola mezcla x86 y ARM sin distinguirlos, y elegir mal no falla al rellenar
+el formulario: falla al lanzar la VM, con
+`400-InvalidParameter, Shape VM.Standard.A1.Flex is not valid for image ocid1.image...`.
+
+La reproducibilidad se mantiene por el otro lado: el OCID que se usó sale por
+el output `image_ocid`. Para clavar esa misma imagen en futuros despliegues,
+cópialo a `ubuntu_image_ocid` — lo que se fija a mano siempre manda.
+
+Para elegirla tú desde el principio, las candidatas de TU región:
 
 ```sh
 oci compute image list \
@@ -51,8 +78,6 @@ oci compute image list \
   --sort-by TIMECREATED --sort-order DESC \
   --query 'data[0].{nombre:"display-name", ocid:id}'
 ```
-
-Filtrar por shape A1 ya garantiza que la imagen es aarch64.
 
 ## Desplegar
 
@@ -89,7 +114,15 @@ propagarse, reintenta solo.
 ## Primer acceso (claim con SETUP_CODE)
 
 La instancia recién creada se reclama desde otro equipo con un código de un
-solo uso que imprime al arrancar:
+solo uso. Hay dos maneras de tenerlo, y la primera evita el SSH:
+
+- **`setup_code` en las variables del stack**: lo eliges tú, cloud-init lo
+  escribe en `/etc/distop/distop.env` y lo tecleas en la web directamente.
+  Mismo aviso que `duckdns_token`: queda legible en el state y en el
+  user_data — pero deja de valer en el instante en que alguien reclama la
+  instancia.
+- **`setup_code` vacío** (el default): la instancia genera uno aleatorio en
+  cada arranque y solo se lee entrando por SSH.
 
 ```sh
 ssh ubuntu@IP
@@ -97,14 +130,19 @@ sudo docker compose -f /opt/distop/docker-compose.oracle.yml logs instance | gre
 ```
 
 Abre `https://<public_hostname>`, entra y usa ese código cuando la aplicación
-lo pida. Después: **guarda fuera de la VM la frase de copias**:
+lo pida.
+
+Al reclamarla, la propia aplicación te enseña **una sola vez** la frase de las
+copias, para que no haya que entrar por SSH a buscarla. Guárdala en tu gestor
+de contraseñas en ese momento: sin ella una copia no se puede restaurar. Si
+cierras el aviso sin copiarla, sigue en la VM y se lee así:
 
 ```sh
 sudo cat /data/backup-passphrase
 ```
 
-Sin esa frase una copia no se puede restaurar. Apúntala en tu gestor de
-contraseñas ahora, no el día del desastre.
+Por HTTP no vuelve a salir nunca: si apareciera en cada sesión, robar una
+sesión sería robar el descifrado de todas las copias.
 
 ## Copias de seguridad
 

@@ -71,8 +71,9 @@ variable "boot_volume_gb" {
 }
 
 variable "ubuntu_image_ocid" {
-  description = "OCID de una imagen Canonical Ubuntu 24.04 aarch64 de la región elegida (README: oci compute image list). Explícito a propósito: resolver 'la última' haría la reconstrucción no reproducible."
+  description = "OCID de una imagen Canonical Ubuntu 24.04 aarch64. Vacío = la resuelve el stack (la más reciente compatible con A1.Flex, que por el filtro de shape siempre es aarch64). Fíjalo cuando quieras clavar una imagen concreta; el OCID en uso sale por el output image_ocid."
   type        = string
+  default     = ""
 }
 
 variable "distop_release" {
@@ -110,6 +111,18 @@ variable "duckdns_token" {
   type        = string
   default     = ""
   sensitive   = true
+}
+
+variable "setup_code" {
+  description = "Código de un solo uso para reclamar la instancia desde el navegador, sin entrar por SSH a leer el log. Vacío = la instancia genera uno aleatorio en cada arranque y solo se lee por SSH. AVISO: como duckdns_token, queda legible en el state y en el user_data — pero muere en el momento en que alguien reclama la instancia."
+  type        = string
+  default     = ""
+  sensitive   = true
+
+  validation {
+    condition     = var.setup_code == "" || can(regex("^[A-Za-z0-9-]{8,64}$", var.setup_code))
+    error_message = "setup_code debe tener entre 8 y 64 caracteres, solo letras, números o guiones: va literal a un fichero de entorno y un espacio o una almohadilla lo romperían."
+  }
 }
 
 variable "create_iam" {

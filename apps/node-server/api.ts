@@ -7,11 +7,11 @@ import { randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, MEETING_ROLES, MEETING_STATES, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
+import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, COMMUNITY_JOIN_POLICIES, COMMUNITY_VISIBILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, MEETING_ROLES, MEETING_STATES, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { MeetingRole, MeetingState, Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import { fixedPublicUrl, setFixedPublicUrl, setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
-import { iceServers, relayState, setRelay, videoMode } from "./ice.ts";
+import { iceServers, relayState, setRelay, videoMode, voiceMode } from "./ice.ts";
 import { audit, db, INSTANCE_ID, markCommunityRead, seedCommunity, uniqueSlug } from "./db.ts";
 import {
   authenticate,
@@ -143,6 +143,7 @@ import { statesOfCommunity } from "./voice.ts";
 import { advanceTailscale, stopTailscale, tailscaleState } from "./tailscale.ts";
 import { requestShutdown } from "./lifecycle.ts";
 import { createInstanceProof, instanceEpoch, instanceFingerprint, instancePublicKey, instanceRole, LINEAGE_ID, verifyInstanceProof, type SignedInstanceProof } from "./identity.ts";
+import { queueDirectorySync } from "./directory-publisher.ts";
 
 /* ── guardas ───────────────────────────────────────────────────────── */
 
@@ -205,6 +206,8 @@ route("GET", "/api/v1/info", async (ctx) => ({
   registration_enabled: config.registrationEnabled,
   guest_mode_enabled: config.guestModeEnabled,
   public_discovery_enabled: config.publicDiscoveryEnabled,
+  /** Vacío = esta distribución no usa un índice global; Explorar sigue local. */
+  directory_url: config.directoryUrl,
   max_upload_mb: config.maxUploadMb,
   allowed_upload_types: config.allowedUploadTypes,
   /* Booleano y nunca la clave: el cliente solo necesita saber si enseñar la
@@ -223,6 +226,10 @@ route("GET", "/api/v1/info", async (ctx) => ({
   /** Si la imagen pasa por la instancia o va directa (§9.5). Fps y bitrate son
       preferencia de cada cliente, no de la instancia (§10.2). */
   video: videoMode(),
+  /** Y si la VOZ pasa por la instancia o va directa entre navegadores. El
+      audio cabe por el socket sin despeinar a nadie, así que `host` sigue
+      siendo el default; `direct` existe para quien paga el tráfico (§9.4). */
+  voice: voiceMode(),
   /** Instancia sin dueño: el cliente enseña la puesta en marcha, no el login. */
   setup_required: countOwners() === 0,
   setup_requires_code: !isLocalRequest(ctx),
@@ -337,7 +344,16 @@ route("POST", "/api/v1/auth/bootstrap", async (ctx) => {
     kind: "local",
     ...(password ? { password } : {}),
   });
-  return issue(user.id);
+
+  /* La frase de las copias sale por HTTP UNA sola vez: aquí. Donde hay
+     planificador y la instancia está detrás de un proxy —la nube— ninguna
+     petición es local (http.ts:isLocalRequest), así que el fichero solo se
+     lee entrando por SSH, y una frase que nadie ha guardado convierte cada
+     copia en un fichero inútil. Este es el único instante sin nada que
+     perder: la instancia acaba de nacer y quien contesta es quien la reclama.
+     Después no vuelve a salir, porque entonces robar una sesión sería robar
+     el descifrado de todas las copias. */
+  return { ...issue(user.id), ...(config.backupPassphrase ? { backup_passphrase: config.backupPassphrase } : {}) };
 });
 
 /** Nombre de usuario a partir del visible; si choca o queda corto, se completa. */
@@ -692,10 +708,21 @@ route("POST", "/api/v1/communities", async (ctx) => {
 
   const body = await readJson(ctx);
   const name = v.string(body, "name", { min: 2, max: 64 });
-  const isPublic = v.bool(body, "is_public", false);
+  const legacyPublic = v.bool(body, "is_public", false);
+  const visibility = v.oneOf(body, "visibility", COMMUNITY_VISIBILITIES, legacyPublic ? "public" : "private");
+  const joinPolicy = v.oneOf(body, "join_policy", COMMUNITY_JOIN_POLICIES, "invite");
   const accent = v.color(body, "accent_color") ?? undefined;
 
-  const id = seedCommunity({ name, slug: uniqueSlug(name), ownerId: user.id, isPublic, accentColor: accent ?? undefined });
+  const id = seedCommunity({
+    name,
+    slug: uniqueSlug(name),
+    ownerId: user.id,
+    isPublic: visibility === "public",
+    visibility,
+    joinPolicy,
+    accentColor: accent ?? undefined,
+  });
+  queueDirectorySync();
   return getCommunity(id);
 });
 
@@ -804,7 +831,13 @@ route("PATCH", "/api/v1/communities/:id", async (ctx) => {
   const accent = v.color(body, "accent_color");
   if (accent) fields.push(["accent_color", accent]);
   if (body.theme !== undefined) fields.push(["theme", v.oneOf(body, "theme", ["light", "dark", "system"] as const)]);
-  if (body.is_public !== undefined) fields.push(["is_public", v.bool(body, "is_public", false) ? 1 : 0]);
+  if (body.visibility !== undefined || body.is_public !== undefined) {
+    const visibility = body.visibility !== undefined
+      ? v.oneOf(body, "visibility", COMMUNITY_VISIBILITIES)
+      : (v.bool(body, "is_public", false) ? "public" : "private");
+    fields.push(["visibility", visibility], ["is_public", visibility === "public" ? 1 : 0]);
+  }
+  if (body.join_policy !== undefined) fields.push(["join_policy", v.oneOf(body, "join_policy", COMMUNITY_JOIN_POLICIES)]);
   if (fields.length === 0) return getCommunity(communityId);
 
   db.prepare(`UPDATE communities SET ${fields.map(([k]) => `${k} = ?`).join(", ")} WHERE id = ?`).run(
@@ -815,6 +848,7 @@ route("PATCH", "/api/v1/communities/:id", async (ctx) => {
   const updated = getCommunity(communityId)!;
   audit(communityId, user.id, "COMMUNITY_UPDATE", communityId, { fields: fields.map(([k]) => k) });
   publish(communityId, { t: "COMMUNITY_UPDATE", d: updated });
+  queueDirectorySync();
   return updated;
 });
 
@@ -834,6 +868,7 @@ route("DELETE", "/api/v1/communities/:id", (ctx) => {
      MEMBER_LEAVE se conserva para clientes anteriores a este evento. */
   publish(community.id, { t: "COMMUNITY_DELETE", d: { community_id: community.id } });
   publish(community.id, { t: "MEMBER_LEAVE", d: { community_id: community.id, user_id: user.id } });
+  queueDirectorySync();
 });
 
 /**
@@ -895,11 +930,103 @@ route("GET", "/api/v1/discovery", (ctx) => {
   const rows = db
     .prepare(
       `SELECT c.id, c.name, c.slug, c.description, c.icon_url, c.banner_url, c.accent_color,
+              c.visibility, c.join_policy,
               (SELECT COUNT(*) FROM members m WHERE m.community_id = c.id AND m.banned = 0) AS members
-       FROM communities c WHERE c.is_public = 1 ORDER BY members DESC LIMIT 50`,
+       FROM communities c WHERE c.visibility = 'public' ORDER BY members DESC LIMIT 50`,
     )
     .all() as unknown[];
-  return rows;
+  return rows.map((row) => ({
+    ...(row as Record<string, unknown>),
+    instance_id: INSTANCE_ID,
+    fingerprint: instanceFingerprint(),
+    ...(publicUrl() ? { origin: publicUrl() } : {}),
+  }));
+});
+
+/** Entrada sin invitación, únicamente cuando la comunidad lo declaró así. */
+route("POST", "/api/v1/public-communities/:id/join", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const communityId = ctx.params.id!;
+  rateLimit(`public-join:${user.id}`, 20, 60 * 60_000);
+  const community = getCommunity(communityId);
+  if (!community || community.visibility !== "public") throw notFound("Comunidad pública no encontrada.");
+  if (community.join_policy !== "open") {
+    throw new HttpError(409, "JOIN_POLICY", "Esta comunidad no admite entrada directa.", {
+      join_policy: community.join_policy,
+    });
+  }
+  const existing = memberState(communityId, user.id);
+  if (existing.banned) throw forbidden("Tienes el acceso bloqueado en esta comunidad.");
+  if (!existing.isMember) {
+    db.prepare("INSERT INTO members (community_id, user_id, joined_at) VALUES (?, ?, ?)").run(communityId, user.id, Date.now());
+    markCommunityRead(user.id, communityId);
+    audit(communityId, user.id, "MEMBER_JOIN", user.id, { source: "public_directory" });
+    publish(communityId, { t: "MEMBER_JOIN", d: getMember(communityId, user.id)! });
+  }
+  return { community: getCommunity(communityId) };
+});
+
+route("POST", "/api/v1/public-communities/:id/requests", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const communityId = ctx.params.id!;
+  rateLimit(`join-request:${user.id}`, 10, 60 * 60_000);
+  const community = getCommunity(communityId);
+  if (!community || community.visibility !== "public") throw notFound("Comunidad pública no encontrada.");
+  if (community.join_policy !== "request") throw conflict("Esta comunidad no recibe solicitudes.");
+  const member = memberState(communityId, user.id);
+  if (member.banned) throw forbidden("Tienes el acceso bloqueado en esta comunidad.");
+  if (member.isMember) return { state: "approved", community };
+  const existing = db.prepare(
+    "SELECT id, state FROM community_join_requests WHERE community_id = ? AND user_id = ? AND state = 'pending'",
+  ).get(communityId, user.id) as { id: string; state: string } | undefined;
+  if (existing) return existing;
+  const body = await readJson(ctx);
+  const message = v.optionalString(body, "message", { max: 500 }) || null;
+  const id = uuidv7();
+  db.prepare(
+    `INSERT INTO community_join_requests (id, community_id, user_id, state, message, created_at)
+     VALUES (?, ?, ?, 'pending', ?, ?)`,
+  ).run(id, communityId, user.id, message, Date.now());
+  audit(communityId, user.id, "JOIN_REQUEST_CREATE", id, {});
+  return { id, state: "pending" };
+});
+
+route("GET", "/api/v1/communities/:id/join-requests", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const communityId = ctx.params.id!;
+  requirePerm(communityId, user.id, PERMISSIONS.MANAGE_MEMBERS, "ver solicitudes de entrada");
+  return db.prepare(
+    `SELECT r.id, r.community_id, r.user_id, r.state, r.message, r.created_at,
+            u.display_name, u.avatar_url
+       FROM community_join_requests r JOIN users u ON u.id = r.user_id
+      WHERE r.community_id = ? AND r.state = 'pending'
+      ORDER BY r.created_at ASC LIMIT 100`,
+  ).all(communityId);
+});
+
+route("POST", "/api/v1/join-requests/:id/:decision", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const request = db.prepare("SELECT * FROM community_join_requests WHERE id = ?").get(ctx.params.id!) as
+    | { id: string; community_id: string; user_id: string; state: string }
+    | undefined;
+  if (!request || request.state !== "pending") throw notFound("Solicitud no encontrada.");
+  requirePerm(request.community_id, user.id, PERMISSIONS.MANAGE_MEMBERS, "decidir solicitudes de entrada");
+  const decision = ctx.params.decision;
+  if (decision !== "approve" && decision !== "reject") throw notFound();
+  const next = decision === "approve" ? "approved" : "rejected";
+  db.prepare("UPDATE community_join_requests SET state = ?, decided_at = ?, decided_by = ? WHERE id = ?")
+    .run(next, Date.now(), user.id, request.id);
+  if (decision === "approve") {
+    const state = memberState(request.community_id, request.user_id);
+    if (!state.banned && !state.isMember) {
+      db.prepare("INSERT INTO members (community_id, user_id, joined_at) VALUES (?, ?, ?)")
+        .run(request.community_id, request.user_id, Date.now());
+      markCommunityRead(request.user_id, request.community_id);
+      publish(request.community_id, { t: "MEMBER_JOIN", d: getMember(request.community_id, request.user_id)! });
+    }
+  }
+  audit(request.community_id, user.id, `JOIN_REQUEST_${next.toUpperCase()}`, request.id, { user_id: request.user_id });
+  return { id: request.id, state: next };
 });
 
 /* ── reuniones (V1 §8) ─────────────────────────────────────────────────
@@ -3086,6 +3213,7 @@ route("PUT", "/api/v1/instance/public-url", async (ctx) => {
   if (!raw) {
     setFixedPublicUrl("");
     if (tunnelAutostart() && !config.publicUrl) void startTunnel();
+    queueDirectorySync();
     return { ok: true, reachable: true, public_url: publicUrl(), error: "" };
   }
 
@@ -3145,6 +3273,7 @@ route("PUT", "/api/v1/instance/public-url", async (ctx) => {
 
   setFixedPublicUrl(candidate.origin);
   stopTunnel();
+  queueDirectorySync();
   return { ok: true, reachable: true, public_url: publicUrl(), error: "" };
 });
 
@@ -3156,12 +3285,16 @@ route("GET", "/api/v1/instance/tailscale", (ctx) => {
 route("POST", "/api/v1/instance/tailscale", (ctx) => {
   requireTunnelHost(ctx);
   rateLimit(`tailscale:${ctx.ip}`, 8, 60_000);
-  return advanceTailscale();
+  const state = advanceTailscale();
+  queueDirectorySync();
+  return state;
 });
 
 route("DELETE", "/api/v1/instance/tailscale", (ctx) => {
   requireTunnelHost(ctx);
-  return stopTailscale();
+  const state = stopTailscale();
+  queueDirectorySync();
+  return state;
 });
 
 route("GET", "/api/v1/instance/tunnel", (ctx) => {
@@ -3207,6 +3340,7 @@ route("PUT", "/api/v1/instance/relay", async (ctx) => {
   return setRelay({
     ...text("mode"),
     ...text("video"),
+    ...text("voice"),
     ...text("url"),
     ...text("username"),
     ...text("credential"),

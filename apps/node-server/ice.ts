@@ -48,6 +48,15 @@ export type VideoMode = "host" | "direct";
 interface Relay {
   mode: RelayMode;
   video: VideoMode;
+  /**
+   * Por dónde va la VOZ (§9.4). Misma elección que el vídeo y por separado,
+   * porque no cuestan lo mismo: el audio son ~4 KB/s por persona y funciona
+   * siempre por la instancia, mientras que el vídeo tumba una conexión
+   * doméstica. `host` es el de siempre —relayMedia reparte por el socket— y
+   * `direct` lo lleva por las mismas conexiones WebRTC que ya negocia el
+   * vídeo, dejando a la instancia solo el texto y la señalización.
+   */
+  voice: VideoMode;
   /** TURN propio (coturn y similares). */
   url: string;
   username: string;
@@ -70,9 +79,12 @@ interface Relay {
 
 const DEFAULT: Relay = {
   mode: "direct",
-  // Por defecto por la instancia: es lo único que funciona sin configurar nada,
-  // y una comunidad casera son cuatro personas, no cuarenta.
-  video: "host",
+  // Una instancia nueva empieza híbrida: cámara/pantalla directas y voz en
+  // malla. La voz cae por par al gateway si una ruta falla y la sala entera
+  // vuelve al gateway al superar el umbral; el vídeo puede usar TURN si se
+  // configura. Así una VPS pequeña señaliza, pero no retransmite por defecto.
+  video: "direct",
+  voice: "direct",
   url: "",
   username: "",
   credential: "",
@@ -90,6 +102,7 @@ function stored(): Relay {
     // un estado que la interfaz no sepa dibujar: se cae al de siempre.
     if (!MODES.includes(saved.mode)) saved.mode = "direct";
     if (saved.video !== "direct") saved.video = "host";
+    if (saved.voice !== "direct") saved.voice = "host";
     return saved;
   } catch {
     return DEFAULT;
@@ -235,6 +248,7 @@ export async function iceServers(): Promise<IceServer[]> {
 export function relayState(): {
   mode: RelayMode;
   video: VideoMode;
+  voice: VideoMode;
   url: string;
   username: string;
   keyId: string;
@@ -246,6 +260,7 @@ export function relayState(): {
   return {
     mode: relay.mode,
     video: relay.video,
+    voice: relay.voice,
     url: relay.url,
     username: relay.username,
     keyId: relay.keyId,
@@ -262,9 +277,15 @@ export function videoMode(): { mode: VideoMode } {
   return { mode: stored().video };
 }
 
+/** Lo mismo para la voz. Va aparte del vídeo porque se elige aparte. */
+export function voiceMode(): { mode: VideoMode } {
+  return { mode: stored().voice };
+}
+
 export async function setRelay(next: Partial<Relay>): Promise<ReturnType<typeof relayState>> {
   const relay = { ...stored(), ...next };
   if (relay.video !== "direct") relay.video = "host";
+  if (relay.voice !== "direct") relay.voice = "host";
 
   // Con el vídeo pasando por la instancia no hay conexión directa que arreglar,
   // así que un relevo TURN no pintaría nada: se guarda igual por si se cambia.

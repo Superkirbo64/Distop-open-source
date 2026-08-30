@@ -35,6 +35,7 @@ variableGroups:
       - distop_release
       - public_hostname
       - duckdns_token
+      - setup_code
 
   - title: "Copias e IAM"
     variables:
@@ -66,9 +67,9 @@ variables:
 
   ubuntu_image_ocid:
     type: oci:core:image:id
-    title: "Imagen Ubuntu 24.04 (aarch64)"
-    description: "Elige una imagen Canonical Ubuntu 24.04 para ARM (aarch64); la VM es A1.Flex."
-    required: true
+    title: "Imagen Ubuntu (opcional)"
+    description: "Déjalo vacío: el stack coge solo la Ubuntu 24.04 para ARM más reciente. Elígela a mano únicamente para clavar una versión concreta, y que sea aarch64 o el apply falla."
+    required: false
     dependsOn:
       compartmentId: ${compartment_ocid}
 
@@ -121,7 +122,7 @@ variables:
   distop_release:
     type: string
     title: "Versión de Distop"
-    description: "Tag inmutable (ej.: v0.1.2); nunca una rama."
+    description: "Viene relleno con la versión de este paquete; cámbialo solo si sabes lo que haces. Tag inmutable, nunca una rama."
     pattern: "^v[0-9].*$"
     required: true
 
@@ -135,6 +136,14 @@ variables:
     type: password
     title: "Token de DuckDNS (opcional)"
     description: "Solo si el nombre es *.duckdns.org. Aviso: queda en el state del stack; con dominio propio déjalo vacío."
+    sensitive: true
+    required: false
+
+  setup_code:
+    type: password
+    title: "Código para reclamar la instancia (opcional)"
+    description: "Lo tecleas en la web la primera vez que entres, y así el primer acceso no necesita SSH. Déjalo vacío y la instancia generará uno que solo se ve en su log. Deja de valer en cuanto la reclamas."
+    pattern: "^([A-Za-z0-9-]{8,64})?$"
     sensitive: true
     required: false
 

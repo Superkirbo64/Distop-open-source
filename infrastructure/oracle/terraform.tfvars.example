@@ -19,6 +19,10 @@ public_hostname = "micomunidad.duckdns.org" # o tu dominio propio
 # Solo con DuckDNS. AVISO: queda legible en el state y en el user_data.
 # duckdns_token = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
+# Código para reclamar la instancia desde el navegador sin entrar por SSH a
+# leer el log. Mismo aviso que el token: acaba en el state. Vacío = aleatorio.
+# setup_code = "MI-CODIGO-2026"
+
 # Defaults sanos: 1 OCPU, 6 GB, 50 GB de disco, 7 copias, IAM automático.
 # ocpus          = 1
 # memory_gb      = 6

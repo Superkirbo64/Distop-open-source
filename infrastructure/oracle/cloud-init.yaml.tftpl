@@ -32,6 +32,11 @@ write_files:
       BACKUP_INTERVAL_HOURS=24
       BACKUP_KEEP=${backup_keep}
       BACKUP_PASSPHRASE_FILE=/data/backup-passphrase
+      # Código para reclamar la instancia desde el navegador. Vacío = la
+      # instancia genera uno aleatorio en cada arranque y hay que leerlo por
+      # SSH en el log (config.ts:setupCode). Puesto aquí, no hace falta SSH
+      # para el primer acceso; deja de valer en cuanto alguien la reclama.
+      SETUP_CODE=${setup_code}
       # Aparecer en Explorar/NodeInfo es una decisión, no un default:
       # descomenta para optar por el descubrimiento público.
       # PUBLIC_DISCOVERY_ENABLED=true

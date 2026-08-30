@@ -291,6 +291,11 @@ export function toProfileStyle(raw: unknown): ProfileStyle {
   };
 }
 
+export const COMMUNITY_VISIBILITIES = ["private", "unlisted", "public"] as const;
+export type CommunityVisibility = (typeof COMMUNITY_VISIBILITIES)[number];
+export const COMMUNITY_JOIN_POLICIES = ["open", "invite", "request"] as const;
+export type CommunityJoinPolicy = (typeof COMMUNITY_JOIN_POLICIES)[number];
+
 export interface Community {
   id: Snowflake;
   name: string;
@@ -301,6 +306,11 @@ export interface Community {
   accent_color: string;
   theme: string;
   rules: string | null;
+  /** Quién puede encontrar la comunidad. No concede acceso por sí solo. */
+  visibility: CommunityVisibility;
+  /** Cómo consigue acceso alguien que ya encontró la comunidad. */
+  join_policy: CommunityJoinPolicy;
+  /** Compatibilidad con clientes anteriores: equivale a visibility === "public". */
   is_public: boolean;
   owner_id: Snowflake;
   created_at: number;

@@ -207,6 +207,9 @@ export function setUserVolume(id: Snowflake, value: number): void {
 
   const player = players.get(id);
   if (player) player.gain.gain.value = level;
+  // El volumen que le pusiste a alguien vale igual venga su voz por donde venga.
+  const live = direct.get(id);
+  if (live) live.gain.gain.value = level;
 }
 
 const volumes = loadVolumes();
@@ -300,8 +303,17 @@ export function setShareMuted(muted: boolean): void {
   if (shared) shared.gain.gain.value = muted ? 0 : 1;
 }
 
-export async function startCapture(mic: MediaStream, send: (frame: ArrayBuffer) => void): Promise<boolean> {
-  if (!supported()) return false;
+/**
+ * Monta el grafo del micrófono y devuelve la pista ya procesada.
+ *
+ * Está separado de `startHostEncoder` a propósito: esta mezcla la necesitan LOS
+ * DOS caminos —la codifica el gateway, y también es la que se envía por
+ * WebRTC—, así que apagar el envío por la instancia no puede llevársela por
+ * delante. Y no exige WebCodecs: un navegador que no sepa codificar Opus
+ * todavía puede hablar por P2P, que se encarga el propio navegador.
+ */
+export function startAudioMix(mic: MediaStream): MediaStream | null {
+  if (typeof AudioContext !== "function") return null;
   stopCapture();
 
   const ctx = audio();
@@ -324,11 +336,28 @@ export async function startCapture(mic: MediaStream, send: (frame: ArrayBuffer) 
   source.connect(micNode).connect(destination);
 
   const track = destination.stream.getAudioTracks()[0];
-  if (!track) return false;
+  if (!track) return null;
   // `destination` es también el punto donde se engancha el sonido de la pantalla.
   capture = { track, source, mix: destination };
+  return destination.stream;
+}
 
-  encoder = new AudioEncoder({
+/**
+ * Enciende el envío de audio por la instancia.
+ *
+ * Se llama en modo `host`, y también en `direct` cuando algún par no consigue
+ * conexión directa: entonces esta copia es su único camino. Si nadie la
+ * necesita no debe encenderse — si se codificara siempre "por si acaso", quien
+ * hospeda pagaría exactamente el mismo ancho de banda que antes y todo el
+ * trabajo de la voz P2P no habría servido para nada.
+ */
+export function startHostEncoder(send: (frame: ArrayBuffer) => void): boolean {
+  if (!capture) return false;
+  if (encoder) return true;
+  if (!supported()) return false;
+
+  const track = capture.track;
+  const mine = new AudioEncoder({
     output: (chunk) => {
       // Se codifica siempre pero solo se envía sin silenciar: cortar la entrada
       // del codificador le deja un hueco en la numeración y suena a chasquido.
@@ -337,17 +366,20 @@ export async function startCapture(mic: MediaStream, send: (frame: ArrayBuffer) 
       chunk.copyTo(frame);
       send(packet(KIND_AUDIO, frame).buffer as ArrayBuffer);
     },
-    error: () => stopCapture(),
+    error: () => stopHostEncoder(),
   });
-  encoder.configure({ codec: "opus", sampleRate: SAMPLE_RATE, numberOfChannels: 1, bitrate: BITRATE });
+  mine.configure({ codec: "opus", sampleRate: SAMPLE_RATE, numberOfChannels: 1, bitrate: BITRATE });
+  encoder = mine;
 
   const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
 
   void (async () => {
-    while (capture?.track === track) {
+    // `encoder === mine` es lo que deja apagarlo sin tocar la mezcla: al
+    // cambiar la variable, este bucle termina y suelta la pista.
+    while (encoder === mine && capture?.track === track) {
       const { value, done } = await reader.read();
       if (done || !value) break;
-      if (encoder?.state === "configured") encoder.encode(value);
+      if (mine.state === "configured") mine.encode(value);
       value.close();
     }
     reader.cancel().catch(() => {});
@@ -356,9 +388,20 @@ export async function startCapture(mic: MediaStream, send: (frame: ArrayBuffer) 
   return true;
 }
 
-export function stopCapture(): void {
-  encoder?.close();
+/** Apaga el envío por la instancia y deja viva la mezcla que usa el P2P. */
+export function stopHostEncoder(): void {
+  if (!encoder) return;
+  if (encoder.state !== "closed") encoder.close();
   encoder = null;
+}
+
+/** ¿Se está enviando audio por la instancia ahora mismo? */
+export function hostEncoderOn(): boolean {
+  return encoder !== null;
+}
+
+export function stopCapture(): void {
+  stopHostEncoder();
   setShareAudio(null);
   capture?.track.stop();
   capture?.source.disconnect();
@@ -379,6 +422,20 @@ interface Player {
 }
 
 const players = new Map<Snowflake, Player>();
+
+/**
+ * Voces que llegan por WebRTC en vez de por la instancia.
+ *
+ * Entran por el MISMO grafo que las decodificadas —ganancia propia y de ahí al
+ * máster—, así que el volumen por persona, el ensordecer, la elección de
+ * altavoz y la toma de grabación siguen funcionando sin enterarse de por dónde
+ * vino el sonido. Es el mismo patrón que el audio de la pantalla compartida.
+ */
+const direct = new Map<
+  Snowflake,
+  { source: MediaStreamAudioSourceNode; gain: GainNode; analyser: AnalyserNode; sink: HTMLAudioElement }
+>();
+
 let deafened = false;
 const activeClips = new Set<AudioBufferSourceNode>();
 
@@ -588,9 +645,79 @@ function playerFor(id: Snowflake): Player {
   return player;
 }
 
+/**
+ * Engancha la voz de alguien que llega por WebRTC.
+ *
+ * Devuelve su analizador de nivel, para que quien llama lo use igual que el del
+ * micrófono propio y "está hablando" signifique lo mismo por los dos caminos.
+ */
+export function attachRemoteTrack(id: Snowflake, track: MediaStreamTrack): AnalyserNode | null {
+  if (typeof AudioContext !== "function") return null;
+  detachRemoteTrack(id);
+
+  const ctx = audio();
+  const stream = new MediaStream([track]);
+
+  /* El elemento <audio> parece de adorno y es imprescindible: Chrome no bombea
+     una pista REMOTA por el grafo de Web Audio si el stream no está enganchado
+     además a un elemento de medios. Sin esto, `createMediaStreamSource` no
+     entrega ni una muestra: los paquetes llegan (se ven en getStats), la
+     conexión dice "connected" y no se oye absolutamente nada. Va en silencio
+     porque el sonido de verdad sale por el grafo, con su volumen, su
+     ensordecer y su altavoz elegido; este elemento solo abre la espita. */
+  const sink = new Audio();
+  sink.srcObject = stream;
+  /* Volumen a cero y NO `muted`: con `muted` Chrome se ahorra el trabajo de
+     descodificar —los paquetes llegan y `totalAudioEnergy` se queda en cero,
+     medido— y la pista nunca alimenta al grafo. A volumen cero sí descodifica,
+     que es lo único que hace falta aquí: el sonido de verdad sale por el grafo,
+     con su volumen por persona, su ensordecer y su altavoz elegido. */
+  sink.volume = 0;
+  void sink.play().catch(() => {
+    // Sin gesto previo el navegador puede negarse; se reintenta al primer clic.
+  });
+
+  const source = ctx.createMediaStreamSource(stream);
+  const gain = ctx.createGain();
+  gain.gain.value = userVolume(id);
+  source.connect(gain).connect(output(ctx));
+
+  /* El medidor cuelga del MISMO nodo de origen en el MISMO contexto: una
+     segunda fuente sobre la pista remota volvería a chocar con lo de arriba. */
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.5;
+  source.connect(analyser);
+
+  direct.set(id, { source, gain, analyser, sink });
+  /* Su voz ya no viene por la instancia: si quedaba un decodificador abierto de
+     antes del cambio, se cierra para no sonar dos veces. */
+  drop(id);
+  return analyser;
+}
+
+export function detachRemoteTrack(id: Snowflake): void {
+  const node = direct.get(id);
+  if (!node) return;
+  node.source.disconnect();
+  node.gain.disconnect();
+  node.analyser.disconnect();
+  node.sink.srcObject = null;
+  direct.delete(id);
+}
+
+/** ¿La voz de esta persona está llegando en directo ahora mismo? */
+export function hasDirectAudio(id: Snowflake): boolean {
+  return direct.has(id);
+}
+
 /** Un paquete recién llegado de la instancia, sea de voz o de imagen. */
 export function receive(id: Snowflake, kind: number, payload: Uint8Array): void {
   if (kind !== KIND_AUDIO) return receiveVideo(id, kind, payload);
+  /* La regla que evita oír a alguien dos veces: quien tiene conexión directa
+     con nosotros puede seguir publicando por la instancia —lo hace porque un
+     tercero de la sala sí lo necesita— y a nosotros esa copia nos sobra. */
+  if (direct.has(id)) return;
   if (!supported()) return;
 
   const player = playerFor(id);
@@ -925,6 +1052,7 @@ function drop(id: Snowflake): void {
 
 export function dropAll(): void {
   for (const id of [...players.keys()]) drop(id);
+  for (const id of [...direct.keys()]) detachRemoteTrack(id);
   for (const id of [...viewers.keys()]) dropVideo(id);
   stopClips();
   // Colgar debe devolver la memoria: los PCM decodificados pesan mucho más que

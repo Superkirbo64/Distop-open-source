@@ -1573,6 +1573,10 @@ function StageLayout({
         self={self}
         stream={self ? local.localVideo : local.videos.get(state.user_id)}
         link={local.peerStates.get(state.user_id)}
+        /* Solo cuando el resto sí va en directo: si toda la sala pasa por el
+           servidor porque así está configurada, marcarlo persona por persona
+           sería ruido, no información. */
+        viaHost={local.voiceDirect && local.audioRoute.get(state.user_id) === "host"}
         onPin={mode === "meeting" ? (id) => setPinned((actual) => (actual === id ? null : id)) : undefined}
         pinned={pinned === state.user_id}
       />
@@ -1669,6 +1673,7 @@ function StageTile({
   self,
   stream,
   link,
+  viaHost,
   onPin,
   pinned,
 }: {
@@ -1679,6 +1684,8 @@ function StageTile({
   self: boolean;
   stream: MediaStream | null | undefined;
   link: RTCPeerConnectionState | undefined;
+  /** Su voz llega reenviada por la instancia aunque el resto vaya en directo. */
+  viaHost: boolean;
   onPin?: ((userId: string) => void) | undefined;
   pinned?: boolean | undefined;
 }) {
@@ -1777,6 +1784,14 @@ function StageTile({
                     }
                   >
                     {t(`voice.link.${link}`)}
+                  </span>
+                ) : null}
+                {/* Que la voz de alguien pase por un tercero no es un detalle
+                    que se pueda callar, aunque ese tercero sea tu propio
+                    servidor: quien mira tiene derecho a saber por dónde va. */}
+                {!self && viaHost ? (
+                  <span className="text-muted" title={t("voice.viaHostHint")}>
+                    {t("voice.viaHost")}
                   </span>
                 ) : null}
               </figcaption>

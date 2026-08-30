@@ -3,12 +3,18 @@
 #
 #   git tag v0.1.0 && git push origin v0.1.0
 #
+# Quien crea la release es UN job dedicado, y los demás solo suben ficheros.
+# Antes la creaba electron-builder con `--publish always`, y bastaba que la
+# release del tag ya existiera para que el job de Windows muriera con
+# "422 Validation Failed: already_exists" — arrastrando a Android y al resto,
+# que dependían de él. Dos versiones seguidas se publicaron a medias por eso.
+#
 # Windows: NSIS .exe + latest.yml (el feed que lee electron-updater).
 # Android: APK. Se firma solo si existen los secretos del keystore
 # (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
 # ANDROID_KEY_PASSWORD); sin ellos se publica sin firmar, y se dice.
-# Docker: imagen multi-arch del servidor en GHCR (arm64 para Oracle A1 + amd64).
-# OCI stack: zip del Terraform de infrastructure/oracle con checksum.
+# Docker: imagen multi-arch del servidor en GHCR (arm64 para Raspberry Pi y
+# VPS ARM, amd64 para el resto). Corre en paralelo: no toca la release.
 name: release
 
 on:
@@ -19,7 +25,21 @@ permissions:
   contents: write
 
 jobs:
+  # Único sitio donde nace una release. Idempotente a propósito: relanzar el
+  # workflow sobre un tag ya publicado no puede volver a romperlo.
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Crear la release del tag si no existe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && exit 0
+          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+
   windows:
+    needs: release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,15 +49,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm run dist --workspace @distop/desktop -- --publish always
+      # `--publish never`: construir y publicar son dos cosas, y mezclarlas fue
+      # exactamente el fallo. electron-builder sigue escribiendo latest.yml en
+      # el directorio de salida —lo necesita electron-updater—, solo que ya no
+      # habla con la API de GitHub.
+      - run: npm run dist --workspace @distop/desktop -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Publicar instalador y feed de actualización
+        shell: bash
+        working-directory: apps/desktop/release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: gh release upload "$GITHUB_REF_NAME" *.exe *.blockmap latest.yml --clobber
 
   android:
-    # Tras windows: electron-builder crea la release del tag y este job le
-    # añade el APK; al revés, no habría release a la que subirlo.
-    needs: windows
+    # Ya no depende de windows: la release existe antes que los dos.
+    needs: release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -100,12 +128,51 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" distop-host-bundle.zip scripts/termux-host.sh --clobber
 
-  # Imagen multi-arch del servidor: linux/arm64 (Oracle A1, Raspberry Pi) y
+  host-tools:
+    needs: [release, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validar el instalador de VPS
+        run: |
+          bash -n scripts/install-vps.sh
+          shellcheck --severity=error scripts/install-vps.sh
+          cd scripts
+          sha256sum install-vps.sh > install-vps.sh.sha256
+          sha256sum --check install-vps.sh.sha256
+      - name: Smoke real en Ubuntu limpio y persistencia tras reinicio
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GH_TOKEN" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          sudo bash scripts/install-vps.sh --version "${GITHUB_REF_NAME#v}" --no-tailscale --name "Distop smoke"
+          BEFORE=$(curl --fail --silent http://127.0.0.1:5000/api/v1/info | jq -r .instance_id)
+          test -n "$BEFORE" && test "$BEFORE" != null
+          sudo systemctl restart distop
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:5000/health >/dev/null && break
+            sleep 1
+          done
+          AFTER=$(curl --fail --silent http://127.0.0.1:5000/api/v1/info | jq -r .instance_id)
+          test "$BEFORE" = "$AFTER"
+          sudo test -s /var/lib/distop/app.db
+      - name: Publicar instalador verificable
+        working-directory: scripts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" install-vps.sh install-vps.sh.sha256 --clobber
+
+  # Imagen multi-arch del servidor: linux/arm64 (Raspberry Pi, VPS ARM) y
   # linux/amd64. Corre en paralelo, sin needs: no toca la release de GitHub,
   # solo publica en GHCR. metadata-action pasa el owner a minúsculas
-  # (ghcr.io/superkirbo64/distop) y NO se emite `latest` flotante: un
-  # despliegue debe fijar versión o digest, nunca "lo último que haya".
+  # (ghcr.io/superkirbo64/distop). Es la pieza de la que dependen el script de
+  # VPS, la Raspberry y los catálogos de self-hosting: sin ella no hay nada
+  # que instalar de un clic.
   docker:
+    needs: release
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -127,8 +194,9 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/distop
           # `latest` existe para el "docker compose up" casual de la página de
-          # descarga; los despliegues serios (cloud-init) fijan versión o digest
-          # — docs/nube-oracle.md lo exige y el compose del stack lo respeta.
+          # descarga; un despliegue serio fija versión o digest, nunca "lo
+          # último que haya", para que actualizar sea una decisión y no un
+          # efecto secundario de reiniciar.
           flavor: |
             latest=true
           tags: |
@@ -142,30 +210,3 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-  # El zip del stack Terraform para el futuro botón "Deploy to Oracle Cloud":
-  # Resource Manager exige main.tf en la RAÍZ del zip, por eso se empaqueta
-  # desde dentro de infrastructure/oracle. Tras windows por la misma razón que
-  # android: electron-builder crea la release del tag y este job le añade
-  # ficheros; al revés no habría release a la que subirlos.
-  oci-stack:
-    needs: windows
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Empaquetar, verificar y publicar el stack
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          cd infrastructure/oracle
-          zip -rq "$GITHUB_WORKSPACE/distop-oci-stack-${GITHUB_REF_NAME}.zip" . \
-            -x ".terraform/*" -x "*.tfstate*" -x "rendered/*"
-          cd "$GITHUB_WORKSPACE"
-          # Cinturón y tirantes: el mismo assert que hace infra.yml en seco.
-          unzip -Z1 "distop-oci-stack-${GITHUB_REF_NAME}.zip" | grep -qx "main.tf" \
-            || { echo "::error::main.tf no está en la raíz del zip"; exit 1; }
-          sha256sum "distop-oci-stack-${GITHUB_REF_NAME}.zip" \
-            > "distop-oci-stack-${GITHUB_REF_NAME}.zip.sha256"
-          gh release upload "$GITHUB_REF_NAME" \
-            "distop-oci-stack-${GITHUB_REF_NAME}.zip" \
-            "distop-oci-stack-${GITHUB_REF_NAME}.zip.sha256" --clobber

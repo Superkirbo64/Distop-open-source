@@ -19,7 +19,7 @@ delete process.env.TURN_URL;
 delete process.env.TURN_SECRET;
 
 const { server } = await import("./server.ts");
-const { iceServers, relayState, setRelay, turnRestCredentials } = await import("./ice.ts");
+const { iceServers, relayState, setRelay, turnRestCredentials, videoMode, voiceMode } = await import("./ice.ts");
 
 before(async () => {
   if (!server.listening) await new Promise((r) => server.once("listening", r));
@@ -48,6 +48,11 @@ test("el usuario lleva la caducidad delante y dura un día completo", () => {
   const caducidad = Number.parseInt(username.split(":")[0]!, 10);
   assert.ok(caducidad >= antes + 86_400 - 5, "caduca en ~24 h, no antes");
   assert.ok(caducidad <= Math.floor(Date.now() / 1000) + 86_400 + 5, "y no después");
+});
+
+test("una instancia nueva usa voz, cámara y pantalla P2P por defecto", () => {
+  assert.equal(voiceMode().mode, "direct");
+  assert.equal(videoMode().mode, "direct");
 });
 
 test("custom con secreto reparte credenciales efímeras y nunca el secreto", async () => {

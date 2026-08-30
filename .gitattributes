@@ -1,0 +1,2 @@
+# Los scripts se ejecutan en Linux: un CRLF los rompe con "bad interpreter".
+*.sh text eol=lf

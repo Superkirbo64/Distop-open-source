@@ -26,9 +26,28 @@ provider "oci" {
   region = data.oci_identity_region_subscriptions.home.region_subscriptions[0].region_name
 }
 
+# Imagen ARM más reciente de la región, para no obligar a elegirla a mano. El
+# desplegable de la consola mezcla x86 y ARM sin decir cuál es cuál, y elegir
+# mal cuesta un apply entero: "400-InvalidParameter, Shape VM.Standard.A1.Flex
+# is not valid for image ocid1.image...". Filtrar por shape A1 ya garantiza
+# aarch64. La reproducibilidad no se pierde: el OCID resuelto queda en el state
+# y sale por el output `image_ocid`, así que siempre se puede fijar después.
+data "oci_core_images" "ubuntu" {
+  compartment_id           = var.compartment_ocid
+  operating_system         = "Canonical Ubuntu"
+  operating_system_version = "24.04"
+  shape                    = "VM.Standard.A1.Flex"
+  state                    = "AVAILABLE"
+  sort_by                  = "TIMECREATED"
+  sort_order               = "DESC"
+}
+
 locals {
   # Sufijo apto para nombres de OCI, único por despliegue (deriva del hostname).
   name_suffix = replace(var.public_hostname, ".", "-")
+
+  # Lo que se fija a mano manda; si no, la más reciente que devolvió el filtro.
+  image_ocid = var.ubuntu_image_ocid != "" ? var.ubuntu_image_ocid : try(data.oci_core_images.ubuntu.images[0].id, "")
 
   # Los scripts se renderizan aparte y se inyectan en cloud-init con indent():
   # así viven como ficheros .sh de verdad, revisables y con shellcheck en CI.
@@ -47,6 +66,7 @@ locals {
     instance_name    = var.instance_name
     public_hostname  = var.public_hostname
     backup_keep      = var.backup_keep
+    setup_code       = var.setup_code
     firstboot_sh     = local.firstboot_sh
     backup_upload_sh = local.backup_upload_sh
   })
@@ -206,8 +226,17 @@ resource "oci_core_instance" "distop" {
 
   source_details {
     source_type             = "image"
-    source_id               = var.ubuntu_image_ocid
+    source_id               = local.image_ocid
     boot_volume_size_in_gbs = var.boot_volume_gb
+  }
+
+  # Sin imagen no se lanza nada, y el error de índice del data source no se
+  # entiende. Esto lo dice en cristiano antes de tocar la API.
+  lifecycle {
+    precondition {
+      condition     = local.image_ocid != ""
+      error_message = "No hay ninguna imagen Canonical Ubuntu 24.04 para VM.Standard.A1.Flex en esta región. Fija ubuntu_image_ocid a mano (README, § Imagen ARM64)."
+    }
   }
 
   metadata = {

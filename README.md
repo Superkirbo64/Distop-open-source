@@ -21,12 +21,13 @@ ni personalización de pago, ni límites artificiales. Los límites son los de t
 | Exportación completa de la comunidad en JSON | ✅ |
 | Tema claro y oscuro reales, escala de texto, densidad, español/portugués/inglés | ✅ |
 | PWA instalable con estado de conexión honesto | ✅ |
-| Voz por la instancia: funciona siempre, sin STUN, sin TURN y sin abrir puertos | ✅ |
-| Cámara y pantalla por la instancia, o directas entre navegadores si se prefiere | ✅ |
+| Voz P2P por defecto, con caída por participante al servidor y umbral de sala | ✅ |
+| Cámara y pantalla P2P por defecto, con TURN opcional o modo servidor | ✅ |
+| Comunidades públicas, entrada abierta/solicitud/invitación y directorio global opt-in | ✅ |
 | Servidor de medios (SFU) para salas de más de ~6 personas | ⛔ fase 3 |
 | Mensajes directos | ⛔ fase 3 |
 | Bots, plugins, webhooks | ⛔ fase 2 |
-| Plataforma central, descubrimiento global y federación | ⛔ fase 5 |
+| Federación de mensajes entre instancias | ⛔ fase futura |
 
 Lo marcado con ⛔ **no está empezado**. La arquitectura lo contempla (el protocolo
 está versionado, los IDs son globales y la identidad está separada de la comunidad),
@@ -37,6 +38,7 @@ pero decir que existe sería mentir.
 ```text
 apps/web/           Cliente React + Vite (SPA/PWA). Es también el frontend del futuro cliente Tauri.
 apps/node-server/   La instancia self-hosted: API v1 + gateway WebSocket + SQLite + archivos.
+apps/directory/     Índice global opcional en Deno: fichas firmadas, leases y moderación.
 apps/marketing/     Sitio público (Astro, estático, es/en/pt-BR). No habla con ninguna instancia.
 packages/protocol/  Contrato único cliente ↔ instancia: tipos, eventos, permisos, UUIDv7.
 ```
@@ -177,12 +179,18 @@ docker compose up --build
 Queda todo en **http://localhost:5000**: la misma instancia sirve la API, el gateway
 y el cliente compilado. Tus datos viven en `./data` — ese directorio **es** tu copia de seguridad.
 
-### Siempre encendida, gratis, en Oracle Cloud
+### Siempre encendida
 
-La misma instancia Docker en una VM del Always Free de Oracle: IP fija, HTTPS con
-Caddy, TURN propio y copias cifradas que salen de la máquina — para que la comunidad
-no se apague con tu PC, sin pagar nada y sabiendo qué puede fallar:
-**[docs/nube-oracle.md](docs/nube-oracle.md)**.
+Para que la comunidad no se apague con tu PC hay una escalera, de menos a más
+esfuerzo: el túnel que la aplicación abre sola, Tailscale Funnel para una
+dirección estable, y una máquina que no se apaga —una Raspberry o una VPS
+pequeña— cuando quieras dejar de depender de tu equipo.
+
+Para Ubuntu/Debian hay un instalador verificable en
+[docs/instalar-vps.md](docs/instalar-vps.md); para hardware propio, la guía de
+[Raspberry Pi](docs/raspberry-pi.md). La comparación honesta de proveedores y
+sus costes está en [docs/nube-vps.md](docs/nube-vps.md). Oracle no es un camino
+soportado.
 
 ## Verificar
 
@@ -246,12 +254,15 @@ Conviene decirlo antes de que alguien lo descubra desplegando:
 - **Una instancia en un ordenador personal está apagada cuando el ordenador lo está.**
   La interfaz lo dice con todas las letras en vez de mostrar un error genérico.
 - **Sin puertos abiertos hace falta un túnel** (Cloudflare Tunnel, Tailscale Funnel o
-  similar). El asistente automático de §6 todavía no está construido.
-- **Voz y vídeo pasan por la instancia, como todo lo demás.** No hay conexión directa
-  entre navegadores que negociar, así que no hay nada que pueda fallar por culpa de un
-  router o de una red móvil: si se puede abrir la aplicación, se puede hablar y ver.
+  similar). Compartir incluye el asistente para URL temporal, fija o máquina siempre activa.
+- **Voz, cámara y pantalla empiezan en P2P.** La voz cae automáticamente por
+  participante al gateway cuando no consigue ruta directa, y al superar el
+  umbral la sala completa usa el gateway. Para vídeo, quien hospeda puede elegir
+  modo servidor o configurar TURN; sin ninguno de los dos, un par sin ruta
+  directa seguirá oyéndose pero no verá el vídeo.
 
-  Lo que cuesta es **subida de quien hospeda**, una copia por cada persona que recibe:
+  En modo servidor, lo que cuesta es **subida de quien hospeda**, una copia por
+  cada persona que recibe:
 
   | | Por persona | Cinco personas |
   |---|---|---|

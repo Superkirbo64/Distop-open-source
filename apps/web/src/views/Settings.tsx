@@ -8,7 +8,7 @@ import { DEFAULT_PROFILE_STYLE, type SelfUser } from "@distop/protocol";
 import { ChevronDown } from "lucide-react";
 import { useStore, type BackdropChoice, type Density, type FontChoice, type ThemeChoice } from "../store.ts";
 import { api, setTokens, type Tokens } from "../lib/api.ts";
-import { inputDevice, probeNetwork, retuneVideo, setIceServers, setInputDevice, setVideoMode } from "../lib/voice.ts";
+import { inputDevice, probeNetwork, retuneVideo, setIceServers, setInputDevice, setVideoMode, setVoiceMode } from "../lib/voice.ts";
 import * as audio from "../lib/relay.ts";
 import { LOCALES, LOCALE_LABELS } from "../i18n.ts";
 import {
@@ -1041,9 +1041,59 @@ function VideoSetup() {
  *
  * Solo lo toca quien hospeda: la decisión afecta a todo el que entre.
  */
+/**
+ * Elegir por dónde viaja algo: por el servidor o en directo.
+ * Existe porque la voz y la imagen se eligen por separado y con las mismas
+ * dos opciones; duplicar el bloque solo garantizaba que uno de los dos se
+ * quedara sin arreglar el día que hubiera que tocarlo.
+ */
+function WayPicker({
+  name,
+  legend,
+  value,
+  labels,
+  disabled,
+  onPick,
+}: {
+  name: string;
+  legend: string;
+  value: "host" | "direct";
+  labels: Record<"host" | "direct", { label: string; hint: string }>;
+  disabled: boolean;
+  onPick: (mode: "host" | "direct") => void;
+}) {
+  return (
+    <fieldset className="flex flex-col gap-2" disabled={disabled}>
+      <legend className="mb-1 text-sm font-medium">{legend}</legend>
+      {(["host", "direct"] as const).map((mode) => (
+        <label
+          key={mode}
+          className={`flex cursor-pointer gap-3 rounded-card border p-3 transition-colors ${
+            value === mode ? "border-accent bg-accent-soft" : "border-line hover:bg-raise"
+          }`}
+        >
+          <input
+            type="radio"
+            name={name}
+            checked={value === mode}
+            onChange={() => onPick(mode)}
+            className="mt-1 accent-[var(--accent)]"
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">{labels[mode].label}</span>
+            <span className="block text-xs text-muted">{labels[mode].hint}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 interface RelayState {
   mode: "direct" | "custom" | "cloudflare" | "metered";
   video: "host" | "direct";
+  /** Por dónde va la voz. Se elige aparte del vídeo porque no cuestan lo mismo. */
+  voice: "host" | "direct";
   url: string;
   username: string;
   keyId: string;
@@ -1365,6 +1415,7 @@ function VoiceTab() {
       setElegido(value.mode);
       // Que valga ya para la próxima llamada, sin recargar la página.
       setVideoMode(value.video);
+      setVoiceMode(value.voice);
       await currentServers();
       setSaved(true);
       /* Guardar no es lo mismo que funcionar. Un proveedor puede aceptar tus
@@ -1427,35 +1478,32 @@ function VoiceTab() {
         <p className="mt-1 text-sm text-muted">{t("voice.relayIntro")}</p>
       </div>
 
-      {/* Lo primero, porque decide si todo lo de abajo hace falta siquiera. */}
-      <fieldset className="flex flex-col gap-2" disabled={relay.locked}>
-        <legend className="sr-only">{t("voice.videoWay")}</legend>
-        {(
-          [
-            ["host", t("voice.videoHost"), t("voice.videoHostHint")],
-            ["direct", t("voice.videoP2p"), t("voice.videoP2pHint")],
-          ] as const
-        ).map(([mode, label, hint]) => (
-          <label
-            key={mode}
-            className={`flex cursor-pointer gap-3 rounded-card border p-3 transition-colors ${
-              relay.video === mode ? "border-accent bg-accent-soft" : "border-line hover:bg-raise"
-            }`}
-          >
-            <input
-              type="radio"
-              name="video-way"
-              checked={relay.video === mode}
-              onChange={() => void save({ video: mode })}
-              className="mt-1 accent-[var(--accent)]"
-            />
-            <span className="min-w-0">
-              <span className="block text-sm font-medium">{label}</span>
-              <span className="block text-xs text-muted">{hint}</span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
+      {/* La voz primero: es lo que decide si esta instancia puede vivir en una
+          máquina pequeña. Y el vídeo después, porque decide si hace falta algo
+          de todo lo que viene debajo. */}
+      <WayPicker
+        name="voice-way"
+        legend={t("voice.voiceWay")}
+        value={relay.voice}
+        disabled={relay.locked}
+        labels={{
+          host: { label: t("voice.voiceHost"), hint: t("voice.voiceHostHint") },
+          direct: { label: t("voice.voiceP2p"), hint: t("voice.voiceP2pHint") },
+        }}
+        onPick={(mode) => void save({ voice: mode })}
+      />
+
+      <WayPicker
+        name="video-way"
+        legend={t("voice.videoWay")}
+        value={relay.video}
+        disabled={relay.locked}
+        labels={{
+          host: { label: t("voice.videoHost"), hint: t("voice.videoHostHint") },
+          direct: { label: t("voice.videoP2p"), hint: t("voice.videoP2pHint") },
+        }}
+        onPick={(mode) => void save({ video: mode })}
+      />
 
       {/* Con el vídeo pasando por la instancia no hay conexión directa que
           arreglar, así que todo lo de abajo sobra. Enseñarlo igual sería invitar

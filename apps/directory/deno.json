@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["deno.ns", "deno.unstable", "dom", "es2023"]
+  },
+  "tasks": {
+    "dev": "deno run --watch --allow-env --allow-net --allow-read --allow-write --unstable-kv main.ts",
+    "test": "deno test --allow-env --unstable-kv",
+    "check": "deno check main.ts domain.ts storage.ts network.ts"
+  },
+  "deploy": {
+    "entrypoint": "main.ts"
+  }
+}

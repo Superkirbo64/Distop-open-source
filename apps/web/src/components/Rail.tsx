@@ -11,7 +11,7 @@ import { useStore } from "../store.ts";
 import { Button, ErrorNote, ExternalLinkButton, Field, IconButton, Modal, Select, Spinner, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
 import { Explore } from "./Explore.tsx";
 import { api } from "../lib/api.ts";
-import { CLOUD_GUIDE_URL, ORACLE_STACK_URL, detectLane } from "../lib/publish.ts";
+import { CLOUD_GUIDE_URL, RASPBERRY_GUIDE_URL, VPS_INSTALL_GUIDE_URL, detectLane } from "../lib/publish.ts";
 import { describeSchedule, sortBackupFiles, type BackupJob, type BackupsView } from "../lib/backups.ts";
 import {
   clientOrigin,
@@ -470,7 +470,11 @@ export function CreateCommunity({
     setBusy(true);
     setError(null);
     try {
-      const community = await api<Community>("POST", "/api/v1/communities", { name, is_public: isPublic });
+      const community = await api<Community>("POST", "/api/v1/communities", {
+        name,
+        visibility: isPublic ? "public" : "private",
+        join_policy: "invite",
+      });
       await reload();
       await openCommunity(community.id);
       setName("");
@@ -940,18 +944,27 @@ function ShareInstance() {
               variant={mode === "cloudflare" ? "primary" : "ghost"}
               onClick={() => setMode("cloudflare")}
               disabled={cloudFixed}
+              className="h-auto min-h-14 flex-col gap-0.5 py-2"
             >
-              Cloudflare
+              <span>{t("share.quick")}</span>
+              <span className="text-[10px] font-normal opacity-75">{t("share.quickCost")}</span>
             </Button>
             <Button
               variant={mode === "tailscale" ? "primary" : "ghost"}
               onClick={() => setMode("tailscale")}
               disabled={cloudFixed}
+              className="h-auto min-h-14 flex-col gap-0.5 py-2"
             >
-              Tailscale Funnel
+              <span>{t("share.stable")}</span>
+              <span className="text-[10px] font-normal opacity-75">{t("share.stableCost")}</span>
             </Button>
-            <Button variant={mode === "cloud" ? "primary" : "ghost"} onClick={() => setMode("cloud")}>
-              {t("share.cloud")}
+            <Button
+              variant={mode === "cloud" ? "primary" : "ghost"}
+              onClick={() => setMode("cloud")}
+              className="h-auto min-h-14 flex-col gap-0.5 py-2"
+            >
+              <span>{t("share.alwaysOn")}</span>
+              <span className="text-[10px] font-normal opacity-75">{t("share.alwaysOnCost")}</span>
             </Button>
           </div>
 
@@ -1026,24 +1039,36 @@ function ShareInstance() {
                 </>
               ) : (
                 <>
-                  {/* La oferta, contada entera: coste cero recurrente, sin SLA,
-                      Oracle puede reclamar máquinas ociosas y pide tarjeta solo
-                      para verificar identidad. Sin el botón de deploy mientras
-                      no exista el zip versionado (ORACLE_STACK_URL es null). */}
+                  {/* La oferta, contada entera y sin vender humo: una máquina
+                      que no se apaga cuesta dinero o cuesta tener un equipo
+                      encendido, y las dos cosas se dicen. Aquí NO se nombra
+                      ningún proveedor concreto: recomendar uno que después no
+                      da capacidad —lo que nos pasó con Oracle— es peor que no
+                      recomendar ninguno. */}
                   <p className="text-xs font-semibold">{t("share.cloudTitle")}</p>
                   <p className="text-xs text-muted">{t("share.cloudHint")}</p>
                   <p className="text-xs text-muted">{t("share.cloudLimits")}</p>
+                  <div className="grid gap-2">
+                    <div className="rounded-[8px] bg-sunken p-2.5">
+                      <p className="text-xs font-semibold">{t("share.alwaysOwnTitle")}</p>
+                      <p className="mt-1 text-xs text-muted">{t("share.alwaysOwnHint")}</p>
+                      <a className="mt-2 inline-block text-xs font-semibold text-accent underline underline-offset-2" href={RASPBERRY_GUIDE_URL} target="_blank" rel="noreferrer">
+                        {t("share.alwaysOwnAction")}
+                      </a>
+                    </div>
+                    <div className="rounded-[8px] bg-sunken p-2.5">
+                      <p className="text-xs font-semibold">{t("share.alwaysVpsTitle")}</p>
+                      <p className="mt-1 text-xs text-muted">{t("share.alwaysVpsHint")}</p>
+                      <a className="mt-2 inline-block text-xs font-semibold text-accent underline underline-offset-2" href={VPS_INSTALL_GUIDE_URL} target="_blank" rel="noreferrer">
+                        {t("share.alwaysVpsAction")}
+                      </a>
+                    </div>
+                    <div className="rounded-[8px] bg-sunken p-2.5">
+                      <p className="text-xs font-semibold">{t("share.alwaysManagedTitle")}</p>
+                      <p className="mt-1 text-xs text-muted">{t("share.alwaysManagedHint")}</p>
+                    </div>
+                  </div>
                   <ExternalLinkButton href={CLOUD_GUIDE_URL}>{t("share.cloudGuide")}</ExternalLinkButton>
-                  {ORACLE_STACK_URL !== null ? (
-                    <a
-                      className="btn btn-primary min-h-10 w-full text-center text-sm font-bold"
-                      href={ORACLE_STACK_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {t("share.cloudDeploy")}
-                    </a>
-                  ) : null}
                 </>
               )}
             </div>

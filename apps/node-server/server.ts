@@ -21,6 +21,7 @@ import { freezeWrites, registerShutdownHandler, waitForRequests } from "./lifecy
 import { sweepIncoming } from "./storage.ts";
 import { autostartTunnel } from "./tunnel.ts";
 import { restoreTailscale, stopTailscale } from "./tailscale.ts";
+import { startDirectoryPublisher, stopDirectoryPublisher } from "./directory-publisher.ts";
 import "./api.ts"; // registra las rutas
 
 /* Junto al servidor por convención (repo y paquetes de escritorio/Termux); la
@@ -172,6 +173,7 @@ server.listen(config.port, config.host, () => {
   void autostartTunnel(hasHostAuthority);
   if (hasHostAuthority) restoreTailscale();
   else stopTailscale(false);
+  startDirectoryPublisher();
 });
 
 /** Cierre coordinado e idempotente para Docker, escritorio y la API local. */
@@ -190,6 +192,7 @@ export function shutdown(reason = "signal"): Promise<void> {
        lo sostenga, y por tanto el único al que `waitForRequests` no ve. */
     await stopIntegrityWork();
     await stopBackupScheduler();
+    stopDirectoryPublisher();
 
     const httpClosed = new Promise<void>((resolveClosed) => {
       server.close(() => resolveClosed());

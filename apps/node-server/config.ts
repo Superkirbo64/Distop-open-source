@@ -197,6 +197,8 @@ export const config = {
   registrationEnabled: bool("REGISTRATION_ENABLED", true),
   guestModeEnabled: bool("GUEST_MODE_ENABLED", true),
   publicDiscoveryEnabled: bool("PUBLIC_DISCOVERY_ENABLED", false),
+  /** Directorio global opcional. Vacío mantiene Explorar completamente local. */
+  directoryUrl: str("DIRECTORY_URL", "").replace(/\/+$/, ""),
 
   /**
    * Confiar en X-Forwarded-For solo cuando hay de verdad un proxy delante.

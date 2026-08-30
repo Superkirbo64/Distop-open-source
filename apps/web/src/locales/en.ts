@@ -76,6 +76,12 @@ export const en: Record<keyof typeof es, string> = {
   "setup.noPasswordWarning":
     "With no password, this account lives only in this browser. Clear it and you lose admin access.",
 
+  "backupPhrase.title": "Save your backup phrase",
+  "backupPhrase.body":
+    "Your server encrypts a backup every day with this phrase. Without it no backup can be restored, by you or anyone. Save it now in your password manager, outside the server.",
+  "backupPhrase.fallback": "If you close this without copying it, it is still on the server, in /data/backup-passphrase.",
+  "backupPhrase.saved": "I saved it",
+
   "instance.connecting": "Connecting…",
   "instance.online": "Online",
   "instance.offline": "Offline",
@@ -160,6 +166,12 @@ export const en: Record<keyof typeof es, string> = {
   "share.failed": "Could not open the tunnel. Check your internet connection.",
   "share.hostReminder":
     "While this computer is on, your community is online. When you shut it down, it is not.",
+  "share.quick": "Start now",
+  "share.quickCost": "Free · temporary address",
+  "share.stable": "Fixed address",
+  "share.stableCost": "Free · Tailscale account",
+  "share.alwaysOn": "Always online",
+  "share.alwaysOnCost": "Own device or from ~US$1.80/month",
   "share.cloudflareHint": "Automatic and account-free. The address changes after a restart, but members can return through the new address without losing their profile.",
   "share.fixedStep": "Step {step} of 7 · Fixed address",
   "share.tailscale.missing": "Install Tailscale from its official page. Administrator permission is required because it adds a network service.",
@@ -180,13 +192,21 @@ export const en: Record<keyof typeof es, string> = {
   "share.tailscaleFairUse": "Tailscale Funnel is free and stable, subject to fair-use limits. Chat and light voice traffic work well; Cloudflare with your own domain is better for many large files.",
   "share.addressChanged": "The public address changed after restarting. Copy this new address for members or enable Tailscale Funnel to keep it fixed.",
   "share.cloud": "Cloud",
-  "share.cloudTitle": "Always available (cloud, zero cost)",
+  "share.cloudTitle": "Always on (advanced)",
   "share.cloudHint":
-    "A machine on Oracle's Always Free plan keeps your community online at no recurring cost, even with your computer off. There is no service guarantee: Oracle may reclaim machines it deems idle, and the guide explains how to avoid that and how to recover from backups.",
+    "A machine that never sleeps: a Raspberry Pi at home, a mini PC, or a small VPS. Your community stays up with your computer off, and the data is still yours — same instance, different machine.",
   "share.cloudLimits":
-    "Oracle asks for a card only to verify your identity; the Always Free plan generates no charges. The instance is the same one you run at home —your data stays yours—, it just runs on their machine.",
-  "share.cloudGuide": "Read the step-by-step guide",
-  "share.cloudDeploy": "Deploy to Oracle Cloud",
+    "There is no shortcut that is both free and always on: either you supply the hardware or you rent a machine for a few euros a month. The guide compares what exists today, with prices, and how to publish it without fighting DNS or certificates.",
+  "share.cloudGuide": "Read the guide, with prices",
+  "share.alwaysOwnTitle": "I have a Raspberry Pi or an old computer",
+  "share.alwaysOwnHint": "No hosting fee. It must stay powered on and needs a backup outside the device.",
+  "share.alwaysOwnAction": "Raspberry Pi guide",
+  "share.alwaysVpsTitle": "I already have an Ubuntu/Debian VPS",
+  "share.alwaysVpsHint": "The verified installer configures Docker, automatic startup, and Tailscale Funnel.",
+  "share.alwaysVpsAction": "Install step by step",
+  "share.alwaysManagedTitle": "I want one click and no Linux administration",
+  "share.alwaysManagedHint": "The managed catalog is awaiting admission. We do not show a button that cannot complete deployment yet.",
+  "share.cloudDeploy": "Deploy",
   "share.cloudFixed": "Fixed address configured",
   "share.cloudFixedHint":
     "This instance already runs with its own public address: it comes from PUBLIC_URL in the machine's environment. To change it, edit that variable and restart the server.",
@@ -223,6 +243,13 @@ export const en: Record<keyof typeof es, string> = {
   "explore.needInvite":
     "Joining still requires an invitation from someone inside: the directory shows, it does not open doors.",
   "explore.sourceInstance": "This instance",
+  "explore.sourceGlobal": "Global directory",
+  "explore.join": "Join",
+  "explore.inviteOnly": "Invite only",
+  "explore.request": "Request",
+  "explore.requested": "Request sent. A community moderator can approve it from the management panel.",
+  "explore.identityMismatch": "The instance identity does not match its published listing. No credentials were sent.",
+  "explore.unreachable": "The instance could not be verified right now.",
 
   "community.yours": "Your communities",
   "community.create": "Create community",
@@ -230,6 +257,18 @@ export const en: Record<keyof typeof es, string> = {
   "community.name": "Name",
   "community.public": "List in public discovery",
   "community.publicHint": "Leave it off and people can only join by invite.",
+  "community.visibility": "Who can find it",
+  "community.visibilityHint": "This controls discovery; it does not grant access.",
+  "community.visibility.private": "Private · members only",
+  "community.visibility.unlisted": "Unlisted · anyone with the link",
+  "community.visibility.public": "Public · appears in Explore",
+  "community.joinPolicy": "How people join",
+  "community.joinPolicyHint": "Visibility and access are separate decisions.",
+  "community.joinPolicy.open": "Open entry",
+  "community.joinPolicy.invite": "Invite only",
+  "community.joinPolicy.request": "Request access",
+  "community.publicStableHint": "To appear in global Explore, the instance needs a fixed address: Tailscale Funnel, a custom domain or PUBLIC_URL. Cloudflare's quick tunnel changes after restarting and is not published.",
+  "community.publicStableOk": "Your address {host} is stable: saved as public, the community shows up in the global Explore within minutes.",
   "community.empty": "You are not in any community yet",
   "community.emptyHint": "Create your own or join with an invite link.",
   "community.leave": "Leave community",
@@ -426,6 +465,9 @@ export const en: Record<keyof typeof es, string> = {
   "voice.link.disconnected": "no connection",
   "voice.link.failed": "cannot connect",
   "voice.link.closed": "disconnected",
+  "voice.viaHost": "through the server",
+  "voice.viaHostHint":
+    "There was no way to connect directly with this person, so their voice goes through the community server. It sounds the same: only the route changed.",
   "voice.needsStun":
     "Your public address could not be discovered, so video will not get through. Voice still works.",
   "voice.needsTurn":
@@ -537,12 +579,19 @@ export const en: Record<keyof typeof es, string> = {
     "This browser cannot encode voice. Try Chrome, Edge or a recent browser.",
   "voice.relayTitle": "Camera and screen sharing",
   "voice.relayIntro":
-    "Voice always goes through the server and needs no setup: if you can open the app, you can talk. For video there are two routes, and whoever hosts picks one.",
+    "Voice and video each have two routes, and whoever hosts picks. Through the server always works; straight between browsers costs the host nothing, but it needs both networks to let them through.",
+  "voice.voiceWay": "How voice travels",
+  "voice.voiceHost": "Through the server",
+  "voice.voiceHostHint":
+    "Always works, nothing to configure: if you can open the app, you can talk. It uses the host's upload, about 4 KB per second per person — small, but multiplied by every listener.",
+  "voice.voiceP2p": "Straight between browsers (recommended)",
+  "voice.voiceP2pHint":
+    "Voice travels device to device and the server spends almost nothing: that is what makes hosting on a small machine possible. Anyone you cannot reach directly comes back through the server on their own. Past eight or nine people in the room, the whole call goes back through the server.",
   "voice.videoWay": "How video travels",
-  "voice.videoHost": "Through the server (recommended)",
+  "voice.videoHost": "Through the server",
   "voice.videoHostHint":
     "Same as voice: always works, nothing to configure. In exchange it uses the host's upload, one copy per person watching. For a group of friends you will not notice.",
-  "voice.videoP2p": "Straight between browsers",
+  "voice.videoP2p": "Straight between browsers (recommended)",
   "voice.videoP2pHint":
     "Costs the host nothing and looks better. But it only arrives if both networks let each other talk, and many do not: between mobile data and a home it almost never works.",
   "voice.probe": "Check my connection",
@@ -616,7 +665,7 @@ export const en: Record<keyof typeof es, string> = {
   "voice.device": "Microphone",
   "voice.deviceDefault": "System default",
   "voice.limits":
-    "Voice goes straight between browsers. It works well up to about 6 people per channel; above that you need a media server, which comes later.",
+    "Voice goes straight between browsers. If one peer cannot connect, only that voice falls back to the server; in a large room, all voice falls back automatically.",
 
   "members.title": "Members",
   "members.online": "Online",
@@ -745,6 +794,11 @@ export const en: Record<keyof typeof es, string> = {
   "manage.audit": "Audit log",
   "manage.data": "Data",
   "manage.description": "Description",
+  "manage.requests": "Requests",
+  "manage.requestsEmpty": "No pending requests",
+  "manage.requestsEmptyHint": "Requests made through Explore will appear here.",
+  "manage.approve": "Approve",
+  "manage.reject": "Reject",
   "manage.rules": "Rules",
   "manage.icon": "Icon URL",
   "manage.iconHint": "This is what shows in the sidebar. Square works best.",

@@ -28,6 +28,7 @@ import { Button, ErrorNote, Field, Modal, Spinner, Toggle, useErrorText, useT } 
 import { api } from "./lib/api.ts";
 import {
   clearPendingCommunity,
+  clearPendingPublicJoin,
   clientOrigin,
   connectToInstance,
   forgetKnownCommunity,
@@ -36,6 +37,7 @@ import {
   isPackaged,
   normalizeInstanceUrl,
   peekPendingCommunity,
+  peekPendingPublicJoin,
   setActiveInstance,
   takePendingInvite,
   type PendingCommunity,
@@ -123,6 +125,7 @@ export function App() {
   const ready = useStore((s) => s.ready);
   const user = useStore((s) => s.user);
   const setup = useStore((s) => s.setup);
+  const backupPassphrase = useStore((s) => s.backupPassphrase);
   const guestMeeting = useStore((s) => s.guestMeeting);
   const instance = useStore((s) => s.instance);
   const boot = useStore((s) => s.boot);
@@ -131,6 +134,7 @@ export function App() {
   const activeChannelId = useStore((s) => s.activeChannelId);
   const activeData = useStore((s) => (activeCommunityId ? s.data[activeCommunityId] : undefined));
   const openCommunity = useStore((s) => s.openCommunity);
+  const reloadCommunities = useStore((s) => s.reloadCommunities);
 
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   /* En el store y no aquí: el selector de stickers, enterrado dentro de Chat,
@@ -250,6 +254,32 @@ export function App() {
     const code = takePendingInvite();
     if (code) navigate(`/invite/${code}`);
   }, [ready, user, navigate]);
+
+  /* Explorar puede llevar a otra instancia. El objetivo sobrevive tanto a la
+     recarga de la app instalada como al formulario de acceso de la web. */
+  useEffect(() => {
+    if (!ready || !user) return;
+    const query = new URLSearchParams(location.search).get("join");
+    const queryPolicy = new URLSearchParams(location.search).get("policy") === "request" ? "request" : "open";
+    const pending = peekPendingPublicJoin();
+    const communityId = query || pending?.communityId;
+    const policy = query ? queryPolicy : (pending?.policy ?? "open");
+    if (!communityId) return;
+    const endpoint = `/api/v1/public-communities/${encodeURIComponent(communityId)}/${policy === "open" ? "join" : "requests"}`;
+    void api<{ community?: { id: string } }>("POST", endpoint, {})
+      .then(async ({ community }) => {
+        clearPendingPublicJoin();
+        history.replaceState({}, "", "/");
+        navigate("/");
+        if (!community) return;
+        await reloadCommunities();
+        await openCommunity(community.id);
+      })
+      .catch(() => {
+        /* Se conserva el objetivo: iniciar sesión puede completar la entrada
+           después sin perder la comunidad que se eligió. */
+      });
+  }, [ready, user, navigate, reloadCommunities, openCommunity]);
 
   /* Al saltar a una comunidad ya conocida esperamos al READY del servidor: en
      ese momento la lista es definitiva. Si no está, la membresía desapareció;
@@ -393,8 +423,11 @@ export function App() {
       <WelcomeCreate
         onCreate={() => setCreating(true)}
         onJoin={() => setJoining(true)}
-        blocked={creating || joining || invite || Boolean(inviteCode)}
+        /* La frase de las copias se enseña una sola vez: la bienvenida, que
+           vuelve siempre que no haya comunidad, espera en vez de taparla. */
+        blocked={creating || joining || invite || Boolean(inviteCode) || Boolean(backupPassphrase)}
       />
+      <BackupPassphraseNotice />
       <WallpaperTuner />
       {changedPublicUrl ? (
         <div className="fixed right-4 bottom-4 z-50 flex max-w-sm flex-col gap-2 rounded-card border border-line bg-raise p-4 shadow-[var(--shadow)]">
@@ -460,6 +493,49 @@ function UnavailableSwitch({ target, onBack }: { target: PendingCommunity; onBac
  * Se puede cerrar ("ahora no") y no vuelve a insistir en esta sesión: la
  * pantalla vacía del chat conserva sus propios botones.
  */
+/**
+ * Frase de las copias, enseñada al reclamar la instancia (§21).
+ * Solo aparece donde hay copias programadas y la instancia llega desde fuera
+ * —una VM en la nube—, porque ahí el fichero solo se lee por SSH y una frase
+ * que nadie guardó convierte cada copia diaria en un fichero inútil. Se cierra
+ * a mano; si se cierra sin copiarla, sigue en /data/backup-passphrase, que es
+ * justo lo que dice el aviso para que un descuido no dé miedo.
+ */
+function BackupPassphraseNotice() {
+  const t = useT();
+  const passphrase = useStore((s) => s.backupPassphrase);
+  const [copied, setCopied] = useState(false);
+
+  if (!passphrase) return null;
+
+  /* Se borra del estado al cerrar, no se marca "visto" aparte: mientras siga
+     ahí, la bienvenida espera (arriba, en `blocked`), y así el aviso no vive
+     más de lo que dura en pantalla. */
+  const close = () => useStore.setState({ backupPassphrase: null });
+
+  return (
+    <Modal
+      open
+      onClose={close}
+      title={t("backupPhrase.title")}
+      footer={<Button variant="primary" onClick={close}>{t("backupPhrase.saved")}</Button>}
+    >
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted">{t("backupPhrase.body")}</p>
+        <code className="rounded-card border border-line bg-sunken p-3 font-mono text-sm break-all select-all">{passphrase}</code>
+        <Button
+          onClick={() => {
+            void navigator.clipboard.writeText(passphrase).then(() => setCopied(true));
+          }}
+        >
+          {copied ? t("common.copied") : t("common.copy")}
+        </Button>
+        <p className="text-xs text-muted">{t("backupPhrase.fallback")}</p>
+      </div>
+    </Modal>
+  );
+}
+
 function WelcomeCreate({ onCreate, onJoin, blocked }: { onCreate: () => void; onJoin: () => void; blocked: boolean }) {
   const t = useT();
   const ready = useStore((s) => s.ready);

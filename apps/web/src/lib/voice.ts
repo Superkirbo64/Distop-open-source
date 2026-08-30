@@ -9,6 +9,7 @@
  */
 import type { Snowflake, VideoSource, VoiceAction, VoiceSoundRejectReason } from "@distop/protocol";
 import { onMedia, sendMedia, sendCommand } from "./gateway.ts";
+import { hostAudioNeeded, meshOverflowed } from "./mesh.ts";
 import * as relay from "./relay.ts";
 import * as background from "./cameraBackground.ts";
 import { playUi } from "./notify.ts";
@@ -58,6 +59,29 @@ export interface VoiceLocalState {
    * que se pueda callar, aunque vaya cifrada.
    */
   route: "direct" | "relay" | null;
+  /**
+   * Por dónde llega la voz de cada participante: `p2p` entre los dos aparatos,
+   * `host` reenviada por la instancia porque la conexión directa no salió.
+   *
+   * Es un mapa y no un estado único porque no es lo mismo para todos: se puede
+   * estar en directo con dos personas y por la instancia con una tercera, y
+   * decir "la llamada va por relevo" sería mentir sobre las otras dos. Y va
+   * aparte de `route`, que describe el camino ICE de WebRTC —directo o por
+   * TURN—: por TURN sigue siendo una conexión entre navegadores, mientras que
+   * por `host` el audio pasa codificado por el servidor de la comunidad. Son
+   * dos cosas distintas y mezclarlas confundiría a quien intenta entender por
+   * dónde va su voz.
+   */
+  audioRoute: Map<Snowflake, "p2p" | "host">;
+  /**
+   * La instancia pidió voz directa Y la sala cabe en una malla.
+   *
+   * Lo necesita la interfaz para no gritar lo evidente: si toda la sala va por
+   * el servidor porque así está configurada, marcar a cada persona con "por el
+   * servidor" es ruido. La marca solo significa algo cuando el resto sí va en
+   * directo y esa persona no.
+   */
+  voiceDirect: boolean;
   error: string | null;
   videoError: string | null;
   /** Fallo visible de la última acción de la tabla de sonidos. */
@@ -103,6 +127,8 @@ const state: VoiceLocalState = {
   peerStates: new Map(),
   reflexive: false,
   route: null,
+  audioRoute: new Map(),
+  voiceDirect: false,
   error: null,
   videoError: null,
   soundError: null,
@@ -115,6 +141,10 @@ const listeners = new Set<Listener>();
 let selfId: Snowflake = "";
 let iceServers: RTCIceServer[] = [];
 let localStream: MediaStream | null = null;
+/* El micrófono YA procesado —volumen aplicado, 48 kHz mono, con el sonido de la
+   pantalla mezclado— tal y como lo monta relay.ts. Es lo que se manda a los
+   pares: enviar el micro crudo se saltaría el mando de volumen y el mudo. */
+let micMix: MediaStream | null = null;
 let videoStream: MediaStream | null = null;
 /* La pantalla sin componer y la cámara del recuadro, vivas solo mientras la
    cámara viaja incrustada sobre la pantalla (ver setCameraOverlay). */
@@ -150,6 +180,12 @@ interface Peer {
   attempts: number;
   retryTimer?: number | undefined;
   analyser?: AnalyserNode;
+  /**
+   * Por donde sale mi voz hacia este par, cuando la voz va directa.
+   * Como el de vídeo, se crea al negociar y no cada vez que alguien habla:
+   * renegociar en mitad de una llamada es donde una malla sin SFU se rompe.
+   */
+  audioSender: RTCRtpSender | null;
 }
 const peers = new Map<Snowflake, Peer>();
 /** Última hora de entrada conocida de cada quien, para no reconstruir un par recién hecho. */
@@ -161,6 +197,7 @@ function snapshot(): VoiceLocalState {
     speaking: new Set(state.speaking),
     videos: new Map(state.videos),
     peerStates: new Map(state.peerStates),
+    audioRoute: new Map(state.audioRoute),
   };
 }
 
@@ -198,6 +235,28 @@ let videoViaHost = true;
 
 export function setVideoMode(mode: "host" | "direct"): void {
   videoViaHost = mode !== "direct";
+}
+
+/**
+ * Por dónde va la voz, lo decide la instancia (§9.4).
+ *
+ * `host` es el camino de siempre: se codifica aquí y la reparte el gateway.
+ * Funciona sin STUN, sin TURN y sin puertos, a cambio de multiplicar la subida
+ * de quien hospeda por cada oyente. `direct` la lleva por las mismas
+ * conexiones WebRTC que ya negocia el vídeo, y deja al servidor solo el texto
+ * y la señalización — que es lo que permite hospedar en una máquina pequeña.
+ */
+let voiceViaHost = true;
+
+export function setVoiceMode(mode: "host" | "direct"): void {
+  const next = mode !== "direct";
+  if (next === voiceViaHost) return;
+  voiceViaHost = next;
+  // En mitad de una llamada el cambio se aplica rehaciendo la sala: los pares
+  // que sobran se sueltan y los que faltan se negocian.
+  if (state.channelId && lastRoom) void syncPeers(lastRoom.channelId, lastRoom.participants);
+  publishVoiceDirect();
+  applyHostEncoder();
 }
 
 /** Silencia el sonido de la pantalla compartida sin tocar el micrófono. */
@@ -302,13 +361,87 @@ function pollLevels(): void {
 
 /* ── conexiones ────────────────────────────────────────────────────── */
 
+/* ── voz directa: malla, rutas y plan B ─────────────────────────────────
+   Las dos reglas que deciden si esto ahorra algo viven en `mesh.ts`, sin
+   navegador de por medio, para poder probarlas de verdad. */
+let meshOverflow = false;
+
+/** Actualiza la histéresis con el tamaño de la sala (incluido uno mismo). */
+function measureMesh(participants: number): void {
+  meshOverflow = meshOverflowed(participants, meshOverflow);
+}
+
+/** ¿La voz debe ir directa ahora mismo? */
+function voiceDirect(): boolean {
+  return !voiceViaHost && !meshOverflow;
+}
+
+/** Refleja en el estado lo que la interfaz necesita saber del modo. */
+function publishVoiceDirect(): void {
+  if (state.voiceDirect === voiceDirect()) return;
+  state.voiceDirect = voiceDirect();
+  emit();
+}
+
+/** La pista que se envía a los pares: la mezcla ya procesada, no el micro crudo. */
+function micTrackForPeers(): MediaStreamTrack | null {
+  return micMix?.getAudioTracks()[0] ?? null;
+}
+
+function markAudioRoute(remoteId: Snowflake, route: "p2p" | "host"): void {
+  if (state.audioRoute.get(remoteId) === route) return;
+  state.audioRoute.set(remoteId, route);
+  applyHostEncoder();
+  emit();
+}
+
+function receiveDirectAudio(remoteId: Snowflake, track: MediaStreamTrack): void {
+  // El medidor lo fabrica relay.ts sobre su propio grafo: hablar se detecta
+  // igual venga la voz decodificada de la instancia o directa del otro
+  // navegador, y `pollLevels` no tiene que saber por dónde vino.
+  // Quien llega mientras estás ensordecido entra ya apagado: si no, su voz
+  // sonaría hasta el siguiente cambio de estado.
+  track.enabled = !effectiveDeafened();
+  const analyser = relay.attachRemoteTrack(remoteId, track);
+  if (analyser) meters.set(remoteId, analyser);
+  markAudioRoute(remoteId, "p2p");
+}
+
+function needsHostAudio(): boolean {
+  if (!state.channelId) return false;
+  return hostAudioNeeded(voiceDirect(), roster.keys(), state.audioRoute);
+}
+
+/* Encender es inmediato y apagar espera: si el codificador se apagara en el
+   instante en que el último par conecta, un parpadeo de red lo encendería y lo
+   apagaría sin parar, y cada encendido cuesta reconfigurar Opus. */
+const ENCODER_OFF_DELAY = 3000;
+let encoderOffTimer: number | undefined;
+
+function applyHostEncoder(): void {
+  if (!state.channelId) return;
+
+  if (needsHostAudio()) {
+    clearTimeout(encoderOffTimer);
+    encoderOffTimer = undefined;
+    if (!relay.hostEncoderOn() && !relay.startHostEncoder(sendMedia)) state.error = "unsupported";
+    return;
+  }
+
+  if (!relay.hostEncoderOn() || encoderOffTimer !== undefined) return;
+  encoderOffTimer = window.setTimeout(() => {
+    encoderOffTimer = undefined;
+    if (!needsHostAudio()) relay.stopHostEncoder();
+  }, ENCODER_OFF_DELAY);
+}
+
 function createPeer(remoteId: Snowflake, joinedAt = 0): Peer {
   const connection = new RTCPeerConnection({ iceServers });
 
-  /* Aquí ya NO va el audio: eso pasa por la instancia (ver lib/audio.ts). Esta
-     conexión solo existe para el vídeo y la pantalla, y solo se crea cuando
-     alguno de los dos lados los enciende. Mientras se hable y ya está, no hay
-     ninguna conexión directa que negociar, así que no hay nada que pueda fallar. */
+  /* Con la voz en `host` esta conexión solo existe para el vídeo, y solo cuando
+     alguno de los dos lados lo enciende: mientras se hable y ya está, no hay
+     nada que negociar y por tanto nada que pueda fallar. Con la voz en `direct`
+     existe siempre, con todo el mundo, y es la que lleva el audio. */
 
   /* El hueco de vídeo se negocia al conectar aunque nadie tenga la cámara puesta:
      encenderla después es solo `replaceTrack`, sin renegociar, que es donde una
@@ -333,11 +466,19 @@ function createPeer(remoteId: Snowflake, joinedAt = 0): Peer {
     void videoSender.replaceTrack(localTrack).then(() => tuneSender(videoSender, source));
   }
 
+  /* Hueco de audio, por el mismo motivo que el de vídeo: se negocia al conectar
+     y luego solo se cambia la pista. Solo lo crea quien ofrece; quien responde
+     lo recoge en handleSignal al aplicar la oferta. */
+  const audioTransceiver =
+    voiceDirect() && shouldOffer(remoteId) ? connection.addTransceiver("audio", { direction: "sendrecv" }) : null;
+  const audioSender = audioTransceiver?.sender ?? null;
+  if (audioSender) void audioSender.replaceTrack(micTrackForPeers());
+
   connection.ontrack = (event) => {
+    if (event.track.kind === "audio") return receiveDirectAudio(remoteId, event.track);
     // El vídeo llega por `replaceTrack`, que no arrastra el MediaStream de origen:
     // hay que envolver la pista aquí. La pista es estable, así que este stream
     // vale para toda la llamada aunque el par cambie de cámara a pantalla.
-    if (event.track.kind !== "video") return;
     state.videos.set(remoteId, new MediaStream([event.track]));
     emit();
   };
@@ -364,15 +505,25 @@ function createPeer(remoteId: Snowflake, joinedAt = 0): Peer {
        la conexión no volvía nunca (nadie la reconstruía) y el aviso que explica
        QUÉ falta —STUN o relevo— se borraba en el mismo instante, porque se pinta
        a partir de este estado. Ahora el fallo se queda a la vista y se reintenta. */
-    if (status === "failed") retryPeer(remoteId);
+    /* Solo se reacciona a `failed`, nunca a `disconnected`: lo segundo es un
+       bache —cambiar de antena, saltar de banda— del que ICE se recupera solo,
+       y mandar la voz por la instancia en cada bache sería encender el
+       codificador cada dos por tres. Mientras se reintenta, la voz va por la
+       instancia para que no haya silencio; si el reintento conecta, vuelve
+       sola a directo. */
+    if (status === "failed") {
+      markAudioRoute(remoteId, "host");
+      retryPeer(remoteId);
+    }
     if (status === "closed") dropPeer(remoteId);
     if (status === "connected") {
       const peer = peers.get(remoteId);
       if (peer) peer.attempts = 0;
+      if (relay.hasDirectAudio(remoteId)) markAudioRoute(remoteId, "p2p");
     }
   };
 
-  const peer: Peer = { connection, videoSender, pending: [], joinedAt, attempts: 0 };
+  const peer: Peer = { connection, videoSender, audioSender, pending: [], joinedAt, attempts: 0 };
   peers.set(remoteId, peer);
   return peer;
 }
@@ -423,6 +574,14 @@ function dropPeer(remoteId: Snowflake): void {
   peers.delete(remoteId);
   state.videos.delete(remoteId);
   state.peerStates.delete(remoteId);
+  /* Sin conexión no hay voz directa: se suelta el nodo de audio y, si esa
+     persona sigue en la sala, su voz vuelve por la instancia — que es
+     justamente lo que `needsHostAudio` detecta al quedarse sin su ruta. */
+  relay.detachRemoteTrack(remoteId);
+  meters.delete(remoteId);
+  state.audioRoute.delete(remoteId);
+  if (roster.has(remoteId)) markAudioRoute(remoteId, "host");
+  else applyHostEncoder();
   emit();
 }
 
@@ -484,6 +643,13 @@ export async function syncPeers(channelId: Snowflake, participants: PeerInfo[]):
   const others = participants.filter((p) => p.user_id !== selfId);
   roster.clear();
   for (const p of others) roster.set(p.user_id, p.joined_at);
+  measureMesh(participants.length);
+  publishVoiceDirect();
+
+  // Quien se fue deja de tener ruta; quien acaba de llegar empieza por la
+  // instancia y pasa a directo en cuanto su conexión traiga audio.
+  for (const id of [...state.audioRoute.keys()]) if (!roster.has(id)) state.audioRoute.delete(id);
+  for (const id of roster.keys()) if (!state.audioRoute.has(id)) state.audioRoute.set(id, "host");
 
   // Quien se fue o apagó la cámara deja de necesitar decodificador: si no, se
   // queda un fotograma congelado y un proceso trabajando para nadie.
@@ -494,13 +660,17 @@ export async function syncPeers(channelId: Snowflake, participants: PeerInfo[]):
     state.videos.delete(id);
   }
 
-  /* Solo hay conexión directa con quien tenga vídeo de por medio, y solo si la
-     instancia dice que el vídeo va directo. Si va por ella, aquí no se negocia
-     nada con nadie: una conexión que no transporta nada solo puede fallar. */
+  /* Con quién hace falta una conexión directa.
+     Con la voz en `direct`, con TODO EL MUNDO: el audio va por ahí, tenga esa
+     persona la cámara encendida o no. Con la voz por la instancia, solo con
+     quien tenga vídeo de por medio y solo si el vídeo va directo — una conexión
+     que no transporta nada solo puede fallar. */
   const needed = new Map(
-    videoViaHost
-      ? []
-      : others.filter((p) => state.video !== null || p.video !== null).map((p) => [p.user_id, p] as const),
+    voiceDirect()
+      ? others.map((p) => [p.user_id, p] as const)
+      : videoViaHost
+        ? []
+        : others.filter((p) => state.video !== null || p.video !== null).map((p) => [p.user_id, p] as const),
   );
   for (const id of [...peers.keys()]) if (!needed.has(id)) dropPeer(id);
 
@@ -519,6 +689,10 @@ export async function syncPeers(channelId: Snowflake, participants: PeerInfo[]):
     await peer.connection.setLocalDescription(offer);
     sendCommand({ t: "VOICE_SIGNAL", d: { channel_id: channelId, to_user_id: remoteId, payload: { sdp: offer } } });
   }
+
+  // La sala cambió de tamaño o de gente: quizá ahora sobre —o haga falta— el
+  // camino por la instancia.
+  applyHostEncoder();
 }
 
 /**
@@ -560,6 +734,15 @@ export async function handleSignal(from: Snowflake, payload: unknown): Promise<v
           await peer.videoSender.replaceTrack(track);
           await tuneSender(peer.videoSender, state.video);
         }
+      }
+
+      /* Lo mismo con la línea de audio: llega en recvonly y hay que ponerla en
+         sendrecv ANTES de responder, o este lado oiría sin ser oído. */
+      const audioTransceiver = peer.connection.getTransceivers().find((t) => t.receiver.track?.kind === "audio");
+      if (audioTransceiver) {
+        audioTransceiver.direction = "sendrecv";
+        peer.audioSender = audioTransceiver.sender;
+        await peer.audioSender.replaceTrack(micTrackForPeers());
       }
 
       const answer = await peer.connection.createAnswer();
@@ -668,7 +851,14 @@ async function refreshInput(): Promise<void> {
   if (analyser) meters.set(selfId, analyser);
 
   state.error = null;
-  if (!(await relay.startCapture(next, sendMedia))) state.error = "unsupported";
+  micMix = relay.startAudioMix(next);
+  if (!micMix) state.error = "unsupported";
+  applyHostEncoder();
+  /* Cambiar de micrófono rehace la mezcla, así que la pista que estaban
+     enviando los pares ya no existe: se sustituye sin renegociar nada. */
+  const track = micTrackForPeers();
+  for (const peer of peers.values()) if (peer.audioSender) void peer.audioSender.replaceTrack(track);
+  applyOutput();
   // Volver a capturar tira el sonido de la pantalla compartida: se reengancha.
   if (state.video === "screen") relay.setShareAudio(videoStream);
   emit();
@@ -708,7 +898,12 @@ export async function joinVoice(channelId: Snowflake): Promise<boolean> {
     emit();
   });
   applyOutput();
-  if (!(await relay.startCapture(localStream, sendMedia))) state.error = "unsupported";
+  micMix = relay.startAudioMix(localStream);
+  if (!micMix) state.error = "unsupported";
+  /* Se enciende sin esperar: al entrar todavía no hay ninguna conexión directa
+     hecha, así que la instancia es el único camino. Se apagará sola cuando
+     todos los pares estén en directo. */
+  applyHostEncoder();
 
   sendCommand({ t: "VOICE_JOIN", d: { channel_id: channelId } });
   /* Callarse o ensordecerse se puede hacer desde la barra de usuario ANTES de
@@ -732,6 +927,14 @@ function disconnectVoice(announce: boolean): void {
   relay.dropAll();
   for (const track of localStream?.getTracks() ?? []) track.stop();
   localStream = null;
+  micMix = null;
+  clearTimeout(encoderOffTimer);
+  encoderOffTimer = undefined;
+  /* La malla desbordada es de la sala que se deja, no de la persona: llevárselo
+     puesto mandaría la siguiente llamada por la instancia sin motivo. */
+  meshOverflow = false;
+  state.audioRoute.clear();
+  state.voiceDirect = false;
   stopLocalVideo();
   watchStats(false);
 
@@ -837,8 +1040,29 @@ function sendingNow(): boolean {
 
 /** Micrófono y altavoces siguen al estado real, no solo a la propia intención. */
 function applyOutput(): void {
-  relay.setSending(sendingNow());
-  relay.setDeafened(effectiveDeafened());
+  const on = sendingNow();
+  const oyendo = !effectiveDeafened();
+  relay.setSending(on);
+  relay.setDeafened(!oyendo);
+  /* Callarse en directo es apagar la pista, no bajar el volumen: una pista
+     desactivada deja de ocupar subida, mientras que enviar silencio codificado
+     gastaría lo mismo que hablar. */
+  for (const peer of peers.values()) {
+    const track = peer.audioSender?.track;
+    if (track) track.enabled = on;
+    /* Y ensordecer tiene que apagar lo que ENTRA, no solo bajar el máster: por
+       la instancia, ella deja de reenviarte y el aro de "está hablando" se
+       apaga solo; en directo el otro lado sigue mandando, así que si aquí no se
+       apagara la pista, seguirías viendo hablar a quien has dejado de oír.
+
+       ponytail: la pista apagada se descarta al llegar, así que el ancho de
+       banda se sigue gastando. Pararlo de verdad exige renegociar la conexión
+       a `sendonly`, y renegociar en mitad de una llamada es justo donde una
+       malla sin SFU se rompe. Si alguien ensordece durante horas, se revisa. */
+    for (const receiver of peer.connection.getReceivers()) {
+      if (receiver.track?.kind === "audio") receiver.track.enabled = oyendo;
+    }
+  }
 }
 
 /**
