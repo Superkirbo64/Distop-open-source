@@ -1,7 +1,7 @@
 ---
 import Mark from "./Mark.astro";
 import { UI, type Locale } from "../i18n/ui";
-import { REPO_URL } from "../release.ts";
+import { APP_VERSION, REPO_URL } from "../release.ts";
 import { MARKETING } from "../i18n/marketing";
 
 type Props = { locale: Locale };
@@ -78,6 +78,8 @@ const columns: { heading: string; items: Item[] }[] = [
 
   <div class="site-footer__legal">
     <p>{t.footer.legal}</p>
-    <p class="mono">AGPL-3.0 · v0.1.0</p>
+    {/* De release.ts, como la descarga. Escrito a mano se quedó en v0.1.0 y
+        siguió ahí tres versiones: nadie mira el pie al publicar. */}
+    <p class="mono">AGPL-3.0 · v{APP_VERSION}</p>
   </div>
 </footer>
