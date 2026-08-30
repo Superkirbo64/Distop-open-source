@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, COMMUNITY_JOIN_POLICIES, COMMUNITY_VISIBILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, MEETING_ROLES, MEETING_STATES, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
+import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, COMMUNITY_CATEGORIES, COMMUNITY_JOIN_POLICIES, COMMUNITY_VISIBILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, MEETING_ROLES, MEETING_STATES, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { MeetingRole, MeetingState, Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import { fixedPublicUrl, setFixedPublicUrl, setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
@@ -136,8 +136,27 @@ import {
   mintMigrationCert,
   type MigrationRow,
 } from "./community-migration.ts";
-import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, linkAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
+import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, deleteDirectAttachmentsOf, linkAttachments, linkDirectAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
 import { announceVoice, disconnectSession, disconnectUser, hasOpenSocket, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
+import {
+  acceptDirectRequest,
+  acceptFriendship,
+  canReadDirect,
+  canSendDirect,
+  directContactsFor,
+  directConversationForUser,
+  directConversationsForUser,
+  directMessagesOf,
+  directParticipants,
+  ensureDirectConversation,
+  getDirectMessage,
+  refreshDirectConversationTimestamp,
+  removeDirectRequest,
+  removeFriendship,
+  requestFriendship,
+  socialOverviewFor,
+  touchDirectConversation,
+} from "./direct.ts";
 import { clearPlaying, historyOf, onGamePresenceChange, presencesIn, setPlaying, sharesGameActivity, showsGameHistory } from "./gamePresence.ts";
 import { statesOfCommunity } from "./voice.ts";
 import { advanceTailscale, stopTailscale, tailscaleState } from "./tailscale.ts";
@@ -173,6 +192,22 @@ function requireMembership(communityId: Snowflake, userId: Snowflake): void {
 }
 
 const USERNAME = /^[a-z0-9._-]{3,32}$/;
+
+function publishDirectConversation(conversationId: string): void {
+  const participants = directParticipants(conversationId);
+  if (!participants) return;
+  for (const userId of participants) {
+    const conversation = directConversationForUser(conversationId, userId);
+    /* Sin mensajes el hilo no está en la lista de nadie (ver
+       `directConversationsForUser`), así que anunciarlo lo haría aparecer solo
+       en las pantallas abiertas y desaparecer al recargar. */
+    if (conversation?.last_message) publishToUser(userId, { t: "DIRECT_CONVERSATION_UPSERT", d: conversation });
+  }
+}
+
+function publishSocial(userIds: string[]): void {
+  for (const userId of new Set(userIds)) publishToUser(userId, { t: "SOCIAL_UPDATE", d: socialOverviewFor(userId) });
+}
 const CHANNEL_NAME = /^[^\s#@][^#@]{0,63}$/;
 
 /* ── estado de la instancia (§26) ──────────────────────────────────── */
@@ -711,6 +746,10 @@ route("POST", "/api/v1/communities", async (ctx) => {
   const legacyPublic = v.bool(body, "is_public", false);
   const visibility = v.oneOf(body, "visibility", COMMUNITY_VISIBILITIES, legacyPublic ? "public" : "private");
   const joinPolicy = v.oneOf(body, "join_policy", COMMUNITY_JOIN_POLICIES, "invite");
+  /* Quien no la mande cae en 'other' en vez de recibir un 400: la categoría la
+     pide la interfaz al crear, pero un cliente viejo tiene que poder seguir
+     creando comunidades (§28.6). */
+  const category = v.oneOf(body, "category", COMMUNITY_CATEGORIES, "other");
   const accent = v.color(body, "accent_color") ?? undefined;
 
   const id = seedCommunity({
@@ -720,6 +759,7 @@ route("POST", "/api/v1/communities", async (ctx) => {
     isPublic: visibility === "public",
     visibility,
     joinPolicy,
+    category,
     accentColor: accent ?? undefined,
   });
   queueDirectorySync();
@@ -838,6 +878,8 @@ route("PATCH", "/api/v1/communities/:id", async (ctx) => {
     fields.push(["visibility", visibility], ["is_public", visibility === "public" ? 1 : 0]);
   }
   if (body.join_policy !== undefined) fields.push(["join_policy", v.oneOf(body, "join_policy", COMMUNITY_JOIN_POLICIES)]);
+  if (body.category !== undefined) fields.push(["category", v.oneOf(body, "category", COMMUNITY_CATEGORIES)]);
+  if (body.voice_messages !== undefined) fields.push(["voice_messages", v.bool(body, "voice_messages", true) ? 1 : 0]);
   if (fields.length === 0) return getCommunity(communityId);
 
   db.prepare(`UPDATE communities SET ${fields.map(([k]) => `${k} = ?`).join(", ")} WHERE id = ?`).run(
@@ -846,6 +888,10 @@ route("PATCH", "/api/v1/communities/:id", async (ctx) => {
   );
 
   const updated = getCommunity(communityId)!;
+  /* Ya no hay un segundo interruptor en la interfaz: declarar una comunidad
+     pública basta para activar el publicador de la instancia. Conservamos el
+     ajuste interno para migrar instalaciones antiguas y clientes previos. */
+  if (updated.visibility === "public" && !discoveryEnabled()) setDiscoveryEnabled(true);
   audit(communityId, user.id, "COMMUNITY_UPDATE", communityId, { fields: fields.map(([k]) => k) });
   publish(communityId, { t: "COMMUNITY_UPDATE", d: updated });
   queueDirectorySync();
@@ -930,7 +976,7 @@ route("GET", "/api/v1/discovery", (ctx) => {
   const rows = db
     .prepare(
       `SELECT c.id, c.name, c.slug, c.description, c.icon_url, c.banner_url, c.accent_color,
-              c.visibility, c.join_policy,
+              c.visibility, c.join_policy, c.category,
               (SELECT COUNT(*) FROM members m WHERE m.community_id = c.id AND m.banned = 0) AS members
        FROM communities c WHERE c.visibility = 'public' ORDER BY members DESC LIMIT 50`,
     )
@@ -1741,6 +1787,15 @@ route("POST", "/api/v1/channels/:id/messages", async (ctx) => {
   const replyTo = v.optionalString(body, "reply_to_id", { max: 64 }) ?? null;
 
   if (attachmentIds.length > 0) requireChannelPerm(channel.id, user.id, PERMISSIONS.ATTACH_FILES, "adjuntar archivos");
+  /* Audios suspendidos: se comprueba aquí y no solo en la interfaz, porque
+     esconder el botón no impide subir el fichero y adjuntarlo a mano. */
+  if (attachmentIds.length > 0 && getCommunity(channel.community_id)?.voice_messages === false) {
+    const marcas = attachmentIds.map(() => "?").join(",");
+    const audio = db
+      .prepare(`SELECT 1 FROM attachments WHERE id IN (${marcas}) AND owner_id = ? AND content_type LIKE 'audio/%' LIMIT 1`)
+      .get(...attachmentIds, user.id);
+    if (audio) throw badRequest("Esta comunidad tiene los audios suspendidos.");
+  }
   if (replyTo && !db.prepare("SELECT 1 FROM messages WHERE id = ? AND channel_id = ?").get(replyTo, channel.id))
     throw badRequest("El mensaje al que respondes no está en este canal.");
 
@@ -1930,6 +1985,214 @@ route("DELETE", "/api/v1/messages/:id/reactions", (ctx) => {
 });
 
 /* ── roles (§11) ───────────────────────────────────────────────────── */
+
+/* ── mensajes directos ───────────────────────────────────────────────── */
+
+route("GET", "/api/v1/social", (ctx) => {
+  const { user } = requireAuth(ctx);
+  return socialOverviewFor(user.id);
+});
+
+route("POST", "/api/v1/friend-requests", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  rateLimit(`friend-request:${user.id}`, 20, 60 * 60_000);
+  const body = await readJson(ctx);
+  const targetId = v.string(body, "user_id", { max: 64 });
+  const result = requestFriendship(user.id, targetId);
+  if (result === "unavailable") throw notFound("No se puede enviar una solicitud a esa persona.");
+  if (result === "exists") throw conflict("Ya existe una relación o solicitud con esa persona.");
+  publishSocial([user.id, targetId]);
+  return { state: "pending" };
+});
+
+route("POST", "/api/v1/friend-requests/:userId/accept", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const requesterId = ctx.params.userId!;
+  if (!acceptFriendship(user.id, requesterId)) throw notFound("Solicitud no encontrada.");
+  publishSocial([user.id, requesterId]);
+  const [userA, userB] = [user.id, requesterId].sort() as [string, string];
+  const conversation = db
+    .prepare("SELECT id FROM direct_conversations WHERE user_a_id = ? AND user_b_id = ?")
+    .get(userA, userB) as { id: string } | undefined;
+  if (conversation) publishDirectConversation(conversation.id);
+  return { state: "accepted" };
+});
+
+route("DELETE", "/api/v1/friendships/:userId", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const targetId = ctx.params.userId!;
+  if (!removeFriendship(user.id, targetId)) throw notFound("Relación no encontrada.");
+  publishSocial([user.id, targetId]);
+});
+
+route("GET", "/api/v1/direct-contacts", (ctx) => {
+  const { user } = requireAuth(ctx);
+  return directContactsFor(user.id);
+});
+
+route("GET", "/api/v1/direct-conversations", (ctx) => {
+  const { user } = requireAuth(ctx);
+  return directConversationsForUser(user.id);
+});
+
+route("POST", "/api/v1/direct-conversations", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  rateLimit(`direct-open:${user.id}`, 30, 60_000);
+  const body = await readJson(ctx);
+  const targetId = v.string(body, "user_id", { max: 64 });
+  const conversation = ensureDirectConversation(user.id, targetId);
+  if (!conversation) throw notFound("No se puede abrir una conversación con esa persona.");
+  publishDirectConversation(conversation.id);
+  return conversation;
+});
+
+route("GET", "/api/v1/direct-conversations/:id/messages", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const conversationId = ctx.params.id!;
+  if (!canReadDirect(conversationId, user.id)) throw notFound("Conversación no encontrada.");
+  const before = ctx.url.searchParams.get("before") ?? undefined;
+  const limit = Math.min(Number(ctx.url.searchParams.get("limit") ?? 50) || 50, 100);
+  return directMessagesOf(conversationId, { before, limit });
+});
+
+route("POST", "/api/v1/direct-conversations/:id/messages", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const conversationId = ctx.params.id!;
+  const participants = directParticipants(conversationId);
+  if (!participants?.includes(user.id)) throw notFound("Conversación no encontrada.");
+  if (!canSendDirect(conversationId, user.id))
+    throw forbidden("Acepta la solicitud de mensaje antes de responder.");
+  rateLimit(`msg:${user.id}`, 20, 10_000);
+
+  const body = await readJson(ctx);
+  const attachmentIds = Array.isArray(body.attachment_ids)
+    ? [...new Set(body.attachment_ids.filter((id): id is string => typeof id === "string"))].slice(0, 10)
+    : [];
+  const content = attachmentIds.length > 0
+    ? v.optionalString(body, "content", { max: 4000 }) ?? ""
+    : v.string(body, "content", { min: 1, max: 4000 });
+  const replyTo = v.optionalString(body, "reply_to_id", { max: 64 }) ?? null;
+  if (attachmentIds.length > 0) {
+    const placeholders = attachmentIds.map(() => "?").join(",");
+    const available = db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM attachments
+         WHERE id IN (${placeholders}) AND owner_id = ? AND message_id IS NULL AND direct_message_id IS NULL`,
+      )
+      .get(...attachmentIds, user.id) as { count: number };
+    if (available.count !== attachmentIds.length) throw badRequest("Algún archivo ya no está disponible.");
+  }
+  if (replyTo && !db.prepare("SELECT 1 FROM direct_messages WHERE id = ? AND conversation_id = ?").get(replyTo, conversationId))
+    throw badRequest("El mensaje al que respondes no está en esta conversación.");
+
+  CUSTOM_EMOJI.lastIndex = 0;
+  if (CUSTOM_EMOJI.test(content)) {
+    CUSTOM_EMOJI.lastIndex = 0;
+    const invalid = unusableEmojis(content, user.id);
+    if (invalid.length > 0)
+      throw badRequest(`No puedes usar estos emojis: ${invalid.map((name) => `:${name}:`).join(", ")}.`, { emojis: invalid });
+  }
+
+  const id = uuidv7();
+  const createdAt = Date.now();
+  db.prepare(
+    `INSERT INTO direct_messages (id, conversation_id, author_id, content, created_at, reply_to_id)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run(id, conversationId, user.id, content, createdAt, replyTo);
+  linkDirectAttachments(id, attachmentIds, user.id);
+  touchDirectConversation(conversationId, createdAt);
+
+  const message = getDirectMessage(id)!;
+  for (const participantId of participants)
+    publishToUser(participantId, { t: "DIRECT_MESSAGE_CREATE", d: message });
+  publishDirectConversation(conversationId);
+
+  const recipientId = participants.find((participantId) => participantId !== user.id);
+  if (recipientId && !hasOpenSocket(recipientId)) void pushMention([recipientId]).catch(() => {});
+  return message;
+});
+
+route("POST", "/api/v1/direct-conversations/:id/accept", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const conversationId = ctx.params.id!;
+  if (!acceptDirectRequest(conversationId, user.id)) throw notFound("Solicitud de mensaje no encontrada.");
+  publishDirectConversation(conversationId);
+  return directConversationForUser(conversationId, user.id)!;
+});
+
+route("DELETE", "/api/v1/direct-conversations/:id/request", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const conversationId = ctx.params.id!;
+  const participants = removeDirectRequest(conversationId, user.id);
+  if (!participants) throw notFound("Solicitud de mensaje no encontrada.");
+  for (const participantId of participants)
+    publishToUser(participantId, { t: "DIRECT_CONVERSATION_DELETE", d: { id: conversationId } });
+});
+
+route("PATCH", "/api/v1/direct-messages/:id", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const message = getDirectMessage(ctx.params.id!);
+  if (!message) throw notFound("Mensaje no encontrado.");
+  if (!canReadDirect(message.conversation_id, user.id)) throw notFound("Mensaje no encontrado.");
+  if (message.author_id !== user.id) throw forbidden("Solo puedes editar tus propios mensajes.");
+
+  const body = await readJson(ctx);
+  const content = v.string(body, "content", { min: 1, max: 4000 });
+  CUSTOM_EMOJI.lastIndex = 0;
+  if (CUSTOM_EMOJI.test(content)) {
+    CUSTOM_EMOJI.lastIndex = 0;
+    const invalid = unusableEmojis(content, user.id);
+    if (invalid.length > 0)
+      throw badRequest(`No puedes usar estos emojis: ${invalid.map((name) => `:${name}:`).join(", ")}.`, { emojis: invalid });
+  }
+  db.prepare("UPDATE direct_messages SET content = ?, edited_at = ? WHERE id = ?").run(content, Date.now(), message.id);
+
+  const updated = getDirectMessage(message.id)!;
+  for (const participantId of directParticipants(message.conversation_id) ?? [])
+    publishToUser(participantId, { t: "DIRECT_MESSAGE_UPDATE", d: updated });
+  publishDirectConversation(message.conversation_id);
+  return updated;
+});
+
+route("DELETE", "/api/v1/direct-messages/:id", (ctx) => {
+  const { user } = requireAuth(ctx);
+  const message = getDirectMessage(ctx.params.id!);
+  if (!message) throw notFound("Mensaje no encontrado.");
+  if (!canReadDirect(message.conversation_id, user.id)) throw notFound("Mensaje no encontrado.");
+  if (message.author_id !== user.id) throw forbidden("Solo puedes borrar tus propios mensajes.");
+  const participants = directParticipants(message.conversation_id) ?? [];
+
+  deleteDirectAttachmentsOf(message.id);
+  db.prepare("DELETE FROM direct_messages WHERE id = ?").run(message.id);
+  refreshDirectConversationTimestamp(message.conversation_id);
+  for (const participantId of participants)
+    publishToUser(participantId, {
+      t: "DIRECT_MESSAGE_DELETE",
+      d: { id: message.id, conversation_id: message.conversation_id },
+    });
+  publishDirectConversation(message.conversation_id);
+});
+
+route("POST", "/api/v1/direct-conversations/:id/read", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const conversationId = ctx.params.id!;
+  if (!canReadDirect(conversationId, user.id)) throw notFound("Conversación no encontrada.");
+  const body = await readJson(ctx);
+  const messageId = v.string(body, "message_id", { max: 64 });
+  if (!db.prepare("SELECT 1 FROM direct_messages WHERE id = ? AND conversation_id = ?").get(messageId, conversationId))
+    throw badRequest("Ese mensaje no pertenece a esta conversación.");
+  const current = db
+    .prepare("SELECT last_read_id FROM direct_read_state WHERE conversation_id = ? AND user_id = ?")
+    .get(conversationId, user.id) as { last_read_id: string } | undefined;
+  const furthest = current?.last_read_id && current.last_read_id > messageId ? current.last_read_id : messageId;
+  db.prepare(
+    `INSERT INTO direct_read_state (conversation_id, user_id, last_read_id, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(conversation_id, user_id) DO UPDATE SET last_read_id = excluded.last_read_id, updated_at = excluded.updated_at`,
+  ).run(conversationId, user.id, furthest, Date.now());
+  publishToUser(user.id, { t: "DIRECT_READ_UPDATE", d: { conversation_id: conversationId, last_read_id: furthest } });
+  publishDirectConversation(conversationId);
+  return { conversation_id: conversationId, last_read_id: furthest };
+});
 
 route("GET", "/api/v1/communities/:id/roles", (ctx) => {
   const { user } = requireAuth(ctx);
@@ -3373,12 +3636,21 @@ route("PUT", "/api/v1/instance/relay", async (ctx) => {
 route("POST", "/api/v1/instance/purge", (ctx) => {
   const { user } = requireHost(ctx);
 
-  const messages = (db.prepare("SELECT COUNT(*) AS n FROM messages").get() as { n: number }).n;
+  const channelMessages = (db.prepare("SELECT COUNT(*) AS n FROM messages").get() as { n: number }).n;
+  const directMessages = (db.prepare("SELECT COUNT(*) AS n FROM direct_messages").get() as { n: number }).n;
+  const messages = channelMessages + directMessages;
+  const directUsers = db
+    .prepare("SELECT user_a_id AS id FROM direct_conversations UNION SELECT user_b_id AS id FROM direct_conversations")
+    .all() as { id: string }[];
   // Primero los ficheros (las filas de adjuntos dicen dónde están), después las
   // filas de mensajes: reacciones y adjuntos restantes caen por CASCADE.
   const { files, mb } = purgeChatFiles();
   db.prepare("DELETE FROM messages").run();
+  db.prepare("DELETE FROM direct_messages").run();
+  db.prepare("UPDATE direct_conversations SET updated_at = created_at").run();
   invalidateStorageCache();
+
+  for (const { id } of directUsers) publishToUser(id, { t: "DIRECT_MESSAGES_PURGED", d: {} });
 
   const communities = db.prepare("SELECT id FROM communities").all() as { id: string }[];
   for (const community of communities) {

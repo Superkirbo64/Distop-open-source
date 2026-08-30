@@ -12,6 +12,8 @@ import type {
   Channel,
   Community,
   CustomEmoji,
+  DirectConversation,
+  DirectMessage,
   GamePresence,
   InstanceHealth,
   Meeting,
@@ -24,6 +26,7 @@ import type {
   Role,
   SelfUser,
   ServerEvent,
+  SocialOverview,
   Unread,
   VideoBudget,
   VoiceState,
@@ -41,6 +44,7 @@ import { portableAuthPayload, syncPortableMedia } from "./lib/portable.ts";
 
 export type ThemeChoice = "light" | "dark" | "system";
 export type Density = "compact" | "cozy";
+export type DirectView = "friends" | "friend_requests" | "message_requests" | "chat";
 
 export interface CommunityData {
   community: Community;
@@ -191,6 +195,13 @@ interface State {
   data: Record<string, CommunityData>;
   messages: Record<string, Message[]>;
   hasMore: Record<string, boolean>;
+  directOpen: boolean;
+  directConversations: DirectConversation[];
+  directMessages: Record<string, DirectMessage[]>;
+  directHasMore: Record<string, boolean>;
+  activeDirectId: string | null;
+  directView: DirectView;
+  social: SocialOverview;
   typing: Record<string, Record<string, number>>;
   /* Plano por canal y no por comunidad: la barra lateral, la de comunidades y el
      título de la pestaña preguntan por lo mismo desde tres sitios distintos. */
@@ -223,6 +234,19 @@ interface State {
 
   openCommunity: (communityId: string) => Promise<void>;
   openChannel: (channelId: string) => Promise<void>;
+  openDirectHome: () => Promise<void>;
+  setDirectView: (view: DirectView) => void;
+  loadSocial: () => Promise<void>;
+  sendFriendRequest: (userId: string) => Promise<void>;
+  acceptFriendRequest: (userId: string) => Promise<void>;
+  removeFriendship: (userId: string) => Promise<void>;
+  acceptMessageRequest: (conversationId: string) => Promise<void>;
+  rejectMessageRequest: (conversationId: string) => Promise<void>;
+  openDirect: (conversationId: string) => Promise<void>;
+  startDirect: (userId: string) => Promise<void>;
+  loadOlderDirect: (conversationId: string) => Promise<void>;
+  sendDirect: (conversationId: string, content: string, attachmentIds: string[], replyToId: string | null) => Promise<void>;
+  markDirectRead: (conversationId: string) => void;
   loadOlder: (channelId: string) => Promise<void>;
   send: (channelId: string, content: string, attachmentIds: string[], replyToId: string | null) => Promise<void>;
   notifyTyping: (channelId: string) => void;
@@ -351,6 +375,15 @@ function ensureLocale(locale: Locale): void {
     });
 }
 
+/* La instancia solo lista conversaciones con mensajes, así que un hilo recién
+   abierto y todavía en blanco no vuelve en el refresco. Se conserva el que está
+   abierto para no echar a nadie de la pantalla que está mirando. */
+function withActiveDirect(list: DirectConversation[]): DirectConversation[] {
+  const { activeDirectId, directConversations } = useStore.getState();
+  const active = directConversations.find((item) => item.id === activeDirectId);
+  return active && !list.some((item) => item.id === active.id) ? [active, ...list] : list;
+}
+
 export const useStore = create<State>()((set, get) => ({
   ready: false,
   user: null,
@@ -386,6 +419,13 @@ export const useStore = create<State>()((set, get) => ({
   data: {},
   messages: {},
   hasMore: {},
+  directOpen: false,
+  directConversations: [],
+  directMessages: {},
+  directHasMore: {},
+  activeDirectId: null,
+  directView: "friends",
+  social: { friends: [], incoming_friend_requests: [], outgoing_friend_requests: [] },
   typing: {},
   unread: {},
   lastRead: {},
@@ -517,6 +557,13 @@ export const useStore = create<State>()((set, get) => ({
       communities: [],
       data: {},
       messages: {},
+      directOpen: false,
+      directConversations: [],
+      directMessages: {},
+      directHasMore: {},
+      activeDirectId: null,
+      directView: "friends",
+      social: { friends: [], incoming_friend_requests: [], outgoing_friend_requests: [] },
       activeCommunityId: null,
       activeChannelId: null,
       /* Sin esto, cerrar la sesión de invitado dejaba la pantalla de la reunión
@@ -548,7 +595,9 @@ export const useStore = create<State>()((set, get) => ({
   },
 
   async openCommunity(communityId) {
-    set({ activeCommunityId: communityId });
+    /* Conservamos el Ãºltimo DM seleccionado para que el botÃ³n de mensajes de
+       la barra lateral pueda volver directamente a esa conversaciÃ³n. */
+    set({ activeCommunityId: communityId, directOpen: false });
     sendCommand({ t: "SUBSCRIBE", d: { community_id: communityId } });
 
     const data = await api<CommunityData>("GET", `/api/v1/communities/${communityId}/bootstrap`);
@@ -601,6 +650,155 @@ export const useStore = create<State>()((set, get) => ({
        así que se guarda primero y se marca leído después. */
     set((state) => ({ divider: { ...state.divider, [channelId]: state.lastRead[channelId] ?? null } }));
     get().markRead(channelId);
+  },
+
+  async openDirectHome() {
+    const previousConversationId = get().activeDirectId;
+    const cachedConversations = get().directConversations;
+    const cachedConversation =
+      cachedConversations.find(({ id }) => id === previousConversationId) ??
+      cachedConversations.find(({ request_state }) => request_state !== "incoming");
+
+    /* Entramos primero y sincronizamos despuÃ©s. Si la instancia estÃ¡ arrancando
+       o todavÃ­a sirve una versiÃ³n anterior de la API social, el botÃ³n no puede
+       quedarse aparentemente muerto. Sin conversaciones, DirectChat muestra
+       su estado vacÃ­o y el lateral permite iniciar una. */
+    set({
+      directOpen: true,
+      directView: "chat",
+      activeDirectId: cachedConversation?.id ?? null,
+      activeCommunityId: null,
+      activeChannelId: null,
+    });
+
+    const [conversationResult, socialResult] = await Promise.allSettled([
+      api<DirectConversation[]>("GET", "/api/v1/direct-conversations"),
+      api<SocialOverview>("GET", "/api/v1/social"),
+    ]);
+
+    const conversations = withActiveDirect(
+      conversationResult.status === "fulfilled" ? conversationResult.value : get().directConversations,
+    );
+    const social = socialResult.status === "fulfilled" ? socialResult.value : get().social;
+
+    const conversation =
+      conversations.find(({ id }) => id === previousConversationId) ??
+      conversations.find(({ request_state }) => request_state !== "incoming");
+
+    set({
+      directOpen: true,
+      directConversations: conversations,
+      social,
+      directView: "chat",
+      activeDirectId: conversation?.id ?? null,
+      activeCommunityId: null,
+      activeChannelId: null,
+    });
+
+    if (conversation) await get().openDirect(conversation.id).catch(() => {});
+  },
+
+  setDirectView(directView) {
+    set({ directOpen: true, directView, activeDirectId: directView === "chat" ? get().activeDirectId : null });
+  },
+
+  async loadSocial() {
+    set({ social: await api<SocialOverview>("GET", "/api/v1/social") });
+  },
+
+  async sendFriendRequest(userId) {
+    await api("POST", "/api/v1/friend-requests", { user_id: userId });
+    await get().loadSocial();
+  },
+
+  async acceptFriendRequest(userId) {
+    await api("POST", `/api/v1/friend-requests/${userId}/accept`);
+    const [social, directConversations] = await Promise.all([
+      api<SocialOverview>("GET", "/api/v1/social"),
+      api<DirectConversation[]>("GET", "/api/v1/direct-conversations"),
+    ]);
+    set({ social, directConversations: withActiveDirect(directConversations) });
+  },
+
+  async removeFriendship(userId) {
+    await api("DELETE", `/api/v1/friendships/${userId}`);
+    await get().loadSocial();
+  },
+
+  async acceptMessageRequest(conversationId) {
+    const conversation = await api<DirectConversation>("POST", `/api/v1/direct-conversations/${conversationId}/accept`);
+    set((state) => ({
+      directConversations: [conversation, ...state.directConversations.filter((item) => item.id !== conversation.id)],
+    }));
+    await get().openDirect(conversationId);
+  },
+
+  async rejectMessageRequest(conversationId) {
+    await api("DELETE", `/api/v1/direct-conversations/${conversationId}/request`);
+    set((state) => ({
+      directConversations: state.directConversations.filter((item) => item.id !== conversationId),
+      directMessages: Object.fromEntries(Object.entries(state.directMessages).filter(([id]) => id !== conversationId)),
+      activeDirectId: state.activeDirectId === conversationId ? null : state.activeDirectId,
+      directView: state.activeDirectId === conversationId ? "message_requests" : state.directView,
+    }));
+  },
+
+  async openDirect(conversationId) {
+    set({ directOpen: true, directView: "chat", activeDirectId: conversationId, activeCommunityId: null, activeChannelId: null });
+    if (!get().directMessages[conversationId]) {
+      const page = await api<DirectMessage[]>(
+        "GET",
+        `/api/v1/direct-conversations/${conversationId}/messages?limit=${MESSAGE_PAGE}`,
+      );
+      set((state) => ({
+        directMessages: { ...state.directMessages, [conversationId]: page },
+        directHasMore: { ...state.directHasMore, [conversationId]: page.length === MESSAGE_PAGE },
+      }));
+    }
+    get().markDirectRead(conversationId);
+  },
+
+  async startDirect(userId) {
+    const conversation = await api<DirectConversation>("POST", "/api/v1/direct-conversations", { user_id: userId });
+    set((state) => ({
+      directConversations: [conversation, ...state.directConversations.filter((item) => item.id !== conversation.id)],
+    }));
+    await get().openDirect(conversation.id);
+  },
+
+  async loadOlderDirect(conversationId) {
+    const current = get().directMessages[conversationId] ?? [];
+    const oldest = current[0];
+    if (!oldest) return;
+    const page = await api<DirectMessage[]>(
+      "GET",
+      `/api/v1/direct-conversations/${conversationId}/messages?limit=${MESSAGE_PAGE}&before=${oldest.id}`,
+    );
+    set((state) => ({
+      directMessages: { ...state.directMessages, [conversationId]: [...page, ...(state.directMessages[conversationId] ?? [])] },
+      directHasMore: { ...state.directHasMore, [conversationId]: page.length === MESSAGE_PAGE },
+    }));
+  },
+
+  async sendDirect(conversationId, content, attachmentIds, replyToId) {
+    await api("POST", `/api/v1/direct-conversations/${conversationId}/messages`, {
+      content,
+      attachment_ids: attachmentIds,
+      reply_to_id: replyToId,
+    });
+  },
+
+  markDirectRead(conversationId) {
+    const state = get();
+    const list = state.directMessages[conversationId];
+    const last = list?.[list.length - 1];
+    if (!last) return;
+    set({
+      directConversations: state.directConversations.map((item) =>
+        item.id === conversationId ? { ...item, unread_count: 0 } : item,
+      ),
+    });
+    void api("POST", `/api/v1/direct-conversations/${conversationId}/read`, { message_id: last.id }).catch(() => {});
   },
 
   /**
@@ -829,6 +1027,12 @@ onEvent((event: ServerEvent) => {
          no se pudiera ver. */
       for (const community of event.d.communities) sendCommand({ t: "SUBSCRIBE", d: { community_id: community.id } });
       void useStore.getState().loadExpressions();
+      void api<DirectConversation[]>("GET", "/api/v1/direct-conversations")
+        .then((directConversations) => useStore.setState({ directConversations: withActiveDirect(directConversations) }))
+        .catch(() => {});
+      void api<SocialOverview>("GET", "/api/v1/social")
+        .then((social) => useStore.setState({ social }))
+        .catch(() => {});
 
       // Tras reconectar hay que refrescar lo que se perdió mientras no había socket.
       const active = state.activeCommunityId;
@@ -836,6 +1040,109 @@ onEvent((event: ServerEvent) => {
       // Y volver a anunciarse en la llamada: el servidor te dio por ido al caerse
       // el socket, y quien quedara dentro seguiría hablándole a una conexión muerta.
       resumeVoice();
+      return;
+    }
+
+    case "DIRECT_CONVERSATION_UPSERT": {
+      const directConversations = [
+        event.d,
+        ...state.directConversations.filter((conversation) => conversation.id !== event.d.id),
+      ].sort((a, b) => b.updated_at - a.updated_at || b.id.localeCompare(a.id));
+      useStore.setState({ directConversations });
+      return;
+    }
+
+    case "DIRECT_CONVERSATION_DELETE": {
+      const directMessages = { ...state.directMessages };
+      delete directMessages[event.d.id];
+      useStore.setState({
+        directConversations: state.directConversations.filter((conversation) => conversation.id !== event.d.id),
+        directMessages,
+        activeDirectId: state.activeDirectId === event.d.id ? null : state.activeDirectId,
+        directView: state.activeDirectId === event.d.id ? "message_requests" : state.directView,
+      });
+      return;
+    }
+
+    case "SOCIAL_UPDATE": {
+      useStore.setState({ social: event.d });
+      return;
+    }
+
+    case "DIRECT_MESSAGE_CREATE": {
+      const message = event.d;
+      const list = state.directMessages[message.conversation_id];
+      if (list && !list.some((item) => item.id === message.id)) {
+        useStore.setState({
+          directMessages: { ...state.directMessages, [message.conversation_id]: [...list, message] },
+        });
+      } else if (list) {
+        return;
+      }
+      if (message.author_id === state.user?.id) return;
+
+      const looking = state.directOpen && state.activeDirectId === message.conversation_id && !document.hidden;
+      if (looking) {
+        useStore.getState().markDirectRead(message.conversation_id);
+        return;
+      }
+      const conversation = state.directConversations.find((item) => item.id === message.conversation_id);
+      notify({
+        title: conversation?.other_user.display_name ?? mensaje("direct.title"),
+        body: message.content || mensaje("direct.attachment"),
+        tag: `direct:${message.conversation_id}`,
+        mention: true,
+        level: state.prefs.notify,
+        sound: state.prefs.sounds,
+        onClick: () => void useStore.getState().openDirect(message.conversation_id),
+      });
+      return;
+    }
+
+    case "DIRECT_MESSAGE_UPDATE": {
+      const list = state.directMessages[event.d.conversation_id];
+      if (!list) return;
+      useStore.setState({
+        directMessages: {
+          ...state.directMessages,
+          [event.d.conversation_id]: list.map((message) => (message.id === event.d.id ? event.d : message)),
+        },
+      });
+      return;
+    }
+
+    case "DIRECT_MESSAGE_DELETE": {
+      const list = state.directMessages[event.d.conversation_id];
+      if (!list) return;
+      useStore.setState({
+        directMessages: {
+          ...state.directMessages,
+          [event.d.conversation_id]: list.filter((message) => message.id !== event.d.id),
+        },
+      });
+      return;
+    }
+
+    case "DIRECT_READ_UPDATE": {
+      useStore.setState({
+        directConversations: state.directConversations.map((conversation) =>
+          conversation.id === event.d.conversation_id ? { ...conversation, unread_count: 0 } : conversation,
+        ),
+      });
+      return;
+    }
+
+    case "DIRECT_MESSAGES_PURGED": {
+      useStore.setState({
+        directMessages: {},
+        directHasMore: {},
+        directConversations: state.directConversations.map((conversation) => ({
+          ...conversation,
+          last_message: null,
+          unread_count: 0,
+          updated_at: conversation.created_at,
+        })),
+      });
       return;
     }
 
@@ -952,7 +1259,7 @@ onEvent((event: ServerEvent) => {
     }
 
     case "VOICE_JOIN_RESULT": {
-      if (event.d.outcome === "closed" || event.d.outcome === "denied") {
+      if (event.d.outcome === "closed" || event.d.outcome === "denied" || event.d.outcome === "full") {
         rejectVoiceJoin(event.d.channel_id, event.d.outcome);
       }
       return;
@@ -1302,13 +1609,20 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
    porque no es lo mismo "hay movimiento" que "te están hablando". */
 
 function paintTitle(): void {
-  const { unread } = useStore.getState();
+  const { unread, directConversations, social } = useStore.getState();
   const totals = Object.values(unread).reduce(
     (acc, entry) => ({ count: acc.count + entry.count, mentions: acc.mentions + entry.mentions }),
     { count: 0, mentions: 0 },
   );
 
-  const prefix = totals.mentions > 0 ? `(${totals.mentions}) ` : totals.count > 0 ? "• " : "";
+  const directUnread =
+    social.incoming_friend_requests.length +
+    directConversations.reduce(
+      (count, conversation) => count + (conversation.request_state === "incoming" ? 1 : conversation.unread_count),
+      0,
+    );
+  const important = totals.mentions + directUnread;
+  const prefix = important > 0 ? `(${important}) ` : totals.count > 0 ? "• " : "";
   document.title = `${prefix}${BRAND.name}`;
 }
 
@@ -1316,15 +1630,16 @@ function paintTitle(): void {
    diff por identidad basta: el resto de setState (typing, presencias, voz…) ya
    no paga el reduce del título. */
 useStore.subscribe((state, previous) => {
-  if (state.unread !== previous.unread) paintTitle();
+  if (state.unread !== previous.unread || state.directConversations !== previous.directConversations || state.social !== previous.social) paintTitle();
 });
 
 /* Volver a la ventana con el canal abierto delante es haberlo leído. Sin esto,
    el contador se queda encendido sobre mensajes que ya tienes a la vista. */
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) return;
-  const { activeChannelId } = useStore.getState();
+  const { activeChannelId, activeDirectId, directOpen } = useStore.getState();
   if (activeChannelId) useStore.getState().markRead(activeChannelId);
+  if (directOpen && activeDirectId) useStore.getState().markDirectRead(activeDirectId);
 });
 
 /**

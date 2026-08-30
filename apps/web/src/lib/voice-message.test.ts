@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   audioExtension,
+  audioWaveform,
   baseAudioMime,
   chooseVoiceMessageMime,
   formatVoiceMessageTime,
@@ -43,4 +44,17 @@ test("en silencio la barra sigue viéndose", () => {
   assert.ok(waveHeight(0) > 0, "altura cero se leería como colgado, no como callado");
   assert.equal(waveHeight(1), 1);
   assert.ok(waveHeight(0.04) > 0.04, "los niveles bajos se levantan para que se note que graba");
+});
+
+test("la onda de reproducción representa los tramos del audio real", () => {
+  const channel = new Float32Array(400);
+  channel.fill(0.02, 0, 100);
+  channel.fill(0.3, 100, 200);
+  channel.fill(0, 200, 300);
+  channel.fill(0.8, 300, 400);
+  const wave = audioWaveform([channel], 4);
+  assert.equal(wave.length, 4);
+  assert.ok(wave[0]! < wave[1]!, "la voz más fuerte produce una barra mayor");
+  assert.equal(wave[2], 0.16, "el silencio queda visible pero bajo");
+  assert.equal(wave[3], 1, "el tramo más fuerte normaliza la onda");
 });

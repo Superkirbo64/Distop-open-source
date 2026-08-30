@@ -75,3 +75,34 @@ export function waveHeight(level: number): number {
   const acotado = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0;
   return Math.min(1, 0.16 + Math.sqrt(acotado) * 0.84);
 }
+
+/**
+ * Resume un audio decodificado en barras de energía. Cada barra representa su
+ * propio tramo temporal y se normaliza contra el tramo más fuerte, de modo que
+ * la forma conserva pausas y cambios de intensidad del mensaje real.
+ */
+export function audioWaveform(channels: readonly Float32Array[], barCount: number): number[] {
+  const count = Math.max(1, Math.floor(barCount));
+  const sampleCount = Math.max(0, ...channels.map((channel) => channel.length));
+  if (sampleCount === 0 || channels.length === 0) return Array.from({ length: count }, () => 0.16);
+
+  const energy = Array.from({ length: count }, (_, bar) => {
+    const start = Math.floor((bar * sampleCount) / count);
+    const end = Math.max(start + 1, Math.floor(((bar + 1) * sampleCount) / count));
+    const stride = Math.max(1, Math.floor((end - start) / 256));
+    let squares = 0;
+    let samples = 0;
+    for (const channel of channels) {
+      for (let index = start; index < Math.min(end, channel.length); index += stride) {
+        const value = channel[index] ?? 0;
+        squares += value * value;
+        samples++;
+      }
+    }
+    return samples > 0 ? Math.sqrt(squares / samples) : 0;
+  });
+
+  const strongest = Math.max(...energy);
+  if (strongest <= 0) return energy.map(() => 0.16);
+  return energy.map((value) => Math.min(1, 0.16 + Math.pow(value / strongest, 0.68) * 0.84));
+}

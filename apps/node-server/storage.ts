@@ -439,10 +439,48 @@ export function attachmentsFor(messageIds: string[]): Map<string, Attachment[]> 
   return out;
 }
 
+export function attachmentsForDirect(messageIds: string[]): Map<string, Attachment[]> {
+  const out = new Map<string, Attachment[]>();
+  if (messageIds.length === 0) return out;
+  const rows = db
+    .prepare(
+      `SELECT id, direct_message_id, filename, content_type, size FROM attachments
+       WHERE direct_message_id IN (${messageIds.map(() => "?").join(",")})`,
+    )
+    .all(...messageIds) as Array<{
+      id: string;
+      direct_message_id: string;
+      filename: string;
+      content_type: string;
+      size: number;
+    }>;
+  for (const row of rows) {
+    const list = out.get(row.direct_message_id) ?? [];
+    list.push({
+      id: row.id,
+      message_id: row.direct_message_id,
+      filename: row.filename,
+      content_type: row.content_type,
+      size: row.size,
+      url: `/api/v1/files/${row.id}`,
+    });
+    out.set(row.direct_message_id, list);
+  }
+  return out;
+}
+
 export function linkAttachments(messageId: string, ids: string[], ownerId: string): void {
   if (ids.length === 0) return;
   const claim = db.prepare(
-    "UPDATE attachments SET message_id = ? WHERE id = ? AND owner_id = ? AND message_id IS NULL",
+    "UPDATE attachments SET message_id = ? WHERE id = ? AND owner_id = ? AND message_id IS NULL AND direct_message_id IS NULL",
+  );
+  for (const id of ids) claim.run(messageId, id, ownerId);
+}
+
+export function linkDirectAttachments(messageId: string, ids: string[], ownerId: string): void {
+  if (ids.length === 0) return;
+  const claim = db.prepare(
+    "UPDATE attachments SET direct_message_id = ? WHERE id = ? AND owner_id = ? AND message_id IS NULL AND direct_message_id IS NULL",
   );
   for (const id of ids) claim.run(messageId, id, ownerId);
 }
@@ -494,8 +532,12 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
   const full = insideStorage(row.path);
   if (full === null || !existsSync(full)) throw notFound("Archivo no encontrado.");
 
-  // inline solo para tipos que el navegador no puede usar para ejecutar script.
-  const inline = row.content_type.startsWith("image/") && row.content_type !== "image/svg+xml";
+  /* El reproductor del chat necesita que el audio se sirva como recurso, no
+     como descarga. Imágenes raster y audio son seguros en línea con nosniff y
+     la CSP de abajo; SVG sigue fuera porque sí puede contener código activo. */
+  const inline =
+    (row.content_type.startsWith("image/") && row.content_type !== "image/svg+xml") ||
+    row.content_type.startsWith("audio/");
 
   ctx.res.writeHead(200, {
     "content-type": row.content_type,
@@ -535,6 +577,19 @@ export function deleteAttachmentsOf(messageId: string): void {
   db.prepare("DELETE FROM attachments WHERE message_id = ?").run(messageId);
 }
 
+export function deleteDirectAttachmentsOf(messageId: string): void {
+  const rows = db.prepare("SELECT id, path FROM attachments WHERE direct_message_id = ?").all(messageId) as Array<{
+    id: string;
+    path: string;
+  }>;
+  for (const row of rows) {
+    if (!row.path) continue;
+    const full = insideStorage(row.path);
+    if (full && existsSync(full)) unlinkSync(full);
+  }
+  db.prepare("DELETE FROM attachments WHERE direct_message_id = ?").run(messageId);
+}
+
 /**
  * Todo lo que subió una persona, borrado del disco además de la base.
  * Sin esto, "eliminar mi cuenta" dejaría sus fotos en el disco del anfitrión: la
@@ -557,13 +612,13 @@ export function deleteAttachmentsOwnedBy(userId: string): void {
  * Vaciar el chat de la instancia entera (§28.4): los ficheros de los mensajes
  * —fotos, GIF, adjuntos— fuera del disco, y sus filas con ellos.
  *
- * SOLO lo que cuelga de un mensaje (`message_id IS NOT NULL`). Lo demás se
+ * SOLO lo que cuelga de un mensaje público o directo. Lo demás se
  * queda a propósito: emojis y sonidos de la comunidad, avatares, banners y
- * fondos también son adjuntos, pero con message_id NULL — son personalización,
+ * fondos también son adjuntos, pero con ambos vínculos NULL — son personalización,
  * no historial, y borrarlos rompería perfiles enteros (ver el aviso en db.ts).
  */
 export function purgeChatFiles(): { files: number; mb: number } {
-  const rows = db.prepare("SELECT id, path, size FROM attachments WHERE message_id IS NOT NULL").all() as {
+  const rows = db.prepare("SELECT id, path, size FROM attachments WHERE message_id IS NOT NULL OR direct_message_id IS NOT NULL").all() as {
     id: string;
     path: string;
     size: number;
@@ -578,7 +633,7 @@ export function purgeChatFiles(): { files: number; mb: number } {
       bytes += row.size;
     }
   }
-  db.prepare("DELETE FROM attachments WHERE message_id IS NOT NULL").run();
+  db.prepare("DELETE FROM attachments WHERE message_id IS NOT NULL OR direct_message_id IS NOT NULL").run();
   return { files: rows.length, mb: Math.round((bytes / 1024 / 1024) * 10) / 10 };
 }
 

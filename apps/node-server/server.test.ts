@@ -119,6 +119,165 @@ test("un extraño no ve la comunidad y un invitado sí puede entrar por enlace",
   assert.equal(rejected.status, 404);
 });
 
+test("los mensajes directos son privados, persistentes y marcan lo leído", async () => {
+  const alice = await call("POST", "/api/v1/auth/register", {
+    body: { username: "dm-alice", password: "contrasena-larga-dm-alice" },
+  });
+  const bob = await call("POST", "/api/v1/auth/register", {
+    body: { username: "dm-bob", password: "contrasena-larga-dm-bob" },
+  });
+  const stranger = await call("POST", "/api/v1/auth/register", {
+    body: { username: "dm-stranger", password: "contrasena-larga-dm-stranger" },
+  });
+  const aliceToken = alice.json.access_token as string;
+  const bobToken = bob.json.access_token as string;
+  const strangerToken = stranger.json.access_token as string;
+
+  const community = await call("POST", "/api/v1/communities", {
+    token: aliceToken,
+    body: { name: "Amistades DM" },
+  });
+  const beforeJoining = await call("POST", "/api/v1/direct-conversations", {
+    token: aliceToken,
+    body: { user_id: bob.json.user.id },
+  });
+  assert.equal(beforeJoining.status, 404, "sin comunidad en común no se puede abrir el hilo");
+
+  const invite = await call("POST", `/api/v1/communities/${community.json.id}/invites`, {
+    token: aliceToken,
+    body: {},
+  });
+  await call("POST", `/api/v1/invites/${invite.json.code}/join`, { token: bobToken });
+
+  const contacts = await call("GET", "/api/v1/direct-contacts", { token: aliceToken });
+  assert.ok(contacts.json.some((user: any) => user.id === bob.json.user.id));
+
+  const opened = await call("POST", "/api/v1/direct-conversations", {
+    token: aliceToken,
+    body: { user_id: bob.json.user.id },
+  });
+  assert.equal(opened.status, 200);
+  const conversationId = opened.json.id as string;
+
+  assert.deepEqual(
+    (await call("GET", "/api/v1/direct-conversations", { token: bobToken })).json,
+    [],
+    "abrir el hilo sin escribir no le aparece a la otra persona",
+  );
+  assert.deepEqual(
+    (await call("GET", "/api/v1/direct-conversations", { token: aliceToken })).json,
+    [],
+    "ni a quien lo abrió: la lista son conversaciones, no contactos",
+  );
+
+  const sent = await call("POST", `/api/v1/direct-conversations/${conversationId}/messages`, {
+    token: aliceToken,
+    body: { content: "mensaje privado" },
+  });
+  assert.equal(sent.status, 200);
+
+  const history = await call("GET", `/api/v1/direct-conversations/${conversationId}/messages`, { token: bobToken });
+  assert.equal(history.status, 200);
+  assert.equal(history.json[0].content, "mensaje privado");
+
+  const inbox = await call("GET", "/api/v1/direct-conversations", { token: bobToken });
+  assert.equal(inbox.json[0].unread_count, 1);
+  assert.equal(inbox.json[0].request_state, "incoming", "el primer mensaje de alguien que no es amigo queda como solicitud");
+  const blockedReply = await call("POST", `/api/v1/direct-conversations/${conversationId}/messages`, {
+    token: bobToken,
+    body: { content: "no debería salir todavía" },
+  });
+  assert.equal(blockedReply.status, 403, "leer la vista previa no acepta la solicitud por accidente");
+
+  const acceptedMessage = await call("POST", `/api/v1/direct-conversations/${conversationId}/accept`, { token: bobToken });
+  assert.equal(acceptedMessage.status, 200);
+  assert.equal(acceptedMessage.json.request_state, "accepted");
+  const reply = await call("POST", `/api/v1/direct-conversations/${conversationId}/messages`, {
+    token: bobToken,
+    body: { content: "ahora sí" },
+  });
+  assert.equal(reply.status, 200);
+  await call("DELETE", `/api/v1/direct-messages/${reply.json.id}`, { token: bobToken });
+
+  const read = await call("POST", `/api/v1/direct-conversations/${conversationId}/read`, {
+    token: bobToken,
+    body: { message_id: sent.json.id },
+  });
+  assert.equal(read.status, 200);
+  assert.equal((await call("GET", "/api/v1/direct-conversations", { token: bobToken })).json[0].unread_count, 0);
+
+  const hidden = await call("GET", `/api/v1/direct-conversations/${conversationId}/messages`, { token: strangerToken });
+  assert.equal(hidden.status, 404, "un tercero no puede confirmar siquiera que la conversación existe");
+  const cannotEdit = await call("PATCH", `/api/v1/direct-messages/${sent.json.id}`, {
+    token: strangerToken,
+    body: { content: "interceptado" },
+  });
+  assert.equal(cannotEdit.status, 404, "el id del mensaje tampoco filtra su existencia");
+
+  const friendRequest = await call("POST", "/api/v1/friend-requests", {
+    token: aliceToken,
+    body: { user_id: bob.json.user.id },
+  });
+  assert.equal(friendRequest.status, 200);
+  const bobSocial = await call("GET", "/api/v1/social", { token: bobToken });
+  assert.equal(bobSocial.json.incoming_friend_requests[0].user.id, alice.json.user.id);
+  const acceptedFriend = await call("POST", `/api/v1/friend-requests/${alice.json.user.id}/accept`, { token: bobToken });
+  assert.equal(acceptedFriend.status, 200);
+  assert.ok((await call("GET", "/api/v1/social", { token: aliceToken })).json.friends.some((friend: any) => friend.id === bob.json.user.id));
+
+  const secondInvite = await call("POST", `/api/v1/communities/${community.json.id}/invites`, { token: aliceToken, body: {} });
+  await call("POST", `/api/v1/invites/${secondInvite.json.code}/join`, { token: strangerToken });
+  const unwanted = await call("POST", "/api/v1/direct-conversations", {
+    token: strangerToken,
+    body: { user_id: alice.json.user.id },
+  });
+  await call("POST", `/api/v1/direct-conversations/${unwanted.json.id}/messages`, {
+    token: strangerToken,
+    body: { content: "solicitud que se puede rechazar" },
+  });
+  assert.equal(
+    (await call("GET", "/api/v1/direct-conversations", { token: aliceToken })).json.find((item: any) => item.id === unwanted.json.id).request_state,
+    "incoming",
+  );
+  const rejectedMessage = await call("DELETE", `/api/v1/direct-conversations/${unwanted.json.id}/request`, { token: aliceToken });
+  assert.equal(rejectedMessage.status, 204);
+  assert.equal(
+    (await call("GET", "/api/v1/direct-conversations", { token: strangerToken })).json.some((item: any) => item.id === unwanted.json.id),
+    false,
+  );
+
+  const edited = await call("PATCH", `/api/v1/direct-messages/${sent.json.id}`, {
+    token: aliceToken,
+    body: { content: "mensaje privado editado" },
+  });
+  assert.equal(edited.status, 200);
+  assert.ok(edited.json.edited_at);
+  const removed = await call("DELETE", `/api/v1/direct-messages/${sent.json.id}`, { token: aliceToken });
+  assert.equal(removed.status, 204);
+  assert.deepEqual((await call("GET", `/api/v1/direct-conversations/${conversationId}/messages`, { token: bobToken })).json, []);
+
+  const { saveUpload } = await import("./storage.ts");
+  const attachment = saveUpload({
+    ownerId: alice.json.user.id,
+    filename: "nota.txt",
+    contentType: "text/plain",
+    data: Buffer.from("solo para bob"),
+  });
+  const withFile = await call("POST", `/api/v1/direct-conversations/${conversationId}/messages`, {
+    token: aliceToken,
+    body: { content: "", attachment_ids: [attachment.id] },
+  });
+  assert.equal(withFile.status, 200);
+  assert.equal(withFile.json.attachments[0].filename, "nota.txt");
+  assert.equal(
+    (await call("GET", `/api/v1/direct-conversations/${conversationId}/messages`, { token: bobToken })).json[0].attachments[0].id,
+    attachment.id,
+  );
+  await call("DELETE", `/api/v1/direct-messages/${withFile.json.id}`, { token: aliceToken });
+  const { db } = await import("./db.ts");
+  assert.equal(db.prepare("SELECT id FROM attachments WHERE id = ?").get(attachment.id), undefined);
+});
+
 test("visibilidad y entrada son políticas separadas", async () => {
   const owner = await call("POST", "/api/v1/auth/register", {
     body: { username: "directorio-owner", password: "contrasena-larga-directorio" },
@@ -555,10 +714,7 @@ test("el backfill avanza aunque el primer archivo haya desaparecido", async () =
   assert.match(row.content_hash, /^sha256:[0-9a-f]{64}$/);
 });
 
-test("el índice público se enciende y se apaga desde la aplicación", async () => {
-  /* Antes esto solo se podía tocar con PUBLIC_DISCOVERY_ENABLED en el entorno,
-     que en la aplicación de escritorio no existe: marcar una comunidad como
-     pública no hacía nada y nadie decía por qué. */
+test("marcar una comunidad pública activa el índice sin un segundo interruptor", async () => {
   const ana = await call("POST", "/api/v1/auth/login", {
     body: { username: "ana", password: "contrasena-larga-1" },
   });
@@ -579,7 +735,38 @@ test("el índice público se enciende y se apaga desde la aplicación", async ()
   });
   assert.equal(ajena.status, 403, "no lo enciende quien no hospeda");
 
-  const encender = await call("PUT", "/api/v1/instance/discovery", { token: anfitriona, body: { enabled: true } });
-  assert.equal(encender.json.enabled, true);
-  assert.ok((await call("GET", "/api/v1/discovery")).json.length > 0, "y vuelve a enseñarlas");
+  const communities = await call("GET", "/api/v1/communities", { token: anfitriona });
+  const communityId = (communities.json as Array<{ id: string }>)[0]!.id;
+  const publicar = await call("PATCH", `/api/v1/communities/${communityId}`, {
+    token: anfitriona,
+    body: { visibility: "public" },
+  });
+  assert.equal(publicar.status, 200);
+  assert.equal((await call("GET", "/api/v1/info")).json.public_discovery_enabled, true);
+  assert.ok((await call("GET", "/api/v1/discovery")).json.length > 0, "pública basta para volver a anunciarla");
+});
+
+test("los ajustes del banner se guardan y sobreviven a volver a pedir el perfil", async () => {
+  const account = await call("POST", "/api/v1/auth/register", {
+    body: { username: "banner-save", password: "contrasena-banner-save" },
+  });
+  const token = account.json.access_token as string;
+  const profileStyle = {
+    ...account.json.user.profile_style,
+    banner_position_x: 23,
+    banner_position_y: 77,
+    banner_veil: 35,
+    banner_blur: 6,
+    banner_brightness: 80,
+    banner_contrast: 120,
+    banner_saturation: 135,
+  };
+
+  const saved = await call("PATCH", "/api/v1/users/me", { token, body: { profile_style: profileStyle } });
+  assert.equal(saved.status, 200);
+  const loaded = await call("GET", "/api/v1/users/me", { token });
+  assert.deepEqual(loaded.json.profile_style, saved.json.profile_style);
+  assert.equal(loaded.json.profile_style.banner_position_x, 23);
+  assert.equal(loaded.json.profile_style.banner_blur, 6);
+  assert.equal(loaded.json.profile_style.banner_saturation, 135);
 });

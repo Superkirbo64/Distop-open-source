@@ -4,12 +4,12 @@
  * vuelve a comprobar igualmente, esto solo evita ofrecer lo imposible.
  */
 import { useEffect, useState } from "react";
-import { Ban, CalendarDays, Clock, Crown, Gamepad2, MicOff, MoreVertical, UserRound, Video, Volume2, VolumeX, X } from "lucide-react";
+import { Ban, CalendarDays, Clock, Crown, Gamepad2, MessageCircle, MicOff, MoreVertical, UserRound, Video, Volume2, VolumeX, X } from "lucide-react";
 import { PERMISSIONS, has, toBits, type GameSession, type Member } from "@distop/protocol";
 import { gameOf, useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
-import { Avatar, avatarOverflow, DisplayName, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, useConfirm, useLocale, useT } from "./ui.tsx";
-import { CardEffectLayer, cardBackground, plateStyle, profileSurfaceBackground } from "./ProfileStyle.tsx";
+import { Avatar, avatarOverflow, Button, DisplayName, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, useConfirm, useLocale, useT } from "./ui.tsx";
+import { CardEffectLayer, plateStyle, profileBannerStyle, profileSurfaceBackground } from "./ProfileStyle.tsx";
 import { formatDate, formatDuration } from "../i18n.ts";
 
 /**
@@ -98,7 +98,7 @@ export function Members({ onClose }: { onClose: () => void }) {
               <li
                 key={member.user.id}
                 className={`group cv-row flex items-center gap-2 rounded-[10px] px-2 py-1.5 hover:bg-raise${member.user.banner_url ? " plate" : ""}`}
-                style={plateStyle(member.user.banner_url)}
+                style={plateStyle(member.user.banner_url, member.user.profile_style)}
               >
                 <button className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setProfile(member)}>
                   <Avatar
@@ -235,12 +235,42 @@ export function Members({ onClose }: { onClose: () => void }) {
  * sale de datos reales de la instancia; no hay huecos rellenos con servicios de
  * terceros ni nada que dependa de pagar (§10).
  */
-function ProfileCard({ member, onClose, color }: { member: Member | null; onClose: () => void; color: string | undefined }) {
+function ProfileFriendGlyph({ mode, pending }: { mode: "add" | "remove"; pending: boolean }) {
+  if (pending) return <Clock size={16} />;
+
+  /* Trazado Lucide separado en piezas para que el signo se pueda dibujar en
+     dos tiempos, como la microinteracciÃ³n de lucide-animated. */
+  return (
+    <svg className="profile-friend-glyph" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 21a8 8 0 0 1 13.292-6" />
+      <circle cx="10" cy="8" r="5" />
+      {mode === "add" ? <path className="profile-friend-mark-v" d="M19 16v6" /> : null}
+      <path className="profile-friend-mark-h" d="M22 19h-6" />
+    </svg>
+  );
+}
+
+export function ProfileCard({ member, onClose, color }: { member: Member | null; onClose: () => void; color: string | undefined }) {
   const t = useT();
   const locale = useLocale();
   const communities = useStore((s) => s.data);
   const voice = useStore((s) => s.voice);
   const activeId = useStore((s) => s.activeCommunityId);
+  const me = useStore((s) => s.user);
+  const startDirect = useStore((s) => s.startDirect);
+  const social = useStore((s) => s.social);
+  const sendFriendRequest = useStore((s) => s.sendFriendRequest);
+  const acceptFriendRequest = useStore((s) => s.acceptFriendRequest);
+  const removeFriendship = useStore((s) => s.removeFriendship);
+  const [friendMotion, setFriendMotion] = useState<"add" | "remove" | null>(null);
+  const [friendBusy, setFriendBusy] = useState(false);
+
+  /* La tarjeta permanece montada al pasar de un perfil a otro. Ninguna chispa
+     ni estado ocupado del perfil anterior debe viajar hasta el siguiente. */
+  useEffect(() => {
+    setFriendMotion(null);
+    setFriendBusy(false);
+  }, [member?.user.id]);
 
   const active = activeId ? communities[activeId] : undefined;
   const roles = active?.roles ?? EMPTY;
@@ -251,6 +281,39 @@ function ProfileCard({ member, onClose, color }: { member: Member | null; onClos
   const isOnline = active?.online.includes(user.id) ?? false;
   const isOwner = active?.community.owner_id === user.id;
   const timedOut = (member.timeout_until ?? 0) > Date.now();
+  const isFriend = social.friends.some((friend) => friend.id === user.id);
+  const friendSent = social.outgoing_friend_requests.some((request) => request.user.id === user.id);
+  const friendReceived = social.incoming_friend_requests.some((request) => request.user.id === user.id);
+  const friendMode = friendMotion ?? (isFriend ? "remove" : "add");
+
+  async function actOnFriendship(): Promise<void> {
+    if (friendBusy || friendSent) return;
+
+    const motion = isFriend ? "remove" : "add";
+    setFriendBusy(true);
+    setFriendMotion(motion);
+
+    /* El servidor y la coreografÃ­a empiezan juntos. Incluso en una instancia
+       local muy rÃ¡pida dejamos que el gesto termine antes de cambiar el icono. */
+    const reduceMotion = document.documentElement.dataset.motion === "off"
+      || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const animation = new Promise<void>((resolve) => window.setTimeout(resolve, reduceMotion ? 0 : 700));
+    const request = isFriend
+      ? removeFriendship(user.id)
+      : friendReceived
+        ? acceptFriendRequest(user.id)
+        : sendFriendRequest(user.id);
+
+    try {
+      await Promise.all([request, animation]);
+    } catch (reason) {
+      await animation;
+      alert(reason instanceof Error ? reason.message : t("error.generic"));
+    } finally {
+      setFriendMotion(null);
+      setFriendBusy(false);
+    }
+  }
 
   /* Lo único "en vivo" que este cliente sabe de otra persona es si está metida
      en una sala de voz. Ocupa el sitio que otros clientes llenan con lo que
@@ -287,8 +350,8 @@ function ProfileCard({ member, onClose, color }: { member: Member | null; onClos
         {/* Portada a sangre: el diálogo ya recorta las esquinas, así que la
             imagen llega al borde sin redondearla otra vez aquí. */}
         <div
-          className="relative h-36 shrink-0"
-          style={{ background: cardBackground(user.profile_style, user.accent_color, user.banner_url) }}
+          className="profile-banner relative h-36 shrink-0"
+          style={profileBannerStyle(user.profile_style, user.accent_color, user.banner_url)}
         >
           {/* Botón propio y no IconButton: encima de una foto cualquiera hace
               falta contraste fijo, y los colores del tema no lo garantizan. */}
@@ -358,6 +421,38 @@ function ProfileCard({ member, onClose, color }: { member: Member | null; onClos
           </p>
 
           {user.bio ? <p className="mt-3 text-sm whitespace-pre-wrap text-muted">{user.bio}</p> : null}
+          {user.id !== me?.id && user.kind !== "imported" ? (
+            <div className="mt-4 flex justify-center gap-2">
+              <Button
+                variant="primary"
+                className="profile-action profile-action-message"
+                aria-label={t("direct.profileAction")}
+                onClick={() => void startDirect(user.id).then(onClose).catch((reason) => alert(reason instanceof Error ? reason.message : t("error.generic")))}
+              >
+                <span className="profile-action-icon" aria-hidden="true"><MessageCircle size={18} /></span>
+                <span className="profile-action-label"><span>{t("direct.profileAction")}</span></span>
+              </Button>
+              <Button
+                className="profile-action profile-action-friend"
+                data-mode={friendMode}
+                data-effect={friendMotion ?? undefined}
+                disabled={friendBusy || friendSent}
+                aria-busy={friendBusy}
+                aria-label={friendMode === "remove" ? t("direct.removeFriend") : friendSent ? t("direct.requestSent") : friendReceived ? t("direct.acceptFriend") : t("direct.addFriend")}
+                onClick={() => void actOnFriendship()}
+              >
+                <span className="profile-action-icon" aria-hidden="true">
+                  {/* El reloj espera a que la moneda termine: si entra en cuanto
+                      responde el servidor, quien da la vuelta es el reloj y no
+                      el icono que acabas de pulsar. */}
+                  <ProfileFriendGlyph mode={friendMode} pending={friendSent && friendMotion === null} />
+                </span>
+                <span className="profile-action-label">
+                  <span>{friendMode === "remove" ? t("direct.removeFriend") : friendSent ? t("direct.requestSent") : friendReceived ? t("direct.acceptFriend") : t("direct.addFriend")}</span>
+                </span>
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         <PrivateNote targetId={user.id} />

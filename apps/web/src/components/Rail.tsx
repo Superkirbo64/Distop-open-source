@@ -5,11 +5,11 @@
  */
 import { useState } from "react";
 import { useEffect, useMemo } from "react";
+import { MessageCircle } from "lucide-react";
 import { Bell, Compass, Cross, ServerCog } from "./icons.tsx";
 import { useStore } from "../store.ts";
 import { unreadNotices } from "../lib/notices.ts";
 import { Button, ErrorNote, ExternalLinkButton, Field, IconButton, Modal, Select, Spinner, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
-import { Explore } from "./Explore.tsx";
 import { Notices } from "./Notices.tsx";
 import { api } from "../lib/api.ts";
 import { CLOUD_GUIDE_URL, RASPBERRY_GUIDE_URL, VPS_INSTALL_GUIDE_URL, detectLane, hasStablePublicAddress } from "../lib/publish.ts";
@@ -30,7 +30,8 @@ import {
 } from "../lib/instance.ts";
 import { ensurePortableIdentity } from "../lib/portable.ts";
 import { formatBytes, formatDate, formatDuration } from "../i18n.ts";
-import type { Community } from "@distop/protocol";
+import { COMMUNITY_CATEGORIES, type Community, type CommunityCategory, type CommunityJoinPolicy, type CommunityVisibility } from "@distop/protocol";
+import type { MessageKey } from "../i18n.ts";
 
 /**
  * Lo que queda sin leer en cada comunidad, sumando sus canales.
@@ -57,21 +58,32 @@ export function Rail({
   onNavigate,
   onCreate,
   onJoin,
+  onExplore,
 }: {
   onNavigate?: () => void;
   onCreate: () => void;
   onJoin: () => void;
+  onExplore: () => void;
 }) {
   const t = useT();
   const communities = useStore((s) => s.communities);
   const sinLeer = useStore((s) => unreadNotices(s.notices));
   const activeId = useStore((s) => s.activeCommunityId);
   const openCommunity = useStore((s) => s.openCommunity);
+  const directOpen = useStore((s) => s.directOpen);
+  const directConversations = useStore((s) => s.directConversations);
+  const incomingFriendRequests = useStore((s) => s.social.incoming_friend_requests.length);
+  const openDirectHome = useStore((s) => s.openDirectHome);
   const user = useStore((s) => s.user);
   const unread = useCommunityUnread();
+  const directUnread =
+    incomingFriendRequests +
+    directConversations.reduce(
+      (total, conversation) => total + (conversation.request_state === "incoming" ? 1 : conversation.unread_count),
+      0,
+    );
 
   const [status, setStatus] = useState(false);
-  const [explore, setExplore] = useState(false);
   const [notices, setNotices] = useState(false);
   const [knownRevision, setKnownRevision] = useState(0);
   const [unavailable, setUnavailable] = useState<{ community: CachedCommunity; url: string } | null>(null);
@@ -112,16 +124,44 @@ export function Rail({
       aria-label={t("community.yours")}
       className="flex w-[4.5rem] flex-col items-center gap-2 border-r border-line bg-sunken pt-1 pb-3"
     >
-      <ul className="flex flex-1 flex-col items-center gap-2 overflow-y-auto">
+      <ul className="flex w-full flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto">
+        <li className="group relative mb-1 flex w-full justify-center">
+          <span
+            aria-hidden="true"
+            className={`marker-active absolute top-1/2 left-0 w-1 -translate-y-1/2 transition-all duration-200 ${
+              directOpen ? "h-9" : directUnread > 0 ? "h-2 group-hover:h-5" : "h-0 group-hover:h-5"
+            }`}
+          />
+          <button
+            onClick={() => {
+              onNavigate?.();
+              void openDirectHome();
+            }}
+            aria-current={directOpen ? "page" : undefined}
+            title={t("direct.title")}
+            className={`relative grid h-12 w-12 place-items-center border transition-all duration-200 ${
+              directOpen
+                ? "rounded-[14px] border-transparent bg-accent text-accent-ink"
+                : "rounded-[24px] border-line bg-raise text-muted hover:rounded-[14px] hover:text-ink"
+            }`}
+          >
+            <MessageCircle size={22} />
+            {directUnread > 0 ? (
+              <span className="absolute -right-1 -bottom-1 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-sunken bg-danger px-1 text-[0.6rem] font-bold text-white tabular-nums">
+                {directUnread > 99 ? "99+" : directUnread}
+              </span>
+            ) : null}
+          </button>
+        </li>
         {visibleCommunities.map(({ community, url }) => (
-          <li key={`${url}:${community.id}`} className="group relative">
+          <li key={`${url}:${community.id}`} className="group relative flex w-full justify-center">
             {/* Una sola pastilla para los tres estados en vez de un punto y un
                 marcador aparte: crece de 0 a 8 a 36 píxeles según sea "nada",
                 "algo sin leer" o "estoy aquí". Así se lee una altura, que es una
                 escala, en lugar de tener que distinguir dos formas distintas. */}
             <span
               aria-hidden="true"
-              className={`marker-active absolute top-1/2 -left-3 w-1 -translate-y-1/2 transition-all duration-200 ${
+              className={`marker-active absolute top-1/2 left-0 w-1 -translate-y-1/2 transition-all duration-200 ${
                 url === instanceBase && activeId === community.id
                   ? "h-9"
                   : unread[community.id]
@@ -172,7 +212,7 @@ export function Rail({
       </IconButton>
 
 
-      <IconButton label={t("explore.open")} onClick={() => setExplore(true)} className="h-10 w-10">
+      <IconButton label={t("explore.open")} onClick={onExplore} className="h-10 w-10">
         <Compass size={18} />
       </IconButton>
 
@@ -193,7 +233,6 @@ export function Rail({
 
       <InstanceStatus open={status} onClose={() => setStatus(false)} />
       <Notices open={notices} onClose={() => setNotices(false)} />
-      <Explore open={explore} onClose={() => setExplore(false)} onJoinWithLink={onJoin} />
       <UnavailableCommunity
         target={unavailable}
         user={user}
@@ -466,6 +505,7 @@ export function CreateCommunity({
   const [mode, setMode] = useState<"blank" | "discord">("blank");
   const [name, setName] = useState("");
   const [isPublic, setIsPublic] = useState(false);
+  const [category, setCategory] = useState<CommunityCategory>("other");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -485,6 +525,7 @@ export function CreateCommunity({
         name,
         visibility: isPublic ? "public" : "private",
         join_policy: "invite",
+        category,
       });
       await reload();
       await openCommunity(community.id);
@@ -608,6 +649,23 @@ export function CreateCommunity({
                     <input id={id} className="field" value={name} onChange={(e) => setName(e.target.value)} maxLength={64} autoFocus />
                   )}
                 </Field>
+                {/* Se pide siempre, no solo al hacerla pública: una comunidad
+                    privada puede abrirse después y así no hay que volver a
+                    preguntar. Se puede cambiar cuando se quiera en ajustes. */}
+                <Field label={t("community.category")} hint={t("community.categoryHint")}>
+                  {(id) => (
+                    <Select
+                      id={id}
+                      value={category}
+                      disabled={busy}
+                      onChange={(value) => setCategory(value as CommunityCategory)}
+                      options={COMMUNITY_CATEGORIES.map((item) => ({
+                        value: item,
+                        label: t(`explore.category.${item}` as MessageKey),
+                      }))}
+                    />
+                  )}
+                </Field>
                 <Toggle checked={isPublic} onChange={setIsPublic} label={t("community.public")} hint={t("community.publicHint")} />
               </>
             ) : (
@@ -702,7 +760,6 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
   const locale = useLocale();
   const instance = useStore((s) => s.instance);
   const status = useStore((s) => s.status);
-  const publicDiscoveryEnabled = useStore((s) => s.publicDiscoveryEnabled);
 
   /* GB o TB según el tamaño: "quedan 231,4 GB" dice algo; "quedan 236993 MB" no.
      Intl y no toFixed: el separador decimal es del idioma, no siempre un punto. */
@@ -727,10 +784,6 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
             ? `${instance.storage_used_mb} MB · ${t("instance.storageFree", { free: freeLabel })}`
             : `${instance.storage_used_mb} MB`,
         ],
-        /* El estado del directorio se dice aquí, mirando a la cara: una
-           instancia que se anuncia (o no) es algo que su gente debe saber sin
-           bucear en variables de entorno (§26). */
-        [t("instance.discovery"), publicDiscoveryEnabled ? t("instance.discoveryOn") : t("instance.discoveryOff")],
       ]
     : [];
 
@@ -812,6 +865,7 @@ function ShareInstance() {
   const [copied, setCopied] = useState(false);
   const [autostart, setAutostart] = useState(true);
   const publicDiscoveryEnabled = useStore((s) => s.publicDiscoveryEnabled);
+  const communities = useStore((s) => s.communities);
   const [mode, setMode] = useState<"cloudflare" | "tailscale" | "cloud">("cloudflare");
   const [tailscale, setTailscale] = useState<TailscaleState | null>(null);
 
@@ -858,17 +912,15 @@ function ShareInstance() {
     }
   }
 
-  /* El índice público es cosa de la instancia, no de una comunidad: por eso vive
-     aquí y no en los ajustes de cada una. Al apagarlo la ficha sale del índice
-     en el acto, no se queda hasta que caduque. */
-  async function toggleDiscovery(enabled: boolean): Promise<void> {
-    try {
-      const state = await api<{ enabled: boolean }>("PUT", "/api/v1/instance/discovery", { enabled });
-      useStore.setState({ publicDiscoveryEnabled: state.enabled });
-    } catch (reason) {
-      setError(errorText(reason));
-    }
-  }
+  /* Compatibilidad con instalaciones que guardaron una comunidad pública
+     mientras existía el interruptor global. Ahora «Pública» es la única fuente
+     de verdad: al abrir esta pantalla reactivamos el publicador una sola vez. */
+  useEffect(() => {
+    if (!isHost || publicDiscoveryEnabled || !communities.some((community) => community.visibility === "public")) return;
+    void api<{ enabled: boolean }>("PUT", "/api/v1/instance/discovery", { enabled: true })
+      .then((state) => useStore.setState({ publicDiscoveryEnabled: state.enabled }))
+      .catch((reason) => setError(errorText(reason)));
+  }, [communities, errorText, isHost, publicDiscoveryEnabled]);
 
   const address = publicUrl || clientOrigin();
   const isLocal = !publicUrl && /localhost|127\.0\.0\.1|\[::1\]/.test(address);
@@ -960,26 +1012,10 @@ function ShareInstance() {
 
       {isHost ? (
         <div className="flex flex-col gap-3">
-          {/* Lo primero después de la dirección, porque es la pregunta que sigue a
-              «tu servidor es alcanzable»: ¿quieres que además se le encuentre? Vivía
-              al final de la tarjeta, debajo del tutorial del carril elegido, y el
-              aviso de los ajustes de la comunidad mandaba aquí a buscar algo que no
-              se veía sin bajar tres pantallas. */}
-          <label className="flex items-start gap-2 rounded-[10px] border border-line p-3 text-xs">
-            <input
-              type="checkbox"
-              checked={publicDiscoveryEnabled}
-              onChange={(e) => void toggleDiscovery(e.target.checked)}
-              style={{ accentColor: "var(--accent)" }}
-            />
-            <span>
-              <span className="font-semibold">{t("share.discovery")}</span>
-              <span className="block text-muted">{t("share.discoveryHint")}</span>
-              {publicDiscoveryEnabled && !hasStablePublicAddress(tunnel) ? (
-                <span className="mt-1 block text-warn">{t("share.discoveryNeedsStable")}</span>
-              ) : null}
-            </span>
-          </label>
+          <CommunityPublishing
+            publisherReady={publicDiscoveryEnabled}
+            stableAddress={hasStablePublicAddress(tunnel)}
+          />
           <div className="grid grid-cols-3 gap-2 rounded-[10px] bg-sunken p-1">
             {/* Con dirección fija de la nube, los carriles de túnel se apagan:
                 abrir uno rompería la dirección que la gente ya usa, así que no
@@ -1124,6 +1160,138 @@ function ShareInstance() {
       ) : null}
 
       <p className="text-xs text-muted">{t("share.hostReminder")}</p>
+    </section>
+  );
+}
+
+/**
+ * Visibilidad y acceso de cada comunidad de este servidor (§4.2, §26).
+ * «Pública» activa por sí sola el publicador: no hay un segundo control capaz
+ * de contradecir el valor que se enseña aquí.
+ *
+ * Sin comunidades no se dibuja nada: una lista vacía dentro de "tu servidor"
+ * solo añade ruido a quien todavía no ha creado la primera.
+ */
+function CommunityPublishing({
+  publisherReady,
+  stableAddress,
+}: {
+  publisherReady: boolean;
+  stableAddress: boolean;
+}) {
+  const t = useT();
+  const errorText = useErrorText();
+  const communities = useStore((s) => s.communities);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [error, setError] = useState<{ id: string; text: string } | null>(null);
+
+  /* Sin estado local: el valor se lee de la comunidad y el servidor devuelve el
+     COMMUNITY_UPDATE que refresca el store. Si el PATCH falla (sin permiso,
+     servidor caído), pintar el error vuelve a renderizar y el selector regresa
+     solo al valor real, sin quedarse mintiendo. */
+  async function update(
+    id: string,
+    field: "visibility" | "join_policy",
+    value: CommunityVisibility | CommunityJoinPolicy,
+  ): Promise<void> {
+    setError(null);
+    setPendingId(id);
+    try {
+      /* «Pública» basta: si una instalación conserva apagado el antiguo switch
+         global, lo encendemos antes de guardar para que el selector nunca
+         prometa una publicación que el servidor mantiene bloqueada. */
+      if (field === "visibility" && value === "public" && !useStore.getState().publicDiscoveryEnabled) {
+        const state = await api<{ enabled: boolean }>("PUT", "/api/v1/instance/discovery", { enabled: true });
+        useStore.setState({ publicDiscoveryEnabled: state.enabled });
+      }
+      const updated = await api<Community>("PATCH", `/api/v1/communities/${id}`, { [field]: value });
+      /* El WebSocket también trae COMMUNITY_UPDATE, pero reflejar la respuesta
+         aquí evita que el selector parezca rebotar en conexiones lentas. */
+      useStore.setState((state) => ({
+        communities: state.communities.map((community) => community.id === id ? updated : community),
+      }));
+    } catch (reason) {
+      setError({ id, text: errorText(reason) });
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  if (communities.length === 0) return null;
+
+  return (
+    <section className="flex flex-col gap-2 rounded-[10px] border border-line bg-sunken p-3" aria-labelledby="community-publishing-title">
+      <div>
+        <h4 id="community-publishing-title" className="text-sm font-semibold">{t("share.communities")}</h4>
+        <p className="text-xs text-muted">{t("share.communitiesHint")}</p>
+      </div>
+
+      {communities.map((community) => {
+        const isPending = pendingId === community.id;
+        const status = community.visibility === "private"
+          ? { label: t("share.status.private"), tone: "text-muted" }
+          : community.visibility === "unlisted"
+            ? { label: t("share.status.unlisted"), tone: "text-muted" }
+            : !stableAddress
+              ? { label: t("share.status.needsStable"), tone: "text-warn" }
+              : !publisherReady
+                ? { label: t("common.saving"), tone: "text-muted" }
+                : { label: t("share.status.live"), tone: "text-ok" };
+
+        return (
+          <div key={community.id} className="flex flex-col gap-3 rounded-[10px] border border-line bg-surface p-3" role="group" aria-label={community.name}>
+            <div className="flex min-w-0 items-center gap-2.5">
+              {community.icon_url ? (
+                <img src={community.icon_url} alt="" className="h-8 w-8 shrink-0 rounded-[9px] object-cover" />
+              ) : (
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] bg-accent-soft text-sm font-bold text-accent" aria-hidden>
+                  {community.name.trim().charAt(0).toLocaleUpperCase() || "#"}
+                </span>
+              )}
+              <p className="min-w-0 flex-1 truncate text-sm font-semibold">{community.name}</p>
+              <span className={`flex shrink-0 items-center gap-1.5 text-[11px] font-medium ${status.tone}`} aria-live="polite">
+                <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+                {isPending ? t("common.saving") : status.label}
+              </span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Field label={t("community.visibility")}>
+                {(id) => (
+                  <Select
+                    id={id}
+                    compact
+                    value={community.visibility}
+                    disabled={isPending}
+                    onChange={(value) => void update(community.id, "visibility", value as CommunityVisibility)}
+                    options={[
+                      { value: "private", label: t("community.visibility.private") },
+                      { value: "unlisted", label: t("community.visibility.unlisted") },
+                      { value: "public", label: t("community.visibility.public") },
+                    ]}
+                  />
+                )}
+              </Field>
+              <Field label={t("community.joinPolicy")}>
+                {(id) => (
+                  <Select
+                    id={id}
+                    compact
+                    value={community.join_policy}
+                    disabled={isPending}
+                    onChange={(value) => void update(community.id, "join_policy", value as CommunityJoinPolicy)}
+                    options={[
+                      { value: "open", label: t("community.joinPolicy.open") },
+                      { value: "invite", label: t("community.joinPolicy.invite") },
+                      { value: "request", label: t("community.joinPolicy.request") },
+                    ]}
+                  />
+                )}
+              </Field>
+            </div>
+            {error?.id === community.id ? <ErrorNote>{error.text}</ErrorNote> : null}
+          </div>
+        );
+      })}
     </section>
   );
 }

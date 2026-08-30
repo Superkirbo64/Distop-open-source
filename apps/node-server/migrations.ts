@@ -620,6 +620,86 @@ export const MIGRATIONS: string[] = [
     ON community_join_requests(community_id, user_id) WHERE state = 'pending';
   CREATE INDEX idx_join_requests_community ON community_join_requests(community_id, created_at DESC);
   `,
+
+  /* Mensajería privada. Una conversación representa exactamente una pareja;
+     ordenar los ids hace imposible crear dos hilos para las mismas personas. */
+  `
+  CREATE TABLE direct_conversations (
+    id         TEXT PRIMARY KEY,
+    user_a_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_b_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    CHECK (user_a_id < user_b_id),
+    UNIQUE (user_a_id, user_b_id)
+  );
+  CREATE INDEX idx_direct_conversations_a ON direct_conversations(user_a_id, updated_at DESC);
+  CREATE INDEX idx_direct_conversations_b ON direct_conversations(user_b_id, updated_at DESC);
+
+  CREATE TABLE direct_messages (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES direct_conversations(id) ON DELETE CASCADE,
+    author_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    content         TEXT NOT NULL,
+    created_at      INTEGER NOT NULL,
+    edited_at       INTEGER,
+    reply_to_id     TEXT REFERENCES direct_messages(id) ON DELETE SET NULL
+  );
+  CREATE INDEX idx_direct_messages_conversation ON direct_messages(conversation_id, id DESC);
+
+  CREATE TABLE direct_read_state (
+    conversation_id TEXT NOT NULL REFERENCES direct_conversations(id) ON DELETE CASCADE,
+    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    last_read_id    TEXT NOT NULL,
+    updated_at      INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, user_id)
+  );
+
+  ALTER TABLE attachments ADD COLUMN direct_message_id TEXT REFERENCES direct_messages(id) ON DELETE CASCADE;
+  CREATE INDEX idx_attachments_direct_message ON attachments(direct_message_id);
+  `,
+
+  /* Suspender los audios en una comunidad.
+
+     No es un permiso por rol: es un interruptor de la comunidad entera, para
+     cuando el anfitrión no quiere audio en el chat —ancho de banda, moderación,
+     o sencillamente porque no encaja—. Encendido de fábrica: actualizar Distop
+     no le quita a nadie algo que ya usaba. */
+  `
+  ALTER TABLE communities ADD COLUMN voice_messages INTEGER NOT NULL DEFAULT 1;
+  `,
+
+  /* Capa social encima del chat privado. Los hilos que ya existían quedan
+     aceptados: una actualización nunca esconde conversaciones anteriores. */
+  `
+  CREATE TABLE friendships (
+    user_a_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_b_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    requested_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    state       TEXT NOT NULL CHECK (state IN ('pending','accepted')),
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    CHECK (user_a_id < user_b_id),
+    CHECK (requested_by = user_a_id OR requested_by = user_b_id),
+    PRIMARY KEY (user_a_id, user_b_id)
+  );
+  CREATE INDEX idx_friendships_a ON friendships(user_a_id, state, updated_at DESC);
+  CREATE INDEX idx_friendships_b ON friendships(user_b_id, state, updated_at DESC);
+
+  ALTER TABLE direct_conversations ADD COLUMN requested_by TEXT REFERENCES users(id) ON DELETE CASCADE;
+  ALTER TABLE direct_conversations ADD COLUMN accepted_at INTEGER;
+  UPDATE direct_conversations SET requested_by = user_a_id, accepted_at = created_at;
+  `,
+
+  /* La categoría pasa a ser un dato de la comunidad y no algo que el cliente
+     adivine por palabras del nombre: el directorio filtra por esta columna.
+     Las que ya existían entran como 'other' —nadie eligió por ellas— y su
+     dueño puede cambiarlo desde los ajustes. */
+  `
+  ALTER TABLE communities ADD COLUMN category TEXT NOT NULL DEFAULT 'other'
+    CHECK (category IN ('games','music','entertainment','science','education','students','other'));
+  CREATE INDEX idx_communities_category ON communities(category) WHERE visibility = 'public';
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

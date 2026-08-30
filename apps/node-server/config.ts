@@ -35,6 +35,18 @@ function list(key: string, fallback: string[]): string[] {
 }
 
 /**
+ * Contenedores que puede producir MediaRecorder para un mensaje de voz.
+ * Son parte del protocolo del chat, no de la lista personal de adjuntos del
+ * anfitrión: quien quiera suspenderlos usa el ajuste de la comunidad, que
+ * además se comprueba al enlazar el audio con el mensaje.
+ */
+const VOICE_MESSAGE_UPLOAD_TYPES = ["audio/webm", "audio/ogg", "audio/mp4"] as const;
+
+function uploadTypes(configured: string[]): string[] {
+  return [...new Set([...configured, ...VOICE_MESSAGE_UPLOAD_TYPES])];
+}
+
+/**
  * Secreto de firma de sesiones, sin pedírselo a nadie (§22).
  *
  * Manda la variable de entorno cuando existe (Docker, un despliegue serio). Si
@@ -226,6 +238,32 @@ export const config = {
   maxGuestsPerHour: int("MAX_GUESTS_PER_HOUR", 60),
   maxLoginAttemptsPerQuarterHour: int("MAX_LOGIN_ATTEMPTS_PER_15MIN", 20),
 
+  /**
+   * Cuánta gente cabe en UNA sala de voz.
+   *
+   * No es un cupo comercial (§2): es la aritmética del relay. Sin SFU, cada
+   * emisor se copia una vez por cada oyente, así que la subida del anfitrión
+   * crece con n×(n−1). A ~32 kbps de Opus, 25 personas con el micro abierto son
+   * 25×24×32 ≈ 19 Mbps — justo el techo doméstico que ya presupone
+   * `TECHO_POR_DEFECTO_KBPS` en video-budget.ts. A 30 son 28 Mbps y la voz
+   * empieza a entrecortarse para TODOS, que es peor que decirle que no al
+   * número 26.
+   *
+   * Quien hospeda en una máquina de verdad lo sube y ya está: el límite lo pone
+   * su cable, no nosotros.
+   */
+  maxVoiceParticipants: int("MAX_VOICE_PARTICIPANTS", 25),
+
+  /**
+   * Sockets simultáneos por persona.
+   *
+   * El handshake WebSocket se cuelga de `server.on("upgrade")` y NO pasa por el
+   * límite por IP de http.ts, así que sin esto una sola sesión válida abre
+   * conexiones hasta llenar la memoria del anfitrión. 12 dan para seis pestañas
+   * (cada una gasta un socket de mandos y otro de vídeo) más el móvil.
+   */
+  maxSocketsPerUser: int("MAX_SOCKETS_PER_USER", 12),
+
   /* 500 de fábrica: lo pide el disco y el ancho de banda de quien hospeda, no
      un plan (§28.3). Las subidas van en streaming a disco con este límite
      vigilado al vuelo (storage.ts:saveUploadStream): ninguna aguanta el cuerpo
@@ -234,7 +272,7 @@ export const config = {
      su borde antes de que este límite entre en juego (§29.3): subir el número
      aquí no cambia eso. */
   maxUploadMb: int("MAX_UPLOAD_SIZE_MB", 500),
-  allowedUploadTypes: list("ALLOWED_UPLOAD_TYPES", [
+  allowedUploadTypes: uploadTypes(list("ALLOWED_UPLOAD_TYPES", [
     "image/png",
     "image/jpeg",
     "image/gif",
@@ -269,7 +307,7 @@ export const config = {
     "application/x-msdownload",
     "application/vnd.microsoft.portable-executable",
     "application/octet-stream",
-  ]),
+  ])),
 
   /** Orígenes del cliente web. "*" solo se acepta fuera de producción. */
   corsOrigins: [

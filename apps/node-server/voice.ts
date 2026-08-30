@@ -14,6 +14,7 @@ import { PERMISSIONS, has } from "@distop/protocol";
 import type { Snowflake, VideoSource, VoiceAction, VoiceState } from "@distop/protocol";
 import { canActOn, channelPermissions } from "./permissions.ts";
 import { getChannel } from "./entities.ts";
+import { config } from "./config.ts";
 
 interface Participant {
   userId: Snowflake;
@@ -99,7 +100,15 @@ export interface JoinResult {
   left: Snowflake | null;
 }
 
-export function join(channelId: Snowflake, userId: Snowflake): JoinResult | null {
+/**
+ * Entra en una sala.
+ *
+ * `null` es "no puedes" (canal que no es de voz, o sin permiso) y `"full"` es
+ * "ahora mismo no cabes". Son cosas distintas y por eso se distinguen: quien se
+ * queda fuera por el aforo puede volver en cuanto salga alguien, y llamar a eso
+ * "denegado" le haría creer que no le dejan entrar nunca (§26).
+ */
+export function join(channelId: Snowflake, userId: Snowflake): JoinResult | "full" | null {
   const channel = getChannel(channelId);
   /* Una reunión es un canal más, con su propia sala. Quien decide si alguien
      entra AQUÍ o se queda en la sala de espera es meetings.ts: mientras no
@@ -107,6 +116,14 @@ export function join(channelId: Snowflake, userId: Snowflake): JoinResult | null
      construcción, sin una comprobación que se pueda olvidar. */
   if (!channel || (channel.kind !== "voice" && channel.kind !== "meeting")) return null;
   if (!has(channelPermissions(channelId, userId), PERMISSIONS.CONNECT_VOICE)) return null;
+
+  /* El aforo se mira ANTES de sacarle de donde estaba: si se comprobara
+     después, a quien no cabe aquí le habríamos colgado ya la llamada anterior y
+     se quedaría sin ninguna de las dos. Quien YA está dentro pasa siempre —es
+     una pestaña nueva, no una persona más—, porque rechazarla dejaría al resto
+     hablándole a un navegador que ya no existe. */
+  const yaDentro = rooms.get(channelId)?.has(userId) ?? false;
+  if (!yaDentro && (rooms.get(channelId)?.size ?? 0) >= config.maxVoiceParticipants) return "full";
 
   // Una persona, una llamada: entrar en otra sala saca de la anterior.
   const previous = channelOf(userId);

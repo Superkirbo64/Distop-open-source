@@ -61,7 +61,7 @@ function publicCommunities(origin: string): unknown[] {
   if (!discoveryEnabled()) return [];
   return db.prepare(
     `SELECT c.id, c.name, c.slug, c.description, c.icon_url, c.banner_url,
-            c.accent_color, c.visibility, c.join_policy,
+            c.accent_color, c.visibility, c.join_policy, c.category,
             (SELECT COUNT(*) FROM members m WHERE m.community_id = c.id AND m.banned = 0) AS members
        FROM communities c
       WHERE c.visibility = 'public'

@@ -7,6 +7,7 @@
  */
 import { api } from "./api.ts";
 import type { MessageKey } from "../i18n.ts";
+import type { CommunityCategory } from "@distop/protocol";
 import { clientOrigin, connectToInstance, isPackaged, normalizeInstanceUrl, storePendingPublicJoin } from "./instance.ts";
 
 /** Una ficha del directorio, tal como la devuelve el descubrimiento. */
@@ -21,6 +22,8 @@ export interface DirectoryCommunity {
   members: number;
   visibility?: "public";
   join_policy?: "open" | "invite" | "request";
+  /** Ausente en fichas de nodos anteriores a que la categoría fuese un dato. */
+  category?: CommunityCategory;
   /** De qué nodo viene la ficha. Ausente = la instancia activa. */
   origin?: string;
   instance_id?: string;

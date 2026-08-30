@@ -49,6 +49,33 @@ test("la dirección y el balance del degradado tienen límites claros", () => {
   ]) assert.equal(toProfileStyle(raw).theme_balance, 50);
 });
 
+test("el encuadre del banner conserva posiciones válidas", () => {
+  const style = toProfileStyle({ banner_position_x: 18, banner_position_y: 82 });
+  assert.equal(style.banner_position_x, 18);
+  assert.equal(style.banner_position_y, 82);
+
+  assert.equal(toProfileStyle({ banner_position_x: -1 }).banner_position_x, 50);
+  assert.equal(toProfileStyle({ banner_position_y: 101 }).banner_position_y, 50);
+});
+
+test("los filtros del banner se normalizan sin afectar el resto del perfil", () => {
+  const style = toProfileStyle({
+    banner_veil: 45,
+    banner_blur: 8,
+    banner_brightness: 70,
+    banner_contrast: 125,
+    banner_saturation: 140,
+  });
+  assert.equal(style.banner_veil, 45);
+  assert.equal(style.banner_blur, 8);
+  assert.equal(style.banner_brightness, 70);
+  assert.equal(style.banner_contrast, 125);
+  assert.equal(style.banner_saturation, 140);
+
+  assert.equal(toProfileStyle({ banner_blur: 25 }).banner_blur, 0);
+  assert.equal(toProfileStyle({ banner_brightness: "70" }).banner_brightness, 100);
+});
+
 test("un valor valido del catalogo se conserva", () => {
   const style = toProfileStyle({ nameplate: "mist", name_font: "pixel", name_effect: "neon" });
 

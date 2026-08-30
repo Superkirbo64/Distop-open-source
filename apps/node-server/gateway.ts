@@ -14,6 +14,7 @@ import { communitiesForUser, getChannel } from "./entities.ts";
 import { channelPermissions, memberState } from "./permissions.ts";
 import { instanceHealth } from "./instance.ts";
 import { rateLimit } from "./http.ts";
+import { config } from "./config.ts";
 import * as voice from "./voice.ts";
 import * as meetings from "./meetings.ts";
 import * as presupuesto from "./video-budget.ts";
@@ -163,10 +164,33 @@ function handleCommand(client: Client, raw: string): void {
   if (!parsed || typeof parsed !== "object") return;
   const cmd = parsed as ClientCommand;
 
+  /* Red de seguridad para todos los mandos, AQUÍ, donde pasan los veintiuno.
+     Casi cada uno acaba en una difusión a la comunidad entera —`announceVoice`,
+     `broadcastPresence`, `announceLobby`—, así que un bucle convierte un
+     mensaje entrante en N salientes contra el equipo de quien hospeda: el
+     ataque más barato que hay contra esta instancia, al alcance de cualquier
+     miembro autenticado. Va aquí y no caso por caso porque caso por caso se
+     olvida en el próximo que alguien añada.
+
+     Ciento cincuenta por segundo queda POR ENCIMA de todos los techos que ya se
+     eligieron a conciencia —la tecla de hablar admite 120/s, la tabla de
+     sonidos 50 cada 10 s— para no apretar por la espalda decisiones tomadas a
+     propósito. Esto no afina nada: solo corta el bucle infinito, que manda
+     decenas de miles. Lo que necesite un techo humano lo pone en su `case`.
+
+     SUBSCRIBE queda fuera porque el cliente manda una por comunidad nada más
+     conectar —una ráfaga legítima que crece con las comunidades de cada uno— y
+     desde ahora no difunde nada si la suscripción no cambia. */
+  if (cmd.t !== "SUBSCRIBE" && !dentroDeLimite(client, "cmd", 150)) return;
+
   switch (cmd.t) {
     case "SUBSCRIBE": {
       const communityId = cmd.d?.community_id;
       if (typeof communityId !== "string") return;
+      /* Suscribirse a lo que ya estabas no cambia nada y no se anuncia. Sin
+         esto, repetir SUBSCRIBE difundía la presencia a toda la comunidad cada
+         vez —y es el único mando sin freno, justo por la ráfaga del arranque. */
+      if (client.subs.has(communityId)) return;
       if (!memberState(communityId, client.userId).isMember) return;
       client.subs.add(communityId);
       broadcastPresence(communityId);
@@ -198,6 +222,19 @@ function handleCommand(client: Client, raw: string): void {
     case "VOICE_JOIN": {
       const channelId = cmd.d?.channel_id;
       if (typeof channelId !== "string") return;
+
+      /* El más caro de todos: una sola entrada dispara hasta tres difusiones a
+         la comunidad entera —la sala nueva, la que se abandona y la carrera—,
+         así que un bucle de entrar y salir multiplica por los miembros
+         conectados. Es el único mando que no tenía techo propio, y entrar en un
+         canal de voz veinte veces en diez segundos ya es mucho más de lo que
+         hace nadie pulsando. Va antes de la rama de reuniones para que valga
+         también para llamar a la puerta de una. */
+      try {
+        rateLimit(`vjoin:${client.userId}`, 20, 10_000);
+      } catch {
+        return;
+      }
 
       /* Una reunión con sala de espera no se entra: se llama a la puerta. Y
          mientras se espera NO se entra en el registro de voz, así que
@@ -233,8 +270,11 @@ function handleCommand(client: Client, raw: string): void {
       }
 
       const result = voice.join(channelId, client.userId);
-      if (!result) {
-        send(client, { t: "VOICE_JOIN_RESULT", d: { channel_id: channelId, outcome: "denied" } });
+      if (result === "full" || !result) {
+        send(client, {
+          t: "VOICE_JOIN_RESULT",
+          d: { channel_id: channelId, outcome: result === "full" ? "full" : "denied" },
+        });
         return;
       }
       send(client, { t: "VOICE_JOIN_RESULT", d: { channel_id: channelId, outcome: "joined" } });
@@ -800,6 +840,20 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
 
   if (!auth) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
+  /* Este handshake cuelga de `server.on("upgrade")` y NO pasa por el límite por
+     IP de http.ts, así que sin esto una sola sesión válida abre sockets hasta
+     agotar la memoria del anfitrión. Se cuentan los dos conjuntos juntos porque
+     cada pestaña gasta uno de mandos y otro de vídeo: separarlos daría el doble
+     del techo que dice la configuración. */
+  const abiertos =
+    [...clients].filter((c) => c.userId === auth.user.id).length +
+    [...videoClients].filter((c) => c.userId === auth.user.id).length;
+  if (abiertos >= config.maxSocketsPerUser) {
+    socket.write("HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n");
     socket.destroy();
     return;
   }

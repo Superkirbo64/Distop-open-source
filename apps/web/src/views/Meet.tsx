@@ -23,7 +23,7 @@ import { joinVoice, leaveVoice } from "../lib/voice.ts";
 import { useStore } from "../store.ts";
 import { MeetingPanel } from "../components/Meeting.tsx";
 import { StageLayoutPicker, VoiceStage, useVoiceLocal } from "../components/Voice.tsx";
-import { CameraBackgroundButton } from "../components/CameraBackground.tsx";
+import { CameraPickerButton } from "../components/CameraPicker.tsx";
 import { Button, ErrorNote, Field, useErrorText, useT } from "../components/ui.tsx";
 
 interface GuestSession {
@@ -141,8 +141,8 @@ export function GuestMeeting({ meeting }: { meeting: Meeting }) {
         <h1 className="display truncate text-[0.95rem] font-bold">{reunion.title}</h1>
         <span className="flex-1" />
         {/* Quien entra por enlace no tiene Ajustes —su sesión acotada no llega
-            ahí— así que el fondo de cámara solo puede vivir en esta cabecera. */}
-        <CameraBackgroundButton />
+            ahí— así que elegir cámara solo puede vivir en esta cabecera. */}
+        <CameraPickerButton />
         <StageLayoutPicker />
         <Button variant="ghost" onClick={salir}>
           {t("meeting.guestLeave")}

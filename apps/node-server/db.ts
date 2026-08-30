@@ -5,7 +5,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import { ALL_PERMISSIONS, DEFAULT_MEMBER_PERMISSIONS, seedUuidClock, uuidv7, uuidv7Time, type CommunityJoinPolicy, type CommunityVisibility } from "@distop/protocol";
+import { ALL_PERMISSIONS, DEFAULT_MEMBER_PERMISSIONS, seedUuidClock, uuidv7, uuidv7Time, type CommunityCategory, type CommunityJoinPolicy, type CommunityVisibility } from "@distop/protocol";
 import { config } from "./config.ts";
 import { MIGRATIONS, SCHEMA_VERSION } from "./migrations.ts";
 
@@ -37,6 +37,7 @@ const UUID_V7 = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f
 const ID_TABLES = [
   "users", "sessions", "communities", "categories", "channels", "roles",
   "messages", "attachments", "audit_log", "emojis", "game_sessions",
+  "direct_conversations", "direct_messages",
 ] as const;
 
 let persistedUuidMs = 0;
@@ -127,6 +128,7 @@ export function seedCommunity(opts: {
   isPublic: boolean;
   visibility?: CommunityVisibility | undefined;
   joinPolicy?: CommunityJoinPolicy | undefined;
+  category?: CommunityCategory | undefined;
   accentColor?: string | undefined;
 }): string {
   const now = Date.now();
@@ -136,8 +138,8 @@ export function seedCommunity(opts: {
   const joinPolicy = opts.joinPolicy ?? "invite";
   db.prepare(
     `INSERT INTO communities
-       (id, name, slug, accent_color, is_public, visibility, join_policy, owner_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, name, slug, accent_color, is_public, visibility, join_policy, category, owner_id, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     communityId,
     opts.name,
@@ -146,6 +148,7 @@ export function seedCommunity(opts: {
     visibility === "public" ? 1 : 0,
     visibility,
     joinPolicy,
+    opts.category ?? "other",
     opts.ownerId,
     now,
   );

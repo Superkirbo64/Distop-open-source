@@ -4,7 +4,7 @@
  * larga no sea una lista plana de bloques repetidos.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, ChevronDown, CornerUpLeft, Hash, Megaphone, MessageSquareText, Mic, MonitorUp, MoreVertical, Paperclip, PhoneOff, Pin, Search, Smile, VideoOff, Volume2, X } from "lucide-react";
+import { CalendarClock, ChevronDown, CornerUpLeft, Hash, Megaphone, MessageSquareText, MonitorUp, MoreVertical, Paperclip, PhoneOff, Pin, Search, Smile, VideoOff, Volume2, X } from "lucide-react";
 import { Microphone, People, Send, Upload } from "./icons.tsx";
 import { PERMISSIONS, has, isJumbo, toBits, type Attachment, type Channel, type Member, type Message } from "@distop/protocol";
 import { useStore } from "../store.ts";
@@ -12,7 +12,7 @@ import { api, upload } from "../lib/api.ts";
 import { Picker } from "./Picker.tsx";
 import { renderContent, type RenderContext } from "../lib/markdown.tsx";
 import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLocal } from "./Voice.tsx";
-import { CameraBackgroundButton } from "./CameraBackground.tsx";
+import { CameraPickerButton, useCameras } from "./CameraPicker.tsx";
 import { MeetingHeaderBadges, MeetingHeaderControls, MeetingPanel } from "./Meeting.tsx";
 import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
 import {
@@ -27,10 +27,18 @@ import {
 } from "../lib/voice-message.ts";
 import { formatBytes, formatDayHeading, formatTime } from "../i18n.ts";
 import { Avatar, Button, EmptyState, ErrorNote, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, Spinner, useConfirm, useLocale, useT, useErrorText } from "./ui.tsx";
+import { VoiceMessagePlayer } from "./VoiceMessagePlayer.tsx";
+import { ProfileCard } from "./Members.tsx";
 
 const ICONS = { text: Hash, voice: Volume2, announcement: Megaphone, meeting: CalendarClock } as const;
 const QUICK_REACTIONS = ["👍", "🎉", "❤️", "😄", "👀", "🚀"];
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
+function memberRoleColor(member: Member, roles: { id: string; color: string | null; position: number }[]): string | undefined {
+  return roles
+    .filter((role) => role.color && member.role_ids.includes(role.id))
+    .sort((a, b) => b.position - a.position)[0]?.color ?? undefined;
+}
 
 export function Chat({
   onToggleMembers,
@@ -66,9 +74,13 @@ export function Chat({
   const [showPins, setShowPins] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [viewing, setViewing] = useState<Attachment | null>(null);
+  const [profile, setProfile] = useState<Member | null>(null);
   /* Antes el visor vivía dentro de cada fila y cambiar de canal lo desmontaba;
      con el estado subido aquí hay que conservar ese cierre a mano. */
-  useEffect(() => setViewing(null), [channelId]);
+  useEffect(() => {
+    setViewing(null);
+    setProfile(null);
+  }, [channelId]);
 
   const channel = data?.channels.find((c) => c.id === channelId);
   const memberIndex = useMemo(() => new Map((data?.members ?? []).map((m) => [m.user.id, m])), [data?.members]);
@@ -85,6 +97,7 @@ export function Chat({
   const handleEdit = useCallback((message: Message) => setEditing(message), []);
   const handleViewImage = useCallback((file: Attachment) => setViewing(file), []);
   const handleCloseImage = useCallback(() => setViewing(null), []);
+  const handleOpenProfile = useCallback((member: Member) => setProfile(member), []);
   const handleDelete = useCallback(
     async (message: Message) => {
       if (await confirm(t("message.deleteConfirm"))) await api("DELETE", `/api/v1/messages/${message.id}`);
@@ -357,6 +370,7 @@ export function Chat({
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onViewImage={handleViewImage}
+                    onOpenProfile={handleOpenProfile}
                     myId={user?.id ?? ""}
                   />
                 </div>
@@ -399,6 +413,7 @@ export function Chat({
         channelName={channel.name}
         canSend={canSend}
         canAttach={has(permissions, PERMISSIONS.ATTACH_FILES)}
+        voiceAllowed={data.community.voice_messages !== false}
         members={data.members}
         channels={data.channels}
         replyTo={replyTo}
@@ -410,6 +425,11 @@ export function Chat({
       <EditMessage message={editing} onClose={() => setEditing(null)} />
       <PinnedMessages channelId={channel.id} open={showPins} onClose={() => setShowPins(false)} members={memberIndex} />
       <ChannelSearch channelId={channel.id} open={showSearch} onClose={() => setShowSearch(false)} members={memberIndex} />
+      <ProfileCard
+        member={profile}
+        onClose={() => setProfile(null)}
+        color={profile ? memberRoleColor(profile, data.roles) : undefined}
+      />
       {confirmElement}
     </main>
   );
@@ -435,6 +455,9 @@ function ChatVoiceHeader({
 }) {
   const t = useT();
   const voiceLocal = useVoiceLocal();
+  /* Aquí y no solo dentro del botón: con una sola cámara no hay nada que
+     elegir y la barrita separadora tampoco debe pintarse. */
+  const cameras = useCameras();
   const meeting = useStore((s) => (channel.kind === "meeting" ? s.meetings[channel.id] : undefined));
   const [voiceNoteOff, setVoiceNoteOff] = useState(false);
   const [voiceNoteHover, setVoiceNoteHover] = useState(false);
@@ -475,11 +498,15 @@ function ChatVoiceHeader({
             />
           ) : null}
           <span className="h-5 w-px shrink-0 bg-line" />
-          {/* El fondo de cámara vive aquí porque es un mando de la llamada, no
-              un ajuste que haya que ir a buscar: vale igual en una sala de voz
-              y en una reunión. */}
-          <CameraBackgroundButton label />
-          <span className="h-5 w-px shrink-0 bg-line" />
+          {/* Elegir cámara vive aquí porque es un mando de la llamada, no un
+              ajuste que haya que ir a buscar: vale igual en una sala de voz y
+              en una reunión. */}
+          {cameras.length > 1 ? (
+            <>
+              <CameraPickerButton label />
+              <span className="h-5 w-px shrink-0 bg-line" />
+            </>
+          ) : null}
           {voiceLocal.video ? (
             <>
               <button
@@ -548,6 +575,7 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [editing, setEditing] = useState<Message | null>(null);
   const [viewing, setViewing] = useState<Attachment | null>(null);
+  const [profile, setProfile] = useState<Member | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
 
@@ -562,6 +590,7 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
   const handleEdit = useCallback((message: Message) => setEditing(message), []);
   const handleViewImage = useCallback((file: Attachment) => setViewing(file), []);
   const handleCloseImage = useCallback(() => setViewing(null), []);
+  const handleOpenProfile = useCallback((member: Member) => setProfile(member), []);
   const handleDelete = useCallback(
     async (message: Message) => {
       if (await confirm(t("message.deleteConfirm"))) await api("DELETE", `/api/v1/messages/${message.id}`);
@@ -590,6 +619,7 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
     setReplyTo(null);
     setEditing(null);
     setViewing(null);
+    setProfile(null);
     atBottom.current = true;
   }, [channelId]);
 
@@ -661,6 +691,7 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                   onViewImage={handleViewImage}
+                  onOpenProfile={handleOpenProfile}
                   myId={user?.id ?? ""}
                 />
               );
@@ -682,6 +713,7 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
         channelName={channel.name}
         canSend={has(permissions, PERMISSIONS.SEND_MESSAGES)}
         canAttach={has(permissions, PERMISSIONS.ATTACH_FILES)}
+        voiceAllowed={data.community.voice_messages !== false}
         compact
         members={data.members}
         channels={data.channels}
@@ -692,6 +724,11 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
 
       <ImageViewer viewing={viewing} onClose={handleCloseImage} />
       <EditMessage message={editing} onClose={() => setEditing(null)} />
+      <ProfileCard
+        member={profile}
+        onClose={() => setProfile(null)}
+        color={profile ? memberRoleColor(profile, data.roles) : undefined}
+      />
       {confirmElement}
     </aside>
   );
@@ -719,6 +756,7 @@ const MessageRow = memo(function MessageRow({
   onEdit,
   onDelete,
   onViewImage,
+  onOpenProfile,
   myId,
 }: {
   message: Message;
@@ -735,6 +773,7 @@ const MessageRow = memo(function MessageRow({
   onEdit: (message: Message) => void;
   onDelete: (message: Message) => void;
   onViewImage: (file: Attachment) => void;
+  onOpenProfile: (member: Member) => void;
   myId: string;
 }) {
   const t = useT();
@@ -743,9 +782,8 @@ const MessageRow = memo(function MessageRow({
   const jumbo = isJumbo(message.content);
 
   const name = member?.nickname ?? member?.user.display_name ?? "…";
-  const color = roles
-    .filter((role) => role.color && member?.role_ids.includes(role.id))
-    .sort((a, b) => b.position - a.position)[0]?.color;
+  const color = member ? memberRoleColor(member, roles) : undefined;
+  const profileAvailable = Boolean(member && !isSelf);
 
   async function toggleReaction(emoji: string, mine: boolean) {
     if (mine) await api("DELETE", `/api/v1/messages/${message.id}/reactions?emoji=${encodeURIComponent(emoji)}`);
@@ -764,7 +802,13 @@ const MessageRow = memo(function MessageRow({
       style={{ paddingTop: grouped ? "0.1rem" : "var(--row-gap)", paddingBottom: "0.1rem" }}
     >
       <div className="w-9 shrink-0 pt-0.5">
-        {grouped ? null : <Avatar name={name} url={member?.user.avatar_url} id={message.author_id} size={36} />}
+        {grouped ? null : profileAvailable ? (
+          <button type="button" aria-label={name} title={name} onClick={() => onOpenProfile(member!)} className="rounded-full">
+            <Avatar name={name} url={member?.user.avatar_url} id={message.author_id} size={36} profile={member?.user.profile_style} />
+          </button>
+        ) : (
+          <Avatar name={name} url={member?.user.avatar_url} id={message.author_id} size={36} profile={member?.user.profile_style} />
+        )}
       </div>
 
       {/* Sin `flex-1`: la columna mide lo que mide el mensaje, y así la barra de
@@ -779,9 +823,18 @@ const MessageRow = memo(function MessageRow({
 
         {grouped ? null : (
           <p className="flex flex-wrap items-baseline gap-2">
-            <span className="text-sm font-semibold" style={color ? { color } : undefined}>
-              {name}
-            </span>
+            {profileAvailable ? (
+              <button
+                type="button"
+                onClick={() => onOpenProfile(member!)}
+                className="text-sm font-semibold hover:underline"
+                style={color ? { color } : undefined}
+              >
+                {name}
+              </button>
+            ) : (
+              <span className="text-sm font-semibold" style={color ? { color } : undefined}>{name}</span>
+            )}
             {member?.user.pronouns ? <span className="text-[0.7rem] text-muted">{member.user.pronouns}</span> : null}
             <time className="text-[0.7rem] text-muted" dateTime={new Date(message.created_at).toISOString()}>
               {formatTime(locale, message.created_at)}
@@ -818,13 +871,8 @@ const MessageRow = memo(function MessageRow({
                   </button>
                 </li>
               ) : file.content_type.startsWith("audio/") ? (
-                <li key={file.id} className="min-w-0 max-w-full rounded-[10px] border border-line bg-surface px-3 py-2">
-                  <audio src={file.url} controls preload="metadata" className="h-9 max-w-full" aria-label={file.filename} />
-                  <a href={file.url} download={file.filename} className="mt-1 flex items-center gap-1.5 text-xs text-muted hover:text-ink">
-                    <Mic size={12} />
-                    <span className="max-w-56 truncate">{file.filename}</span>
-                    <span>· {formatBytes(locale, file.size)}</span>
-                  </a>
+                <li key={file.id} className="min-w-0 max-w-full">
+                  <VoiceMessagePlayer src={file.url} label={file.filename} />
                 </li>
               ) : (
                 <li key={file.id}>
@@ -1046,7 +1094,7 @@ function PickerButton({ label, onClick }: { label: string; onClick: () => void }
      honesta. */
   const roll = () => setFace((prev) => PICKER_FACES[Math.floor(Math.random() * PICKER_FACES.length)] ?? prev);
   return (
-    <IconButton label={label} onClick={onClick} onPointerEnter={roll} onFocus={roll} className="shrink-0">
+    <IconButton label={label} onClick={onClick} onPointerEnter={roll} onFocus={roll} tooltip={false} className="shrink-0">
       {/* El grupo es el envoltorio de IconButton (`group/tt`), el mismo que ya
           usa el tooltip; `focus-within` porque quien recibe el foco es el botón
           de dentro, no el envoltorio. */}
@@ -1066,6 +1114,7 @@ function Composer({
   channelName,
   canSend,
   canAttach,
+  voiceAllowed,
   compact = false,
   members,
   channels,
@@ -1077,6 +1126,8 @@ function Composer({
   channelName: string;
   canSend: boolean;
   canAttach: boolean;
+  /** Los audios se pueden suspender por comunidad (Gestionar → General). */
+  voiceAllowed: boolean;
   compact?: boolean;
   members: Member[];
   channels: Channel[];
@@ -1108,6 +1159,8 @@ function Composer({
   const [wave, setWave] = useState<number[]>([]);
   const voiceAnalyser = useRef<AnalyserNode | null>(null);
   const voiceAudioCtx = useRef<AudioContext | null>(null);
+  const voiceBadge = useRef<HTMLDivElement>(null);
+  const voiceMicAnchor = useRef<HTMLSpanElement>(null);
 
   /* Mención a medio escribir. `at` es dónde empieza el "@" o el "#", para poder
      sustituir justo ese trozo sin tocar lo que hay escrito alrededor. */
@@ -1150,6 +1203,32 @@ function Composer({
     const timer = window.setInterval(tick, 70);
     return () => window.clearInterval(timer);
   }, [recordingPhase]);
+
+  /* El badge y el botón viven en filas distintas y su distancia cambia entre
+     el chat normal, el compacto y una pantalla estrecha. Medir sus centros al
+     empezar evita la coordenada fija que hacía que la animación naciera al
+     lado del micrófono en vez de dentro de su óvalo. Las variables llegan al
+     CSS antes de que el navegador pinte el primer fotograma. */
+  useLayoutEffect(() => {
+    if (recordingPhase !== "recording") return;
+    const badge = voiceBadge.current;
+    const mic = voiceMicAnchor.current;
+    if (!badge || !mic) return;
+
+    const badgeRect = badge.getBoundingClientRect();
+    const micRect = mic.getBoundingClientRect();
+    const badgeCenterX = badgeRect.left + badgeRect.width / 2;
+    const badgeCenterY = badgeRect.top + badgeRect.height / 2;
+    const micCenterX = micRect.left + micRect.width / 2;
+    const micCenterY = micRect.top + micRect.height / 2;
+
+    badge.style.setProperty("--vm-badge-x", `${micCenterX - badgeCenterX}px`);
+    badge.style.setProperty("--vm-badge-y", `${micCenterY - badgeCenterY}px`);
+    /* Tras girar 90°, estos dos factores dejan una cápsula de 10 × 18 px:
+       prácticamente el mismo óvalo vertical del dibujo del micrófono. */
+    badge.style.setProperty("--vm-badge-scale-x", String(Math.min(1, 18 / badgeRect.width)));
+    badge.style.setProperty("--vm-badge-scale-y", String(Math.min(1, 10 / badgeRect.height)));
+  }, [recordingPhase, compact]);
 
   const resizeBox = useCallback(() => {
     const element = box.current;
@@ -1581,14 +1660,7 @@ function Composer({
                   <img src={file.url} alt={file.filename} className="h-full w-full object-cover" />
                 </div>
               ) : file.content_type?.startsWith("audio/") ? (
-                <div className="flex min-w-0 flex-col gap-1 py-1 pr-3">
-                  <audio src={file.url} controls preload="metadata" className="h-8 max-w-full" aria-label={file.filename} />
-                  <span className="flex items-center gap-1 text-muted">
-                    <Mic size={11} />
-                    <span className="max-w-48 truncate">{file.filename}</span>
-                    <span>· {formatBytes(locale, file.size)}</span>
-                  </span>
-                </div>
+                file.url ? <VoiceMessagePlayer src={file.url} label={file.filename} /> : null
               ) : (
                 <>
                   <Paperclip size={12} className="shrink-0" />
@@ -1608,14 +1680,37 @@ function Composer({
         </ul>
       ) : null}
 
+      {/* Mientras el navegador pregunta, queda solo el estado que importa. El
+          tooltip anterior se suprimió en el botón para que no aparezcan dos
+          mensajes seguidos diciendo casi lo mismo. */}
+      {recordingPhase === "requesting" ? (
+        <div className="mb-2 flex h-7 justify-end">
+          <div className="vm-permission flex items-center gap-1 text-[11px] text-muted" role="status" aria-live="polite">
+            <span>{t("message.audioRequesting")}</span>
+            <button
+              type="button"
+              onClick={discardVoiceRecording}
+              className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-current opacity-70 hover:bg-current/15 hover:opacity-100"
+            >
+              <X size={12} />
+              <span className="sr-only">{t("message.audioCancel")}</span>
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* La insignia. Pequeña a propósito: la del adjunto ocupa una fila entera
           porque enseña un archivo; esta solo dice «te estoy oyendo» y va pegada
-          al botón, sin empujar el cuadro de escribir hacia abajo. */}
-      {recordingPhase !== "idle" ? (
+          al botón, sin empujar el cuadro de escribir hacia abajo.
+
+          Solo nace al comenzar la grabación: así puede salir visualmente del
+          óvalo del micrófono después de recibir el permiso. */}
+      {recordingPhase === "recording" || recordingPhase === "processing" ? (
         <div className="mb-2 flex justify-end">
           <div
+            ref={voiceBadge}
             className={`vm-badge flex h-7 items-center gap-2 rounded-full border border-line pl-2.5 pr-1 text-[11px] ${
-              recordingPhase === "recording" ? "text-danger" : "text-muted"
+              recordingPhase === "recording" ? "text-ok" : "text-muted"
             }`}
             role="status"
             aria-live="polite"
@@ -1627,9 +1722,7 @@ function Composer({
                 <span className="sr-only">{t("message.audioRecording")}</span>
               </>
             ) : (
-              <span className="px-1">
-                {recordingPhase === "requesting" ? t("message.audioRequesting") : t("message.audioProcessing")}
-              </span>
+              <span className="px-1">{t("message.audioProcessing")}</span>
             )}
             <button
               type="button"
@@ -1743,24 +1836,28 @@ function Composer({
           )}
         </Menu>
 
-        {canAttach && voiceMessagesSupported() ? (
+        {canAttach && voiceAllowed && voiceMessagesSupported() ? (
           /* Un solo botón para las dos cosas, como WhatsApp: tocar graba, tocar
              otra vez manda. Sin un «detener» aparte que deja el audio esperando a
              que además busques el botón de enviar. */
-          <IconButton
-            label={recordingPhase === "recording" ? t("message.audioSend") : t("message.audioRecord")}
-            onClick={() => (recordingPhase === "recording" ? finishVoiceRecording() : void startVoiceRecording())}
-            disabled={busy || (recordingPhase !== "idle" && recordingPhase !== "recording")}
-            className={`vm-mic shrink-0 ${recordingPhase === "recording" ? "is-recording text-danger" : ""}`}
-          >
-            <Microphone size={18} />
-          </IconButton>
+          <span ref={voiceMicAnchor} className="inline-flex shrink-0">
+            <IconButton
+              label={recordingPhase === "recording" ? t("message.audioSend") : t("message.audioRecord")}
+              onClick={() => (recordingPhase === "recording" ? finishVoiceRecording() : void startVoiceRecording())}
+              disabled={busy || (recordingPhase !== "idle" && recordingPhase !== "recording")}
+              tooltip={false}
+              className={`vm-mic shrink-0 ${recordingPhase === "recording" ? "is-recording" : ""}`}
+            >
+              <Microphone size={18} />
+            </IconButton>
+          </span>
         ) : null}
 
         <IconButton
           label={t("message.send")}
           onClick={() => void submit()}
           disabled={busy || recordingPhase !== "idle"}
+          tooltip={false}
           className="shrink-0 text-accent"
         >
           <Send size={18} />

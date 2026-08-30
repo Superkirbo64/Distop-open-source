@@ -11,13 +11,13 @@
  * personalización ya viene incluida, así que el hueco es para el estado (§10, §29.6).
  */
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronUp, Copy, LogOut, Pencil } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ChevronUp, Copy, LogOut, Pencil } from "lucide-react";
 import { USER_STATUSES, type UserStatus } from "@distop/protocol";
 import { gameOf, useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
 import { Gear, Headset, Microphone } from "./icons.tsx";
 import { Avatar, avatarOverflow, DisplayName, IconButton, Menu, StatusDot, useT, type PresenceRing } from "./ui.tsx";
-import { CardEffectLayer, cardBackground, profileSurfaceBackground } from "./ProfileStyle.tsx";
+import { CardEffectLayer, profileBannerStyle, profileSurfaceBackground } from "./ProfileStyle.tsx";
 import { setDeafened, setMuted } from "../lib/voice.ts";
 import { useVoiceLocal } from "./Voice.tsx";
 import { AudioQuickMenu } from "./AudioQuickMenu.tsx";
@@ -72,21 +72,14 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
          pintaba ni un píxel—. Para el fondo no hacía falta: un background-image
          ya lo recorta el propio `rounded-card`. */
       className="relative flex h-[var(--footer-h)] shrink-0 items-center gap-1 rounded-card border border-line/60 bg-raise/55 px-2 shadow-[var(--shadow)] backdrop-blur-md"
-      style={
-        user.banner_url
-          ? {
-              /* Velo alto a propósito: al 62% la foto competía con el nombre y
-                 los iconos quedaban encima del dibujo, ilegibles. Aquí manda el
-                 texto —es una barra de control, no una postal— y la imagen se
-                 intuye. Además se oscurece hacia la derecha, que es donde están
-                 el micro, los auriculares y los ajustes (§31). */
-              backgroundImage: `linear-gradient(to right, color-mix(in oklab, var(--raise) 80%, transparent), color-mix(in oklab, var(--raise) 92%, transparent)), url(${JSON.stringify(user.banner_url)})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }
-          : undefined
-      }
     >
+      {user.banner_url ? (
+        <span
+          className="profile-banner pointer-events-none absolute inset-0 overflow-hidden rounded-card"
+          style={profileBannerStyle(user.profile_style, user.accent_color, user.banner_url, "bar")}
+          aria-hidden
+        />
+      ) : null}
       <Menu
         flush
         trigger={({ onClick }) => (
@@ -193,6 +186,7 @@ function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: (tab?: "profil
 
   const [frase, setFrase] = useState(user?.custom_status ?? "");
   const [copiado, setCopiado] = useState(false);
+  const [eligiendoEstado, setEligiendoEstado] = useState(false);
   const guardado = useRef(user?.custom_status ?? "");
 
   useEffect(() => {
@@ -232,7 +226,10 @@ function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: (tab?: "profil
     >
       {/* Portada: la imagen de quien la tenga, y si no su color de acento. Nunca
           un hueco gris, que es lo que hace que un perfil parezca incompleto. */}
-      <div className="h-20 w-full" style={{ background: cardBackground(user.profile_style, user.accent_color, user.banner_url) }} />
+      <div
+        className="profile-banner h-28 w-full"
+        style={profileBannerStyle(user.profile_style, user.accent_color, user.banner_url)}
+      />
 
       <div className="-mt-10 px-4">
         <span className="relative inline-block" style={{ marginBottom: avatarOverflow(user.profile_style, 84) }}>
@@ -257,44 +254,78 @@ function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: (tab?: "profil
       </div>
 
       <div className="mt-3 flex flex-col gap-1 border-t border-line p-2">
-        <label className="flex flex-col gap-1 px-1 pb-1">
-          <span className="text-[0.7rem] font-semibold tracking-wider text-muted uppercase">{t("status.custom")}</span>
-          <input
-            value={frase}
-            onChange={(e) => setFrase(e.target.value)}
-            /* Se guarda al salir del campo o con Enter, no en cada tecla: cada
-               letra sería una petición y un evento a toda la comunidad. */
-            onBlur={() => {
-              if (frase !== guardado.current) void guardar({ custom_status: frase.trim() });
-            }}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter") return;
-              e.preventDefault();
-              e.currentTarget.blur();
-            }}
-            maxLength={120}
-            placeholder={t("status.customPlaceholder")}
-            className="field text-sm"
-          />
-        </label>
+        {eligiendoEstado ? (
+          <>
+            <button
+              onClick={() => setEligiendoEstado(false)}
+              aria-label={t("status.back")}
+              className="flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-sm font-semibold hover:bg-raise"
+            >
+              <ChevronLeft size={16} className="shrink-0 text-muted" />
+              {t("status.label")}
+            </button>
 
-        {USER_STATUSES.map((value) => (
-          <button
-            key={value}
-            onClick={() => void guardar({ status: value })}
-            aria-current={user.status === value ? "true" : undefined}
-            className={`flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-sm transition-colors ${
-              user.status === value ? "bg-accent-soft" : "hover:bg-raise"
-            }`}
-          >
-            <StatusDot status={value === "invisible" ? "offline" : value} size={12} className="relative shrink-0" />
-            <span className="min-w-0 flex-1">
-              <span className="block font-medium">{etiquetas[value]}</span>
-              {pistas[value] ? <span className="block text-[0.7rem] text-muted">{pistas[value]}</span> : null}
-            </span>
-            {user.status === value ? <Check size={15} className="shrink-0 text-accent" /> : null}
-          </button>
-        ))}
+            {USER_STATUSES.map((value) => (
+              <button
+                key={value}
+                onClick={() => {
+                  void guardar({ status: value });
+                  setEligiendoEstado(false);
+                }}
+                aria-current={user.status === value ? "true" : undefined}
+                className={`flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-sm transition-colors ${
+                  user.status === value ? "bg-accent-soft" : "hover:bg-raise"
+                }`}
+              >
+                <StatusDot status={value === "invisible" ? "offline" : value} size={12} className="relative shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{etiquetas[value]}</span>
+                  {pistas[value] ? <span className="block text-[0.7rem] text-muted">{pistas[value]}</span> : null}
+                </span>
+                {user.status === value ? <Check size={15} className="shrink-0 text-accent" /> : null}
+              </button>
+            ))}
+          </>
+        ) : (
+          <>
+            <label className="flex flex-col gap-1 px-1 pb-1">
+              <span className="text-[0.7rem] font-semibold tracking-wider text-muted uppercase">{t("status.custom")}</span>
+              <input
+                value={frase}
+                onChange={(e) => setFrase(e.target.value)}
+                /* Se guarda al salir del campo o con Enter, no en cada tecla: cada
+                   letra sería una petición y un evento a toda la comunidad. */
+                onBlur={() => {
+                  if (frase !== guardado.current) void guardar({ custom_status: frase.trim() });
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }}
+                maxLength={120}
+                placeholder={t("status.customPlaceholder")}
+                className="field text-sm"
+              />
+            </label>
+
+            <button
+              onClick={() => setEligiendoEstado(true)}
+              className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-sm transition-colors hover:bg-raise"
+            >
+              <StatusDot
+                status={user.status === "invisible" ? "offline" : user.status}
+                size={12}
+                className="relative shrink-0"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block font-medium">{t("status.label")}</span>
+                <span className="block truncate text-[0.7rem] text-muted">{etiquetas[user.status]}</span>
+              </span>
+              <ChevronRight size={16} className="shrink-0 text-muted" />
+            </button>
+          </>
+        )}
       </div>
 
       <div className="flex flex-col gap-0.5 border-t border-line p-2">

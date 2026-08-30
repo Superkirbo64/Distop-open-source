@@ -346,7 +346,7 @@ export function isWaiting(channelId: Snowflake, userId: Snowflake): boolean {
   return salasDeEspera.get(channelId)?.has(userId) ?? false;
 }
 
-export type JoinOutcome = "joined" | "waiting" | "closed" | "denied";
+export type JoinOutcome = "joined" | "waiting" | "closed" | "denied" | "full";
 
 /**
  * Entrar en una reunión: dentro, o a la sala de espera.
@@ -372,13 +372,28 @@ export function joinMeeting(channelId: Snowflake, userId: Snowflake, now = Date.
     return "waiting";
   }
 
-  return entrar(reunion, userId, null, now) ? "joined" : "denied";
+  return entrar(reunion, userId, null, now);
 }
 
-/** Mete de verdad en la sala y abre su tramo de asistencia. */
-function entrar(reunion: Meeting, userId: Snowflake, admittedBy: Snowflake | null, now: number): boolean {
+/**
+ * Mete de verdad en la sala y abre su tramo de asistencia.
+ *
+ * Devuelve el porqué cuando no entra: una reunión llena y una reunión que te
+ * rechaza no se arreglan igual —de la primera se sale esperando— y llamarlas
+ * las dos "denied" obligaría a quien está fuera a adivinar cuál le tocó.
+ */
+function entrar(
+  reunion: Meeting,
+  userId: Snowflake,
+  admittedBy: Snowflake | null,
+  now: number,
+): "joined" | "full" | "denied" {
   const resultado = voice.join(reunion.channel_id, userId);
-  if (!resultado) return false;
+  /* Sin sitio se queda EN la sala de espera: no se le borra de ella más abajo,
+     así que quien modera lo sigue viendo y puede admitirlo cuando salga
+     alguien, en vez de desaparecer de la cola sin que nadie se entere. */
+  if (resultado === "full") return "full";
+  if (!resultado) return "denied";
   salasDeEspera.get(reunion.channel_id)?.delete(userId);
 
   if (reunion.mute_on_entry) voice.setMute(reunion.channel_id, userId, true, false);
@@ -388,14 +403,14 @@ function entrar(reunion: Meeting, userId: Snowflake, admittedBy: Snowflake | nul
   ).run(reunion.id, userId, now, admittedBy, roleOf(reunion.id, userId));
   /* Entró de verdad: la limpieza de invitados no admitidos ya no se lo lleva. */
   db.prepare("UPDATE meeting_guests SET admitted_at = COALESCE(admitted_at, ?) WHERE user_id = ?").run(now, userId);
-  return true;
+  return "joined";
 }
 
 export function admit(channelId: Snowflake, actorId: Snowflake, targetId: Snowflake, now = Date.now()): boolean {
   const reunion = meetingOf(channelId);
   if (!reunion || !canModerate(reunion, actorId)) return false;
   if (!isWaiting(channelId, targetId)) return false;
-  return entrar(reunion, targetId, actorId, now);
+  return entrar(reunion, targetId, actorId, now) === "joined";
 }
 
 export function admitAll(channelId: Snowflake, actorId: Snowflake, now = Date.now()): number {
@@ -403,7 +418,11 @@ export function admitAll(channelId: Snowflake, actorId: Snowflake, now = Date.no
   if (!reunion || !canModerate(reunion, actorId)) return 0;
   let admitidos = 0;
   for (const espera of waitingOf(channelId)) {
-    if (entrar(reunion, espera.user_id, actorId, now)) admitidos += 1;
+    /* Comparación explícita: `entrar` ya no devuelve un booleano, y con un
+       `if` a secas "full" contaría como admitido y se vaciaría la sala de
+       espera de gente que nunca llegó a entrar. Al llenarse, el resto se queda
+       esperando —que es exactamente lo que hay que hacer con ellos. */
+    if (entrar(reunion, espera.user_id, actorId, now) === "joined") admitidos += 1;
   }
   return admitidos;
 }

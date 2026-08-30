@@ -16,6 +16,7 @@ import {
   NAME_FONTS,
   PROFILE_EFFECTS,
   RINGS,
+  toProfileStyle,
   type ProfileEffect,
   type ProfileStyle,
 } from "@distop/protocol";
@@ -35,7 +36,36 @@ export function cardBackground(style: ProfileStyle, accent: string | null, banne
   const a = style.theme_a ?? accent ?? "var(--accent)";
   const b = style.theme_b ?? accent ?? "var(--accent)";
   const center = `color-mix(in oklab, ${a} 50%, ${b})`;
-  return `linear-gradient(${style.theme_angle}deg, color-mix(in srgb, ${a} 28%, transparent) 0%, color-mix(in srgb, ${center} 38%, transparent) ${style.theme_balance}%, color-mix(in srgb, ${b} 42%, transparent) 100%), center/cover no-repeat url(${JSON.stringify(bannerUrl)})`;
+  return `linear-gradient(${style.theme_angle}deg, color-mix(in srgb, ${a} 28%, transparent) 0%, color-mix(in srgb, ${center} 38%, transparent) ${style.theme_balance}%, color-mix(in srgb, ${b} 42%, transparent) 100%), ${bannerPosition(style)}/cover no-repeat url(${JSON.stringify(bannerUrl)})`;
+}
+
+/** El mismo punto focal en cada lugar donde aparece el banner. */
+export function bannerPosition(style: ProfileStyle): string {
+  const normalized = toProfileStyle(style);
+  return `${normalized.banner_position_x}% ${normalized.banner_position_y}%`;
+}
+
+/** Variables de la capa del banner: los filtros no alcanzan al contenido. */
+export function profileBannerStyle(
+  style: ProfileStyle,
+  accent: string | null,
+  bannerUrl: string | null,
+  variant: "card" | "bar" = "card",
+): CSSProperties {
+  const normalized = toProfileStyle(style);
+  const overlay = variant === "bar"
+    ? "linear-gradient(to right, rgb(8 10 18 / 0.18), rgb(8 10 18 / 0.38))"
+    : "linear-gradient(transparent, transparent)";
+  return {
+    background: bannerUrl ? "var(--sunken)" : profileGradient(normalized, accent),
+    "--profile-banner-image": bannerUrl ? `url(${JSON.stringify(bannerUrl)})` : "none",
+    "--profile-banner-position": bannerPosition(normalized),
+    "--profile-banner-blur": `${normalized.banner_blur}px`,
+    "--profile-banner-inset": `${normalized.banner_blur * -2}px`,
+    "--profile-banner-filter": `brightness(${normalized.banner_brightness}%) contrast(${normalized.banner_contrast}%) saturate(${normalized.banner_saturation}%)`,
+    "--profile-banner-veil": String(normalized.banner_veil / 100),
+    "--profile-banner-overlay": overlay,
+  } as CSSProperties;
 }
 
 /** El gradiente base, compartido por portada, cuerpo y vista previa. */
@@ -134,7 +164,7 @@ export function ProfileCardPreview({
       className="relative overflow-hidden rounded-[14px] border border-line shadow-[var(--shadow)]"
       style={{ background: profileSurfaceBackground(style, accent) }}
     >
-      <div className="h-28 w-full" style={{ background: cardBackground(style, accent, bannerUrl || null) }} />
+      <div className="profile-banner h-28 w-full" style={profileBannerStyle(style, accent, bannerUrl || null)} />
 
       <div className="-mt-12 px-4 pb-4">
         <div className="relative inline-block" style={{ marginBottom: avatarOverflow(style, 96) }}>
@@ -167,7 +197,7 @@ export function ProfileCardPreview({
         {/* Cómo se ve en la lista de miembros, que es donde vive la placa. */}
         <div
           className={`mt-2 flex items-center gap-2 rounded-[10px] border border-line bg-surface/75 px-2 py-1.5 backdrop-blur-sm${bannerUrl ? " plate" : ""}`}
-          style={plateStyle(bannerUrl)}
+          style={plateStyle(bannerUrl, style)}
         >
           <Avatar name={name || "?"} url={avatarUrl || null} id={userId} size={24} />
           <span className="truncate text-sm font-medium">
@@ -181,6 +211,102 @@ export function ProfileCardPreview({
           pointer-events: none, así que nada de debajo pierde el clic. */}
       <CardEffectLayer effect={style.profile_effect} className="absolute inset-0" />
     </div>
+  );
+}
+
+/** Encuadre del banner, guardado como parte pública del estilo del perfil. */
+export function BannerControls({
+  value,
+  bannerUrl,
+  accent,
+  onChange,
+}: {
+  value: ProfileStyle;
+  bannerUrl: string;
+  accent: string;
+  onChange: (patch: Partial<ProfileStyle>) => void;
+}) {
+  const t = useT();
+  const normalized = toProfileStyle(value);
+  const tuning = [
+    { key: "banner_veil", label: t("settings.wallpaperVeil"), min: 0, max: 95, unit: "%" },
+    { key: "banner_blur", label: t("settings.wallpaperBlur"), min: 0, max: 24, unit: "px" },
+    { key: "banner_brightness", label: t("settings.wallpaperBright"), min: 30, max: 170, unit: "%" },
+    { key: "banner_contrast", label: t("settings.wallpaperContrast"), min: 40, max: 180, unit: "%" },
+    { key: "banner_saturation", label: t("settings.wallpaperSaturate"), min: 0, max: 200, unit: "%" },
+  ] as const;
+
+  return (
+    <fieldset className="flex flex-col gap-3 rounded-[10px] border border-line bg-sunken/40 p-3">
+      <legend className="px-1 text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
+        {t("settings.bannerTune")}
+      </legend>
+      <p className="text-xs text-muted">{t("settings.bannerTuneHint")}</p>
+      <div
+        className="profile-banner h-24 rounded-[10px] border border-line"
+        style={profileBannerStyle(value, accent, bannerUrl || null)}
+        aria-label={t("settings.bannerPreview")}
+      />
+      {tuning.map((item) => (
+        <label key={item.key} className="flex flex-col gap-1.5">
+          <span className="flex items-center justify-between text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
+            {item.label}
+            <output>{normalized[item.key]}{item.unit}</output>
+          </span>
+          <Range
+            min={item.min}
+            max={item.max}
+            step={item.key === "banner_blur" ? 1 : 5}
+            value={normalized[item.key]}
+            onChange={(event) => onChange({ [item.key]: Number(event.target.value) })}
+            className="w-full accent-[var(--accent)]"
+          />
+        </label>
+      ))}
+      <label className="flex flex-col gap-1.5">
+        <span className="flex items-center justify-between text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
+          {t("settings.bannerPositionX")}
+          <output>{normalized.banner_position_x}%</output>
+        </span>
+        <Range
+          min={0}
+          max={100}
+          step={1}
+          value={normalized.banner_position_x}
+          onChange={(event) => onChange({ banner_position_x: Number(event.target.value) })}
+          className="w-full accent-[var(--accent)]"
+        />
+      </label>
+      <label className="flex flex-col gap-1.5">
+        <span className="flex items-center justify-between text-[0.7rem] font-semibold tracking-wider text-muted uppercase">
+          {t("settings.bannerPositionY")}
+          <output>{normalized.banner_position_y}%</output>
+        </span>
+        <Range
+          min={0}
+          max={100}
+          step={1}
+          value={normalized.banner_position_y}
+          onChange={(event) => onChange({ banner_position_y: Number(event.target.value) })}
+          className="w-full accent-[var(--accent)]"
+        />
+      </label>
+      <button
+        type="button"
+        onClick={() => onChange({
+          banner_position_x: 50,
+          banner_position_y: 50,
+          banner_veil: 0,
+          banner_blur: 0,
+          banner_brightness: 100,
+          banner_contrast: 100,
+          banner_saturation: 100,
+        })}
+        className="btn btn-ghost self-start"
+      >
+        {t("settings.reset")}
+      </button>
+    </fieldset>
   );
 }
 
@@ -303,10 +429,20 @@ export function AvatarDecoPicker({
  * catálogo de colorines ni un segundo sitio donde subir la misma imagen; sin
  * banner, no hay placa. `--plate-image` la recoge `.plate` (ver styles.css).
  */
-export function plateStyle(bannerUrl: string | null | undefined): CSSProperties | undefined {
+export function plateStyle(bannerUrl: string | null | undefined, style?: ProfileStyle): CSSProperties | undefined {
   // JSON.stringify escapa comillas y barras: una url no puede cerrar el url() ni
   // colar otra declaración, aunque venga de otra instancia (§22).
-  return bannerUrl ? ({ "--plate-image": `url(${JSON.stringify(bannerUrl)})` } as CSSProperties) : undefined;
+  const normalized = toProfileStyle(style);
+  return bannerUrl
+    ? ({
+        "--plate-image": `url(${JSON.stringify(bannerUrl)})`,
+        "--plate-position": bannerPosition(normalized),
+        "--plate-blur": `${normalized.banner_blur}px`,
+        "--plate-inset": `${normalized.banner_blur * -2}px`,
+        "--plate-filter": `brightness(${normalized.banner_brightness}%) contrast(${normalized.banner_contrast}%) saturate(${normalized.banner_saturation}%)`,
+        "--plate-veil": String(normalized.banner_veil / 100),
+      } as CSSProperties)
+    : undefined;
 }
 
 /** Fuente, efecto y color del nombre visible. */

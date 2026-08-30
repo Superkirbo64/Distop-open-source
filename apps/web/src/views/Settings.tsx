@@ -4,11 +4,21 @@
  * ni ningún aviso de "mejora tu plan".
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_PROFILE_STYLE, type SelfUser } from "@distop/protocol";
+import { DEFAULT_PROFILE_STYLE, toProfileStyle, type SelfUser } from "@distop/protocol";
 import { ChevronDown } from "lucide-react";
 import { useStore, type BackdropChoice, type Density, type FontChoice, type ThemeChoice } from "../store.ts";
 import { api, setTokens, type Tokens } from "../lib/api.ts";
-import { inputDevice, probeNetwork, retuneVideo, setIceServers, setInputDevice, setVideoMode, setVoiceMode } from "../lib/voice.ts";
+import {
+  inputDevice,
+  probeNetwork,
+  retuneVideo,
+  setIceServers,
+  setInputDevice,
+  setVideoDevice,
+  setVideoMode,
+  setVoiceMode,
+  videoDevice,
+} from "../lib/voice.ts";
 import * as audio from "../lib/relay.ts";
 import { LOCALES, LOCALE_LABELS } from "../i18n.ts";
 import {
@@ -30,14 +40,16 @@ import {
 } from "../components/ui.tsx";
 import { WallpaperField, WallpaperPicker } from "../components/Wallpaper.tsx";
 import { Gallery } from "../components/Gallery.tsx";
-import { CameraBackgroundSetup } from "../components/CameraBackground.tsx";
+import { useCameras } from "../components/CameraPicker.tsx";
 import {
   AvatarDecoPicker,
+  BannerControls,
   CardEffectLayer,
   CardEffectPicker,
   GradientControls,
   NameStylePicker,
   ProfileCardPreview,
+  profileBannerStyle,
   profileGradient,
 } from "../components/ProfileStyle.tsx";
 import { askNotifyPermission, notifyPermission, type NotifyLevel } from "../lib/notify.ts";
@@ -137,11 +149,34 @@ function ProfileTab() {
   async function save() {
     setState("saving");
     setError(null);
+    const previous = user;
+    const payload = { ...form, profile_style: toProfileStyle(form.profile_style) };
+    if (previous) {
+      refreshUser({
+        ...previous,
+        ...payload,
+        avatar_url: payload.avatar_url || null,
+        banner_url: payload.banner_url || null,
+        bio: payload.bio || null,
+        pronouns: payload.pronouns || null,
+      });
+    }
     try {
-      const updated = await api<SelfUser>("PATCH", "/api/v1/users/me", form);
-      refreshUser(updated);
+      const updated = await api<SelfUser>("PATCH", "/api/v1/users/me", payload);
+      const confirmed = { ...updated, profile_style: toProfileStyle(updated.profile_style) };
+      refreshUser(confirmed);
+      setForm({
+        display_name: confirmed.display_name,
+        bio: confirmed.bio ?? "",
+        pronouns: confirmed.pronouns ?? "",
+        avatar_url: confirmed.avatar_url ?? "",
+        banner_url: confirmed.banner_url ?? "",
+        accent_color: confirmed.accent_color ?? "#4059e0",
+        profile_style: confirmed.profile_style,
+      });
       setState("saved");
     } catch (err) {
+      if (previous) refreshUser(previous);
       setError(errorText(err));
       setState("idle");
     }
@@ -245,12 +280,8 @@ function ProfileTab() {
           title={t("profile.bannerPlate")}
           preview={
             <span
-              className="block h-7 w-12 rounded-md border border-line"
-              style={{
-                background: form.banner_url
-                  ? `center/cover no-repeat url(${JSON.stringify(form.banner_url)})`
-                  : profileGradient(style, form.accent_color),
-              }}
+              className="profile-banner block h-7 w-12 rounded-md border border-line"
+              style={profileBannerStyle(style, form.accent_color, form.banner_url || null)}
             />
           }
         >
@@ -268,6 +299,16 @@ function ProfileTab() {
               <Gallery current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
             </Expander>
             <WallpaperPicker current={form.banner_url} onPick={(url) => setForm({ ...form, banner_url: url })} />
+            {form.banner_url ? (
+              <Expander label={t("settings.bannerTune")}>
+                <BannerControls
+                  value={style}
+                  bannerUrl={form.banner_url}
+                  accent={form.accent_color}
+                  onChange={patchStyle}
+                />
+              </Expander>
+            ) : null}
           </div>
         </EditorSection>
 
@@ -972,6 +1013,8 @@ function VideoSetup() {
   const t = useT();
   const [quality, setQualityState] = useState(audio.videoQuality());
   const [priority, setPriorityState] = useState(audio.videoPriority());
+  const cameras = useCameras();
+  const [camera, setCameraState] = useState(videoDevice);
 
   return (
     <div className="flex flex-col gap-4">
@@ -979,6 +1022,34 @@ function VideoSetup() {
         <h3 className="display text-base font-bold">{t("voice.videoTitle")}</h3>
         <p className="mt-1 text-sm text-muted">{t("voice.videoIntro")}</p>
       </div>
+
+      {/* Con una sola cámara no hay nada que elegir: el campo no aparece, en vez
+          de enseñar una lista de un elemento. Sin permiso concedido el navegador
+          entrega los aparatos sin nombre; se puede elegir a ciegas y los nombres
+          salen solos en cuanto la cámara se enciende una vez. */}
+      {cameras.length > 1 ? (
+        <Field label={t("voice.cameraDevice")} hint={t("voice.cameraHint")}>
+          {(id) => (
+            <Select
+              id={id}
+              value={camera}
+              searchable
+              options={[
+                { value: "", label: t("voice.deviceDefault") },
+                ...cameras.map((device, index) => ({
+                  value: device.deviceId,
+                  label: device.label || t("voice.cameraUnnamed", { n: index + 1 }),
+                })),
+              ]}
+              onChange={(value) => {
+                setCameraState(value);
+                // Si hay cámara encendida, el cambio entra ya, sin cortar nada.
+                void setVideoDevice(value);
+              }}
+            />
+          )}
+        </Field>
+      ) : null}
 
       <Field label={t("voice.quality")} hint={t("voice.qualityHint")}>
         {(id) => (
@@ -1021,11 +1092,6 @@ function VideoSetup() {
         )}
       </Field>
 
-      {/* El fondo va en esta misma pestaña y no en una propia: es otra decisión
-          sobre la propia cámara, y aquí es donde se viene a mirar. */}
-      <div className="border-t border-line pt-4">
-        <CameraBackgroundSetup />
-      </div>
     </div>
   );
 }

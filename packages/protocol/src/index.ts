@@ -225,6 +225,15 @@ export interface ProfileStyle {
   theme_angle: number;
   /** Punto en que ambos colores quedan mezclados por igual, de 10 a 90 %. */
   theme_balance: number;
+  /** Encuadre de la imagen del banner. 50/50 = centrada. */
+  banner_position_x: number;
+  banner_position_y: number;
+  /** Ajustes de imagen del banner; no afectan al texto ni al avatar. */
+  banner_veil: number;
+  banner_blur: number;
+  banner_brightness: number;
+  banner_contrast: number;
+  banner_saturation: number;
 }
 
 export const DEFAULT_PROFILE_STYLE: ProfileStyle = {
@@ -239,6 +248,13 @@ export const DEFAULT_PROFILE_STYLE: ProfileStyle = {
   theme_b: null,
   theme_angle: 135,
   theme_balance: 50,
+  banner_position_x: 50,
+  banner_position_y: 50,
+  banner_veil: 0,
+  banner_blur: 0,
+  banner_brightness: 100,
+  banner_contrast: 100,
+  banner_saturation: 100,
 };
 
 const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -288,6 +304,13 @@ export function toProfileStyle(raw: unknown): ProfileStyle {
     theme_b: color("theme_b"),
     theme_angle: integer("theme_angle", 0, 360, 135),
     theme_balance: integer("theme_balance", 10, 90, 50),
+    banner_position_x: integer("banner_position_x", 0, 100, 50),
+    banner_position_y: integer("banner_position_y", 0, 100, 50),
+    banner_veil: integer("banner_veil", 0, 95, 0),
+    banner_blur: integer("banner_blur", 0, 24, 0),
+    banner_brightness: integer("banner_brightness", 30, 170, 100),
+    banner_contrast: integer("banner_contrast", 40, 180, 100),
+    banner_saturation: integer("banner_saturation", 0, 200, 100),
   };
 }
 
@@ -295,6 +318,23 @@ export const COMMUNITY_VISIBILITIES = ["private", "unlisted", "public"] as const
 export type CommunityVisibility = (typeof COMMUNITY_VISIBILITIES)[number];
 export const COMMUNITY_JOIN_POLICIES = ["open", "invite", "request"] as const;
 export type CommunityJoinPolicy = (typeof COMMUNITY_JOIN_POLICIES)[number];
+/**
+ * De qué va la comunidad. Es un dato que declara quien la crea, no algo que se
+ * adivine leyendo el nombre: el directorio filtra por este campo, así que una
+ * comunidad llamada "Radio Minecraft" no acaba en dos sitios a la vez ni
+ * depende del idioma en que esté escrita. `other` es la salida para lo que no
+ * encaja, y es lo que llevan las comunidades anteriores a este campo.
+ */
+export const COMMUNITY_CATEGORIES = [
+  "games",
+  "music",
+  "entertainment",
+  "science",
+  "education",
+  "students",
+  "other",
+] as const;
+export type CommunityCategory = (typeof COMMUNITY_CATEGORIES)[number];
 
 export interface Community {
   id: Snowflake;
@@ -310,8 +350,13 @@ export interface Community {
   visibility: CommunityVisibility;
   /** Cómo consigue acceso alguien que ya encontró la comunidad. */
   join_policy: CommunityJoinPolicy;
+  /** De qué va, para el directorio. Lo elige quien la crea. */
+  category: CommunityCategory;
   /** Compatibilidad con clientes anteriores: equivale a visibility === "public". */
   is_public: boolean;
+  /** Si se pueden mandar audios aquí. Apagarlo rechaza el adjunto en el
+      servidor, no solo esconde el botón. */
+  voice_messages: boolean;
   owner_id: Snowflake;
   created_at: number;
 }
@@ -404,6 +449,41 @@ export interface Message {
   reactions: Reaction[];
   /** Se resolvió al escribir, con el permiso de entonces: reescribir el texto no lo cambia. */
   mentions_everyone: boolean;
+}
+
+/** Mensaje privado entre dos cuentas de la misma instancia. */
+export interface DirectMessage {
+  id: Snowflake;
+  conversation_id: Snowflake;
+  author_id: Snowflake;
+  content: string;
+  created_at: number;
+  edited_at: number | null;
+  reply_to_id: Snowflake | null;
+  attachments: Attachment[];
+}
+
+/** Una conversación privada vista desde uno de sus dos participantes. */
+export interface DirectConversation {
+  id: Snowflake;
+  other_user: PublicUser;
+  created_at: number;
+  updated_at: number;
+  last_message: DirectMessage | null;
+  unread_count: number;
+  /** `incoming` espera que esta persona acepte; `outgoing` espera a la otra. */
+  request_state: "accepted" | "incoming" | "outgoing";
+}
+
+export interface FriendRequest {
+  user: PublicUser;
+  created_at: number;
+}
+
+export interface SocialOverview {
+  friends: PublicUser[];
+  incoming_friend_requests: FriendRequest[];
+  outgoing_friend_requests: FriendRequest[];
 }
 
 /* ── menciones (§9.2) ──────────────────────────────────────────────────
@@ -1132,6 +1212,14 @@ export const GATEWAY_EVENTS = [
   "MESSAGE_CREATE",
   "MESSAGE_UPDATE",
   "MESSAGE_DELETE",
+  "DIRECT_CONVERSATION_UPSERT",
+  "DIRECT_MESSAGE_CREATE",
+  "DIRECT_MESSAGE_UPDATE",
+  "DIRECT_MESSAGE_DELETE",
+  "DIRECT_READ_UPDATE",
+  "DIRECT_MESSAGES_PURGED",
+  "DIRECT_CONVERSATION_DELETE",
+  "SOCIAL_UPDATE",
   "REACTION_UPDATE",
   "CHANNEL_CREATE",
   "CHANNEL_UPDATE",
@@ -1172,6 +1260,14 @@ export type ServerEvent =
   | { t: "MESSAGE_CREATE"; d: Message }
   | { t: "MESSAGE_UPDATE"; d: Message }
   | { t: "MESSAGE_DELETE"; d: { id: Snowflake; channel_id: Snowflake } }
+  | { t: "DIRECT_CONVERSATION_UPSERT"; d: DirectConversation }
+  | { t: "DIRECT_MESSAGE_CREATE"; d: DirectMessage }
+  | { t: "DIRECT_MESSAGE_UPDATE"; d: DirectMessage }
+  | { t: "DIRECT_MESSAGE_DELETE"; d: { id: Snowflake; conversation_id: Snowflake } }
+  | { t: "DIRECT_READ_UPDATE"; d: { conversation_id: Snowflake; last_read_id: Snowflake } }
+  | { t: "DIRECT_MESSAGES_PURGED"; d: Record<string, never> }
+  | { t: "DIRECT_CONVERSATION_DELETE"; d: { id: Snowflake } }
+  | { t: "SOCIAL_UPDATE"; d: SocialOverview }
   | { t: "REACTION_UPDATE"; d: { message_id: Snowflake; channel_id: Snowflake; reactions: Reaction[] } }
   | { t: "CHANNEL_CREATE"; d: Channel }
   | { t: "CHANNEL_UPDATE"; d: Channel }
@@ -1194,7 +1290,13 @@ export type ServerEvent =
   /* Confirmación dirigida al socket que intentó entrar. Antes, el cliente se
      daba por conectado antes de que la instancia aceptara la entrada; un
      rechazo por reunión cerrada o por permisos quedaba completamente mudo. */
-  | { t: "VOICE_JOIN_RESULT"; d: { channel_id: Snowflake; outcome: "joined" | "waiting" | "closed" | "denied" } }
+  /* `full` va aparte de `denied` a propósito (§26): la sala llena no es una
+     falta de permisos, y quien se queda fuera necesita saber que puede volver
+     a intentarlo cuando salga alguien, en vez de creer que no le dejan. */
+  | {
+      t: "VOICE_JOIN_RESULT";
+      d: { channel_id: Snowflake; outcome: "joined" | "waiting" | "closed" | "denied" | "full" };
+    }
   | { t: "VOICE_SIGNAL"; d: VoiceSignal }
   /* Tabla de sonidos (§9.4): NO viaja el audio, viaja el id. Cada cliente ya
      puede pedir el archivo a la instancia y lo reproduce a su calidad original,

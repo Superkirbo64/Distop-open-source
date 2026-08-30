@@ -11,7 +11,6 @@ import type { Snowflake, VideoSource, VoiceAction, VoiceSoundRejectReason } from
 import { onMedia, sendMedia, sendCommand } from "./gateway.ts";
 import { hostAudioNeeded, meshOverflowed } from "./mesh.ts";
 import * as relay from "./relay.ts";
-import * as background from "./cameraBackground.ts";
 import { playUi } from "./notify.ts";
 
 export interface VoiceLocalState {
@@ -87,14 +86,6 @@ export interface VoiceLocalState {
   /** Fallo visible de la última acción de la tabla de sonidos. */
   soundError: VoiceSoundIssue | null;
   /**
-   * El fondo de cámara está compuesto y saliendo por la red ahora mismo.
-   *
-   * No es lo mismo que "hay un fondo elegido": el ajuste puede estar puesto con
-   * la cámara apagada, o haber fallado al arrancar. La interfaz necesita saber
-   * cuál de las dos cosas es, o acabaría prometiendo un fondo que nadie ve.
-   */
-  backgroundOn: boolean;
-  /**
    * La sala en la que estoy es una reunión con turno de palabra.
    *
    * Va aquí y no en el store porque el gate del micrófono se decide en este
@@ -132,7 +123,6 @@ const state: VoiceLocalState = {
   error: null,
   videoError: null,
   soundError: null,
-  backgroundOn: false,
   pushToTalk: false,
   holdingFloor: false,
 };
@@ -149,14 +139,9 @@ let videoStream: MediaStream | null = null;
 /* La pantalla sin componer y la cámara del recuadro, vivas solo mientras la
    cámara viaja incrustada sobre la pantalla (ver setCameraOverlay). */
 let rawScreen: MediaStream | null = null;
-/* `cam` es SIEMPRE la cámara sin tocar; `effect` es el lienzo que le pone fondo,
-   cuando lo hay. Se guardan las dos porque cambiar el fondo en caliente exige
-   volver a partir de la cámara cruda. */
-let overlay: { cam: MediaStream; effect: background.EffectPipeline | null; stop: () => void } | null = null;
-/* Lo mismo para la cámara a solas: la captura original vive aparte de lo que
-   sale por la red, que puede ser el lienzo con el fondo compuesto. */
-let rawCamera: MediaStream | null = null;
-let cameraEffect: background.EffectPipeline | null = null;
+/* `cam` es la cámara del recuadro, viva aparte de la composición: cambiar de
+   monitor o de cámara rehace el lienzo pero reaprovecha —o suelta— la captura. */
+let overlay: { cam: MediaStream; stop: () => void } | null = null;
 let audioContext: AudioContext | null = null;
 
 interface Peer {
@@ -969,11 +954,17 @@ export function leaveVoice(): void {
   disconnectVoice(true);
 }
 
-/** Revierte una entrada que el cliente inició pero la instancia rechazó. */
-export function rejectVoiceJoin(channelId: Snowflake, outcome: "closed" | "denied"): void {
+/**
+ * Revierte una entrada que el cliente inició pero la instancia rechazó.
+ *
+ * "Llena" se separa de "no puedes" porque no se arreglan igual: de una sala
+ * llena se sale esperando a que salga alguien, y enseñar ahí el mensaje de
+ * permisos mandaría a pedirle a quien modera algo que ya tiene.
+ */
+export function rejectVoiceJoin(channelId: Snowflake, outcome: "closed" | "denied" | "full"): void {
   if (state.channelId !== channelId) return;
   disconnectVoice(false);
-  state.error = outcome === "closed" ? "meeting_closed" : "voice_forbidden";
+  state.error = outcome === "closed" ? "meeting_closed" : outcome === "full" ? "voice_full" : "voice_forbidden";
   emit();
 }
 
@@ -1196,9 +1187,111 @@ function capture(source: VideoSource): Promise<MediaStream> {
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       })
     : navigator.mediaDevices.getUserMedia({
-        video: sizeLimits(profile),
+        video: {
+          ...sizeLimits(profile),
+          /* `ideal` y no `exact`, igual que con el micrófono: una cámara USB
+             desenchufada entra con la que haya en vez de dejar la llamada sin
+             imagen — y en el móvil es lo que deja pedir la trasera sin conocer
+             su id de antemano. */
+          ...(cameraDevice ? { deviceId: { ideal: cameraDevice } } : {}),
+        },
         audio: false,
       });
+}
+
+/* ── cámara elegida (§9.5) ─────────────────────────────────────────────
+   Como el micrófono: qué aparato se usa es de este equipo, no de la cuenta. */
+
+let cameraDevice = localStorage.getItem("distop.cameraDevice") ?? "";
+
+export function videoDevice(): string {
+  return cameraDevice;
+}
+
+/**
+ * Cambiar de cámara con la llamada en marcha.
+ *
+ * Se hace sin apagar ni volver a anunciar el vídeo: para el resto de la sala es
+ * la misma emisión de siempre, sin parpadeo ni aviso de "dejó de compartir". La
+ * cámara vieja no se suelta hasta que la nueva está saliendo de verdad.
+ */
+export async function setVideoDevice(id: string): Promise<void> {
+  cameraDevice = id;
+  localStorage.setItem("distop.cameraDevice", id);
+  if (!state.channelId) return;
+
+  // Recuadro sobre la pantalla compartida: se recompone con la cámara nueva.
+  if (state.video === "screen" && overlay && rawScreen) {
+    const previo = overlay;
+    let cam: MediaStream;
+    try {
+      cam = await capture("camera");
+    } catch (err) {
+      state.videoError = err instanceof DOMException && err.name === "NotAllowedError" ? "denied" : "nodevice";
+      emit();
+      return;
+    }
+    const camTrack = cam.getVideoTracks()[0];
+    if (!camTrack) {
+      for (const track of cam.getTracks()) track.stop();
+      state.videoError = "nodevice";
+      emit();
+      return;
+    }
+    camTrack.addEventListener("ended", () => void setCameraOverlay(false));
+
+    const fps = Math.min(relay.videoProfile("screen").fps, 30);
+    const compuesto = composeScreenAndCamera(rawScreen, cam, fps);
+    if (!(await swapOutgoing(compuesto.stream))) {
+      compuesto.stop();
+      for (const track of cam.getTracks()) track.stop();
+      state.videoError = "unsupported";
+      emit();
+      return;
+    }
+    previo.stop();
+    for (const track of previo.cam.getTracks()) track.stop();
+    overlay = { cam, stop: compuesto.stop };
+    videoStream = compuesto.stream;
+    state.localVideo = compuesto.stream;
+    state.videoError = null;
+    emit();
+    return;
+  }
+
+  if (state.video !== "camera") return;
+
+  const anterior = videoStream;
+  let stream: MediaStream;
+  try {
+    stream = await capture("camera");
+  } catch (err) {
+    state.videoError = err instanceof DOMException && err.name === "NotAllowedError" ? "denied" : "nodevice";
+    emit();
+    return;
+  }
+  const track = stream.getVideoTracks()[0];
+  if (!track) {
+    for (const t of stream.getTracks()) t.stop();
+    state.videoError = "nodevice";
+    emit();
+    return;
+  }
+  const hint = relay.videoPriority();
+  track.contentHint = hint === "sharp" ? "detail" : "motion";
+  track.addEventListener("ended", () => void setVideoSource(null));
+
+  if (!(await swapOutgoing(stream, "camera"))) {
+    for (const t of stream.getTracks()) t.stop();
+    state.videoError = "unsupported";
+    emit();
+    return;
+  }
+  for (const t of anterior?.getTracks() ?? []) t.stop();
+  videoStream = stream;
+  state.localVideo = stream;
+  state.videoError = null;
+  emit();
 }
 
 /** VP9 conserva más detalle al mismo bitrate; la negociación cae a H.264/VP8 si falta. */
@@ -1253,7 +1346,6 @@ async function tuneSender(sender: RTCRtpSender, source: VideoSource): Promise<vo
 function stopLocalVideo(): void {
   if (overlay) {
     overlay.stop();
-    overlay.effect?.stop();
     for (const track of overlay.cam.getTracks()) track.stop();
     overlay = null;
   }
@@ -1261,14 +1353,7 @@ function stopLocalVideo(): void {
      sin esto, apagar el vídeo dejaba al navegador "compartiendo" para nadie. */
   if (rawScreen && rawScreen !== videoStream) for (const track of rawScreen.getTracks()) track.stop();
   rawScreen = null;
-  /* Y la cámara cruda vive fuera mientras hay fondo compuesto: sin esto el
-     piloto de la cámara se quedaba encendido con el vídeo ya apagado. */
-  cameraEffect?.stop();
-  cameraEffect = null;
-  if (rawCamera && rawCamera !== videoStream) for (const track of rawCamera.getTracks()) track.stop();
-  rawCamera = null;
   state.cameraOverlay = false;
-  state.backgroundOn = false;
   for (const track of videoStream?.getTracks() ?? []) track.stop();
   videoStream = null;
   state.localVideo = null;
@@ -1300,39 +1385,9 @@ export async function setVideoSource(source: VideoSource | null): Promise<void> 
       return;
     }
 
-    /* El fondo se compone ANTES de anunciar nada. Si fallara a mitad y se
-       siguiera adelante con la cámara cruda, la sala vería justo la habitación
-       que esa persona pidió tapar: por eso un fallo aquí apaga la cámara y lo
-       dice, en vez de encenderla "aunque sea". */
-    let composed: background.EffectPipeline | null = null;
-    if (source === "camera" && background.effectActive()) {
-      composed = await background.startCameraEffect(stream, relay.videoProfile("camera").fps);
-      if (!composed) {
-        for (const t of stream.getTracks()) t.stop();
-        state.videoError = background.effectStatus() === "unsupported" ? "background_unsupported" : "background_failed";
-        emit();
-        return;
-      }
-      const composedTrack = composed.stream.getVideoTracks()[0];
-      if (!composedTrack) {
-        composed.stop();
-        for (const t of stream.getTracks()) t.stop();
-        state.videoError = "background_failed";
-        emit();
-        return;
-      }
-      // Desenchufar la cámara tiene que apagar el vídeo aunque lo que salga a la
-      // red sea el lienzo: la pista compuesta no se entera de que se acabó.
-      track.addEventListener("ended", () => void setVideoSource(null));
-      track = composedTrack;
-    }
-
     stopLocalVideo();
-    videoStream = composed ? composed.stream : stream;
+    videoStream = stream;
     rawScreen = source === "screen" ? stream : null;
-    rawCamera = source === "camera" ? stream : null;
-    cameraEffect = composed;
-    state.backgroundOn = composed !== null;
     state.localVideo = videoStream;
     // La pista le dice al codificador qué es: con prioridad elegida manda esa;
     // en equilibrado, una cámara privilegia movimiento y una pantalla, letras.
@@ -1502,98 +1557,6 @@ async function swapOutgoing(stream: MediaStream, source: VideoSource = "screen")
 }
 
 /**
- * Poner o quitar el fondo con la cámara YA encendida (§10.1).
- *
- * Cambiar de un fondo a otro no pasa por aquí: el lienzo lee el ajuste en cada
- * fotograma, así que eso es instantáneo y no toca la llamada. Lo que sí exige
- * rehacer la pista saliente es cruzar entre "sin fondo" y "con fondo", porque
- * son dos fuentes de vídeo distintas.
- *
- * Se hace sin apagar ni volver a anunciar el vídeo: para el resto de la sala es
- * la misma emisión de siempre, sin parpadeo ni aviso de "dejó de compartir".
- */
-export async function refreshCameraBackground(): Promise<void> {
-  if (!state.channelId) return;
-  const wanted = background.effectActive();
-
-  // Recuadro sobre la pantalla compartida: se recompone con o sin fondo.
-  if (state.video === "screen" && overlay && rawScreen) {
-    if (wanted === (overlay.effect !== null)) return;
-    const previo = overlay;
-    let fuente = previo.cam;
-    let efecto: background.EffectPipeline | null = null;
-    if (wanted) {
-      efecto = await background.startCameraEffect(previo.cam, Math.min(relay.videoProfile("screen").fps, 30));
-      if (!efecto) {
-        state.videoError = background.effectStatus() === "unsupported" ? "background_unsupported" : "background_failed";
-        emit();
-        return;
-      }
-      fuente = efecto.stream;
-    }
-    const compuesto = composeScreenAndCamera(rawScreen, fuente, Math.min(relay.videoProfile("screen").fps, 30));
-    if (!(await swapOutgoing(compuesto.stream))) {
-      compuesto.stop();
-      efecto?.stop();
-      state.videoError = "unsupported";
-      emit();
-      return;
-    }
-    previo.stop();
-    previo.effect?.stop();
-    overlay = { cam: previo.cam, effect: efecto, stop: compuesto.stop };
-    videoStream = compuesto.stream;
-    state.localVideo = compuesto.stream;
-    state.backgroundOn = efecto !== null;
-    emit();
-    return;
-  }
-
-  if (state.video !== "camera" || !rawCamera) return;
-  if (wanted === (cameraEffect !== null)) return;
-
-  if (!wanted) {
-    const cruda = rawCamera;
-    if (!(await swapOutgoing(cruda, "camera"))) {
-      state.videoError = "unsupported";
-      emit();
-      return;
-    }
-    cameraEffect?.stop();
-    cameraEffect = null;
-    videoStream = cruda;
-    state.localVideo = cruda;
-    state.backgroundOn = false;
-    emit();
-    return;
-  }
-
-  const compuesto = await background.startCameraEffect(rawCamera, relay.videoProfile("camera").fps);
-  if (!compuesto) {
-    state.videoError = background.effectStatus() === "unsupported" ? "background_unsupported" : "background_failed";
-    emit();
-    return;
-  }
-  if (!(await swapOutgoing(compuesto.stream, "camera"))) {
-    compuesto.stop();
-    state.videoError = "unsupported";
-    emit();
-    return;
-  }
-  cameraEffect = compuesto;
-  videoStream = compuesto.stream;
-  state.localVideo = compuesto.stream;
-  state.videoError = null;
-  state.backgroundOn = true;
-  emit();
-}
-
-/* Encender o apagar el fondo desde cualquier parte de la interfaz entra en la
-   llamada que ya está en marcha, sin que quien lo pulsa tenga que apagar la
-   cámara y volver a encenderla. */
-background.onCameraEffectToggle(() => void refreshCameraBackground());
-
-/**
  * Enciende o apaga la cámara MIENTRAS se comparte pantalla.
  * Solo tiene sentido con la pantalla activa; con la cámara sola ya existe
  * `setVideoSource("camera")`.
@@ -1607,12 +1570,10 @@ export async function setCameraOverlay(on: boolean): Promise<void> {
     const pantalla = rawScreen;
     if (overlay) {
       overlay.stop();
-      overlay.effect?.stop();
       for (const track of overlay.cam.getTracks()) track.stop();
       overlay = null;
     }
     state.cameraOverlay = false;
-    state.backgroundOn = false;
     videoStream = pantalla;
     state.localVideo = pantalla;
     await swapOutgoing(pantalla);
@@ -1643,37 +1604,18 @@ export async function setCameraOverlay(on: boolean): Promise<void> {
      no en el perfil, para que la pantalla sola conserve su fluidez elegida. */
   const fps = Math.min(relay.videoProfile("screen").fps, 30);
 
-  /* El fondo vale también aquí. Es más caro —dos lienzos encadenados para un
-     recuadro que ocupa un cuarto— pero quien lo pidió lo pidió para no enseñar
-     su habitación, y que se cuele en el rincón de la pantalla compartida sería
-     exactamente el fallo que el ajuste dice evitar. */
-  let fuente = cam;
-  let efecto: background.EffectPipeline | null = null;
-  if (background.effectActive()) {
-    efecto = await background.startCameraEffect(cam, fps);
-    if (!efecto) {
-      for (const track of cam.getTracks()) track.stop();
-      state.videoError = background.effectStatus() === "unsupported" ? "background_unsupported" : "background_failed";
-      emit();
-      return;
-    }
-    fuente = efecto.stream;
-  }
-
-  const compuesto = composeScreenAndCamera(rawScreen, fuente, fps);
+  const compuesto = composeScreenAndCamera(rawScreen, cam, fps);
   if (!(await swapOutgoing(compuesto.stream))) {
     compuesto.stop();
-    efecto?.stop();
     for (const track of cam.getTracks()) track.stop();
     state.videoError = "unsupported";
     emit();
     return;
   }
-  overlay = { cam, effect: efecto, stop: compuesto.stop };
+  overlay = { cam, stop: compuesto.stop };
   videoStream = compuesto.stream;
   state.localVideo = compuesto.stream;
   state.cameraOverlay = true;
-  state.backgroundOn = efecto !== null;
   emit();
   playUi("camera_on");
 }
@@ -1711,16 +1653,16 @@ export async function changeScreenSource(): Promise<void> {
   const anterior = { screen: rawScreen, overlay };
   let saliente = stream;
   if (anterior.overlay) {
-    /* El lienzo del fondo, si lo hay, se reutiliza tal cual: solo cambia la
-       ventana que va detrás, y volver a arrancar el modelo por eso costaría un
-       parón de segundos en mitad de la presentación. */
+    /* La captura de la cámara se reutiliza tal cual: solo cambia la ventana que
+       va detrás, y volver a pedirla parpadearía el piloto en mitad de la
+       presentación. */
     const compuesto = composeScreenAndCamera(
       stream,
-      anterior.overlay.effect?.stream ?? anterior.overlay.cam,
+      anterior.overlay.cam,
       Math.min(relay.videoProfile("screen").fps, 30),
     );
     saliente = compuesto.stream;
-    overlay = { cam: anterior.overlay.cam, effect: anterior.overlay.effect, stop: compuesto.stop };
+    overlay = { cam: anterior.overlay.cam, stop: compuesto.stop };
   }
 
   // El sonido va con la fuente: la ventana nueva puede traerlo o no.

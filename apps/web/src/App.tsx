@@ -12,6 +12,8 @@ import { VoiceBar } from "./components/Voice.tsx";
 import { UserBar } from "./components/UserBar.tsx";
 import { Chat, VoiceChatPanel } from "./components/Chat.tsx";
 import { Members } from "./components/Members.tsx";
+import { DirectChat, DirectSidebar } from "./components/Direct.tsx";
+import { Explore, ExploreSidebar } from "./components/Explore.tsx";
 import { Auth } from "./views/Auth.tsx";
 import { Connect } from "./views/Connect.tsx";
 import { Setup } from "./views/Setup.tsx";
@@ -133,6 +135,7 @@ export function App() {
   const communities = useStore((s) => s.communities);
   const activeCommunityId = useStore((s) => s.activeCommunityId);
   const activeChannelId = useStore((s) => s.activeChannelId);
+  const directOpen = useStore((s) => s.directOpen);
   const activeData = useStore((s) => (activeCommunityId ? s.data[activeCommunityId] : undefined));
   const openCommunity = useStore((s) => s.openCommunity);
   const reloadCommunities = useStore((s) => s.reloadCommunities);
@@ -146,6 +149,7 @@ export function App() {
   const [invite, setInvite] = useState(false);
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [explore, setExplore] = useState(false);
   const [pendingCommunity, setPendingCommunity] = useState<PendingCommunity | null>(() => peekPendingCommunity());
   const [mobilePane, setMobilePane] = useState<"nav" | "main" | "members">("main");
   const [membersOpen, setMembersOpen] = usePanel("members", true);
@@ -169,8 +173,11 @@ export function App() {
   /* El panel de miembros plegado se desmonta cuando termina la animación de su
      columna (--dur-3 = 0.42s): plegado ya no re-renderiza con cada presencia ni
      retiene su DOM (banners incluidos). En móvil manda mobilePane, como siempre. */
-  const membersVisible = isMobile ? mobilePane === "members" : membersOpen;
+  const membersVisible = !directOpen && !explore && (isMobile ? mobilePane === "members" : membersOpen);
   const [membersMounted, setMembersMounted] = useState(membersVisible);
+  useEffect(() => {
+    if (directOpen) setMobilePane("main");
+  }, [directOpen]);
   useEffect(() => {
     if (membersVisible) {
       setMembersMounted(true);
@@ -311,8 +318,8 @@ export function App() {
 
   // Al entrar sin comunidad activa, abre la primera: nadie quiere una pantalla vacía.
   useEffect(() => {
-    if (user && !pendingCommunity && !activeCommunityId && communities[0]) void openCommunity(communities[0].id);
-  }, [user, pendingCommunity, activeCommunityId, communities, openCommunity]);
+    if (user && !pendingCommunity && !directOpen && !activeCommunityId && communities[0]) void openCommunity(communities[0].id);
+  }, [user, pendingCommunity, directOpen, activeCommunityId, communities, openCommunity]);
 
   // La app instalada no la sirvió ninguna instancia: sin una elegida, lo
   // primero es elegirla. En la web esta rama no existe (§4).
@@ -370,32 +377,49 @@ export function App() {
     <div
       className="app-grid"
       data-mobile={mobilePane}
-      data-members={membersOpen ? "on" : "off"}
+      data-members={!directOpen && !explore && membersOpen ? "on" : "off"}
       data-right={voiceChat ? "voice-chat" : "members"}
     >
       {/* Fuera de la rejilla: se pinta encima de todo y no empuja nada. */}
       <NoticeToaster />
-      <Rail onNavigate={() => setMobilePane("main")} onCreate={() => setCreating(true)} onJoin={() => setJoining(true)} />
-
-      <Sidebar
-        onOpenManage={() => setManage(true)}
-        onOpenInvite={() => setInvite(true)}
-        onNavigate={() => setMobilePane("main")}
+      <Rail
+        onNavigate={() => { setExplore(false); setMobilePane("main"); }}
+        onCreate={() => setCreating(true)}
+        onJoin={() => setJoining(true)}
+        onExplore={() => { setExplore(true); setMobilePane("main"); }}
       />
 
-      <Chat
-        onToggleMembers={() => (isMobile ? setMobilePane(mobilePane === "members" ? "main" : "members") : setMembersOpen(!membersOpen))}
-        membersOpen={membersOpen}
-        onOpenSidebar={() => setMobilePane("nav")}
-        onCreateCommunity={() => setCreating(true)}
-        onJoinCommunity={() => setJoining(true)}
-      />
+      {explore ? (
+        <ExploreSidebar onNavigate={() => setMobilePane("main")} onJoinWithLink={() => { setExplore(false); setJoining(true); }} />
+      ) : directOpen ? (
+        <DirectSidebar onNavigate={() => setMobilePane("main")} />
+      ) : (
+        <Sidebar
+          onOpenManage={() => setManage(true)}
+          onOpenInvite={() => setInvite(true)}
+          onNavigate={() => setMobilePane("main")}
+        />
+      )}
+
+      {explore ? (
+        <Explore onOpenSidebar={() => setMobilePane("nav")} onLeave={() => setExplore(false)} />
+      ) : directOpen ? (
+        <DirectChat onOpenSidebar={() => setMobilePane("nav")} />
+      ) : (
+        <Chat
+          onToggleMembers={() => (isMobile ? setMobilePane(mobilePane === "members" ? "main" : "members") : setMembersOpen(!membersOpen))}
+          membersOpen={membersOpen}
+          onOpenSidebar={() => setMobilePane("nav")}
+          onCreateCommunity={() => setCreating(true)}
+          onJoinCommunity={() => setJoining(true)}
+        />
+      )}
 
       {/* El lateral sigue montado DURANTE el pliegue (la columna anima sin
           saltos) y se desmonta al terminar: plegado no cuesta nada. */}
-      {voiceChat ? (
+      {!directOpen && !explore && voiceChat ? (
         <VoiceChatPanel onClose={() => (isMobile ? setMobilePane("main") : setMembersOpen(false))} />
-      ) : membersMounted ? (
+      ) : !directOpen && !explore && membersMounted ? (
         <Members onClose={() => (isMobile ? setMobilePane("main") : setMembersOpen(false))} />
       ) : null}
 
@@ -428,7 +452,7 @@ export function App() {
         onJoin={() => setJoining(true)}
         /* La frase de las copias se enseña una sola vez: la bienvenida, que
            vuelve siempre que no haya comunidad, espera en vez de taparla. */
-        blocked={creating || joining || invite || Boolean(inviteCode) || Boolean(backupPassphrase)}
+        blocked={directOpen || explore || creating || joining || invite || Boolean(inviteCode) || Boolean(backupPassphrase)}
       />
       <BackupPassphraseNotice />
       <WallpaperTuner />

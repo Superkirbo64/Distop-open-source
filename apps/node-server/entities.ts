@@ -3,7 +3,7 @@
  * Todo lo que sale hacia el cliente pasa por aquí, para que no haya dos formas
  * distintas del mismo objeto según la ruta que lo devuelva.
  */
-import type { Category, Channel, Community, CommunityJoinPolicy, CommunityVisibility, Member, Message, Reaction, Role, Unread } from "@distop/protocol";
+import type { Category, Channel, Community, CommunityCategory, CommunityJoinPolicy, CommunityVisibility, Member, Message, Reaction, Role, Unread } from "@distop/protocol";
 import { db } from "./db.ts";
 import { toPublicUser, type UserRow } from "./auth.ts";
 import { attachmentsFor } from "./storage.ts";
@@ -21,12 +21,14 @@ interface CommunityRow {
   is_public: number;
   visibility: CommunityVisibility;
   join_policy: CommunityJoinPolicy;
+  category: CommunityCategory;
+  voice_messages: number;
   owner_id: string;
   created_at: number;
 }
 
 export function toCommunity(row: CommunityRow): Community {
-  return { ...row, is_public: row.visibility === "public" };
+  return { ...row, is_public: row.visibility === "public", voice_messages: row.voice_messages === 1 };
 }
 
 export function getCommunity(id: string): Community | null {

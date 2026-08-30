@@ -130,17 +130,24 @@ export function Tooltip({ label, children }: { label: string; children: ReactNod
   );
 }
 
-/** Botón sólo-icono: sigue necesitando nombre accesible, por eso `label` es obligatorio. */
+/**
+ * Botón sólo-icono: sigue necesitando nombre accesible, por eso `label` es
+ * obligatorio. `tooltip={false}` quita solo la burbuja, nunca el `aria-label`:
+ * hay sitios donde el icono ya se entiende solo y el cartelito estorba (la
+ * barra de escribir), pero un lector de pantalla sigue necesitando el nombre.
+ */
 export function IconButton({
   label,
   children,
   className = "",
   pressed,
+  tooltip = true,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
   children: ReactNode;
   pressed?: boolean;
+  tooltip?: boolean;
 }) {
   return (
     <span className="group/tt relative inline-flex">
@@ -161,7 +168,7 @@ export function IconButton({
       >
         {children}
       </button>
-      <TooltipBubble label={label} />
+      {tooltip ? <TooltipBubble label={label} /> : null}
     </span>
   );
 }
@@ -899,7 +906,12 @@ export function Modal({
   const ref = useRef<HTMLDialogElement>(null);
   const pressedOnBackdrop = useRef(false);
 
-  useEffect(() => {
+  /* El estado visual de un <dialog> vive fuera de React, en la top layer del
+     navegador. Hay que sincronizarlo antes de pintar: con un efecto pasivo,
+     React alcanzaba a vaciar el diálogo y a ocultar su panel padre mientras el
+     backdrop nativo seguía abierto. El resultado era una pantalla oscura sin
+     modal, especialmente al pasar de "nuevo mensaje" al chat en móvil. */
+  useLayoutEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();
