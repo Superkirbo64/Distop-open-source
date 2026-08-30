@@ -245,6 +245,9 @@ export const config = {
     "audio/mpeg",
     "audio/ogg",
     "audio/wav",
+    /* MediaRecorder: Chrome/Edge graban WebM+Opus y Safari MP4/AAC. */
+    "audio/webm",
+    "audio/mp4",
     "application/pdf",
     "text/plain",
     /* Comprimidos y programas. El navegador NO manda un tipo estable aquí: el

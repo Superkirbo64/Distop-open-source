@@ -414,6 +414,7 @@ export const en: Record<keyof typeof es, string> = {
   "message.react": "React",
   "message.loadMore": "Load earlier messages",
   "message.attach": "Attach file",
+  "message.audioSend": "Send the audio",
   "message.audioRecord": "Record voice message",
   "message.audioRequesting": "Waiting for microphone permission…",
   "message.audioRecording": "Recording audio",

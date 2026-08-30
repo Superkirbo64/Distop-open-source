@@ -4,8 +4,8 @@
  * larga no sea una lista plana de bloques repetidos.
  */
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { CalendarClock, ChevronDown, CornerUpLeft, Hash, Megaphone, MessageSquareText, MonitorUp, MoreVertical, Paperclip, PhoneOff, Pin, Search, Smile, VideoOff, Volume2, X } from "lucide-react";
-import { People, Send, Upload } from "./icons.tsx";
+import { CalendarClock, ChevronDown, CornerUpLeft, Hash, Megaphone, MessageSquareText, Mic, MonitorUp, MoreVertical, Paperclip, PhoneOff, Pin, Search, Smile, VideoOff, Volume2, X } from "lucide-react";
+import { Microphone, People, Send, Upload } from "./icons.tsx";
 import { PERMISSIONS, has, isJumbo, toBits, type Attachment, type Channel, type Member, type Message } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api, upload } from "../lib/api.ts";
@@ -15,6 +15,16 @@ import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLoc
 import { CameraBackgroundButton } from "./CameraBackground.tsx";
 import { MeetingHeaderBadges, MeetingHeaderControls, MeetingPanel } from "./Meeting.tsx";
 import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
+import {
+  audioExtension,
+  baseAudioMime,
+  chooseVoiceMessageMime,
+  formatVoiceMessageTime,
+  pushWaveSample,
+  voiceMessagesSupported,
+  WAVE_BARS,
+  waveHeight,
+} from "../lib/voice-message.ts";
 import { formatBytes, formatDayHeading, formatTime } from "../i18n.ts";
 import { Avatar, Button, EmptyState, ErrorNote, IconButton, Menu, MenuItem, Modal, PanelResizeHandle, Spinner, useConfirm, useLocale, useT, useErrorText } from "./ui.tsx";
 
@@ -807,6 +817,15 @@ const MessageRow = memo(function MessageRow({
                     />
                   </button>
                 </li>
+              ) : file.content_type.startsWith("audio/") ? (
+                <li key={file.id} className="min-w-0 max-w-full rounded-[10px] border border-line bg-surface px-3 py-2">
+                  <audio src={file.url} controls preload="metadata" className="h-9 max-w-full" aria-label={file.filename} />
+                  <a href={file.url} download={file.filename} className="mt-1 flex items-center gap-1.5 text-xs text-muted hover:text-ink">
+                    <Mic size={12} />
+                    <span className="max-w-56 truncate">{file.filename}</span>
+                    <span>· {formatBytes(locale, file.size)}</span>
+                  </a>
+                </li>
               ) : (
                 <li key={file.id}>
                   <a
@@ -959,14 +978,88 @@ function ImageViewer({ viewing, onClose }: { viewing: Attachment | null; onClose
 
 /* ── caja de escritura ─────────────────────────────────────────────── */
 
+/**
+ * El rastro de la grabación.
+ *
+ * Barras, no una onda continua: con dieciocho barras de dos píxeles se lee de
+ * un vistazo que hay sonido entrando, que es lo único que tiene que decir. Una
+ * onda de verdad pediría un canvas y un tamaño que ya no sería una insignia.
+ */
+function WaveTrail({ bars }: { bars: number[] }) {
+  return (
+    <span className="flex h-3.5 items-center gap-[2px]" aria-hidden>
+      {Array.from({ length: WAVE_BARS }, (_, index) => {
+        // Se rellena por la derecha: al empezar, el rastro entra en vez de saltar.
+        const level = bars[index - (WAVE_BARS - bars.length)] ?? 0;
+        return (
+          <span
+            key={index}
+            className="w-[2px] origin-center rounded-full bg-current transition-[height] duration-100 ease-out"
+            style={{ height: `${Math.round(waveHeight(level) * 14)}px` }}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
 /** Cuántas sugerencias caben sin tapar la conversación. */
 const SUGGEST_LIMIT = 8;
+const MAX_VOICE_MESSAGE_MS = 10 * 60 * 1000;
+
+type RecordingPhase = "idle" | "requesting" | "recording" | "processing";
 
 interface Suggestion {
   id: string;
   label: string;
   hint?: string | undefined;
 }
+
+/* Las caras que puede llevar el botón del selector. Lista propia y corta en
+   vez de POPULAR_EMOJI: aquella mezcla objetos (🍕, 🚀) y aquí el sorteo tiene
+   que salir siempre una cara. */
+const PICKER_FACES = [
+  "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇",
+  "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚",
+  "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🤩",
+  "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣",
+  "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠", "😡", "🤬",
+  "🤯", "😳", "🥵", "🥶",
+];
+
+/**
+ * El botón que abre el selector: una cara de verdad apagada en gris que se
+ * colorea y crece al acercarse, y que cambia de cara en cada visita.
+ *
+ * El sorteo va en manejadores y no en el render, o el composer cambiaría la
+ * cara solo cada vez que se repinta (una tecla, un mensaje que llega). Se
+ * sortea también al recibir el foco y al puntero entrar por táctil, para que
+ * el gesto exista con teclado y con dedo, no solo con ratón.
+ *
+ * La quietud no se decide aquí: styles.css apaga toda transición con
+ * prefers-reduced-motion o data-motion="off", y esta cae dentro.
+ */
+function PickerButton({ label, onClick }: { label: string; onClick: () => void }) {
+  const [face, setFace] = useState("🙂");
+  /* `?? prev` en vez de `!`: con noUncheckedIndexedAccess el índice puede ser
+     undefined para el compilador, y quedarse con la cara anterior es la salida
+     honesta. */
+  const roll = () => setFace((prev) => PICKER_FACES[Math.floor(Math.random() * PICKER_FACES.length)] ?? prev);
+  return (
+    <IconButton label={label} onClick={onClick} onPointerEnter={roll} onFocus={roll} className="shrink-0">
+      {/* El grupo es el envoltorio de IconButton (`group/tt`), el mismo que ya
+          usa el tooltip; `focus-within` porque quien recibe el foco es el botón
+          de dentro, no el envoltorio. */}
+      <span
+        aria-hidden="true"
+        className="grayscale text-[17px] leading-none transition duration-300 group-hover/tt:scale-110 group-hover/tt:grayscale-0 group-focus-within/tt:scale-110 group-focus-within/tt:grayscale-0"
+      >
+        {face}
+      </span>
+    </IconButton>
+  );
+}
+
 
 function Composer({
   channelId,
@@ -1003,8 +1096,18 @@ function Composer({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [recordingPhase, setRecordingPhase] = useState<RecordingPhase>("idle");
+  const [recordingElapsed, setRecordingElapsed] = useState(0);
   const box = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
+  const voiceRecorder = useRef<MediaRecorder | null>(null);
+  const voiceStream = useRef<MediaStream | null>(null);
+  const voiceChunks = useRef<Blob[]>([]);
+  const voiceSession = useRef(0);
+  const voiceStartedAt = useRef(0);
+  const [wave, setWave] = useState<number[]>([]);
+  const voiceAnalyser = useRef<AnalyserNode | null>(null);
+  const voiceAudioCtx = useRef<AudioContext | null>(null);
 
   /* Mención a medio escribir. `at` es dónde empieza el "@" o el "#", para poder
      sustituir justo ese trozo sin tocar lo que hay escrito alrededor. */
@@ -1012,11 +1115,41 @@ function Composer({
   const [highlight, setHighlight] = useState(0);
 
   useEffect(() => {
+    discardVoiceRecording();
     setText("");
     setPending([]);
     setError(null);
     setToken(null);
   }, [channelId]);
+
+  /* Cambiar de vista o cerrar el chat suelta el micrófono al instante. El token
+     de sesión impide que una petición de permisos tardía vuelva a encenderlo. */
+  useEffect(() => () => discardVoiceRecording(), []);
+
+  useEffect(() => {
+    if (recordingPhase !== "recording") return;
+    const buffer = new Uint8Array(128);
+    const tick = () => {
+      const elapsed = Date.now() - voiceStartedAt.current;
+      setRecordingElapsed(elapsed);
+      /* El nivel sale del grafo de audio, no de lo ya codificado: así el rastro
+         va con la voz y no con el ritmo al que MediaRecorder entrega trozos,
+         que es de un segundo entero. */
+      const analyser = voiceAnalyser.current;
+      if (analyser) {
+        analyser.getByteFrequencyData(buffer);
+        let suma = 0;
+        for (const valor of buffer) suma += valor;
+        setWave((previo) => pushWaveSample(previo, suma / buffer.length / 96));
+      }
+      if (elapsed >= MAX_VOICE_MESSAGE_MS) finishVoiceRecording();
+    };
+    tick();
+    /* 70 ms: fino para que el rastro parezca vivo, grueso para no repintar
+       dieciocho barras en cada fotograma. */
+    const timer = window.setInterval(tick, 70);
+    return () => window.clearInterval(timer);
+  }, [recordingPhase]);
 
   const resizeBox = useCallback(() => {
     const element = box.current;
@@ -1121,7 +1254,7 @@ function Composer({
 
   async function submit() {
     const content = text.trim();
-    if ((!content && pending.length === 0) || busy) return;
+    if ((!content && pending.length === 0) || busy || recordingPhase !== "idle") return;
 
     setBusy(true);
     setError(null);
@@ -1172,6 +1305,186 @@ function Composer({
       } catch (err) {
         setError(errorText(err));
       }
+    }
+  }
+
+  function stopVoiceTracks(): void {
+    for (const track of voiceStream.current?.getTracks() ?? []) track.stop();
+    voiceStream.current = null;
+    voiceAnalyser.current = null;
+    /* Un AudioContext por grabación y cerrado al terminar: los navegadores
+       limitan cuántos puede tener abiertos una pestaña a la vez. */
+    void voiceAudioCtx.current?.close().catch(() => {});
+    voiceAudioCtx.current = null;
+  }
+
+  function discardVoiceRecording(): void {
+    voiceSession.current++;
+    const recorder = voiceRecorder.current;
+    voiceRecorder.current = null;
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      recorder.onerror = null;
+      if (recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          // Ya se estaba cerrando; las pistas se sueltan igualmente abajo.
+        }
+      }
+    }
+    stopVoiceTracks();
+    voiceChunks.current = [];
+    voiceStartedAt.current = 0;
+    setWave([]);
+    setRecordingElapsed(0);
+    setRecordingPhase("idle");
+  }
+
+  function voiceRecordingError(err: unknown): string {
+    if (!globalThis.isSecureContext || !navigator.mediaDevices) return t("message.audioSecure");
+    if (err instanceof DOMException && err.name === "NotAllowedError") return t("message.audioDenied");
+    if (err instanceof DOMException && err.name === "NotFoundError") return t("message.audioNoMic");
+    return t("message.audioFailed");
+  }
+
+  async function startVoiceRecording(): Promise<void> {
+    if (recordingPhase !== "idle" || busy) return;
+    setError(null);
+    if (!globalThis.isSecureContext || !navigator.mediaDevices) {
+      setError(t("message.audioSecure"));
+      return;
+    }
+    if (!voiceMessagesSupported()) {
+      setError(t("message.audioUnsupported"));
+      return;
+    }
+
+    const session = ++voiceSession.current;
+    setRecordingPhase("requesting");
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: false,
+      });
+    } catch (err) {
+      if (voiceSession.current !== session) return;
+      setRecordingPhase("idle");
+      setError(voiceRecordingError(err));
+      return;
+    }
+
+    if (voiceSession.current !== session) {
+      for (const track of stream.getTracks()) track.stop();
+      return;
+    }
+
+    const mime = chooseVoiceMessageMime();
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream, {
+        ...(mime ? { mimeType: mime } : {}),
+        audioBitsPerSecond: 64_000,
+      });
+    } catch (err) {
+      for (const track of stream.getTracks()) track.stop();
+      setRecordingPhase("idle");
+      setError(voiceRecordingError(err));
+      return;
+    }
+
+    voiceStream.current = stream;
+    voiceRecorder.current = recorder;
+    voiceChunks.current = [];
+    try {
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.6;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      voiceAudioCtx.current = ctx;
+      voiceAnalyser.current = analyser;
+    } catch {
+      /* Sin medidor el rastro se queda plano, pero la grabación sigue. */
+    }
+    setWave([]);
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) voiceChunks.current.push(event.data);
+    };
+    recorder.onerror = () => {
+      if (voiceSession.current !== session) return;
+      discardVoiceRecording();
+      setError(t("message.audioFailed"));
+    };
+    recorder.onstop = () => void saveVoiceRecording(session, recorder.mimeType || mime || "audio/webm");
+
+    try {
+      recorder.start(1000);
+      voiceStartedAt.current = Date.now();
+      setRecordingElapsed(0);
+      setRecordingPhase("recording");
+    } catch (err) {
+      discardVoiceRecording();
+      setError(voiceRecordingError(err));
+    }
+  }
+
+  function finishVoiceRecording(): void {
+    const recorder = voiceRecorder.current;
+    if (recordingPhase !== "recording" || !recorder || recorder.state === "inactive") return;
+    setRecordingPhase("processing");
+    try {
+      recorder.stop();
+    } catch {
+      discardVoiceRecording();
+      setError(t("message.audioFailed"));
+    }
+  }
+
+  async function saveVoiceRecording(session: number, recorderMime: string): Promise<void> {
+    stopVoiceTracks();
+    voiceRecorder.current = null;
+    const chunks = voiceChunks.current;
+    voiceChunks.current = [];
+    if (voiceSession.current !== session) return;
+    setRecordingPhase("processing");
+
+    const mime = baseAudioMime(chunks[0]?.type || recorderMime);
+    const blob = new Blob(chunks, { type: mime });
+    if (blob.size === 0) {
+      setRecordingPhase("idle");
+      setError(t("message.audioEmpty"));
+      return;
+    }
+    if (blob.size > maxUploadMb * 1024 * 1024) {
+      setRecordingPhase("idle");
+      setError(t("message.tooLarge", { mb: maxUploadMb }));
+      return;
+    }
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const file = new File([blob], `audio-${stamp}.${audioExtension(mime)}`, { type: mime });
+    try {
+      const uploaded = await upload(file);
+      if (voiceSession.current !== session) return;
+      /* Se manda solo, sin pasar por la lista de adjuntos. El segundo toque en
+         el micrófono ES el envío: dejarlo esperando en la bandeja obligaría a
+         buscar otro botón y rompería la promesa del gesto. Lo que ya hubiera
+         escrito viaja en el mismo mensaje, como en WhatsApp. */
+      await send(channelId, text.trim(), [uploaded.id], replyTo?.id ?? null);
+      if (voiceSession.current !== session) return;
+      setText("");
+      setToken(null);
+      onCancelReply();
+      setRecordingPhase("idle");
+      setRecordingElapsed(0);
+      setWave([]);
+    } catch (err) {
+      if (voiceSession.current !== session) return;
+      setRecordingPhase("idle");
+      setError(errorText(err));
     }
   }
 
@@ -1267,6 +1580,15 @@ function Composer({
                 <div className="relative h-16 w-16 overflow-hidden rounded-[6px] bg-bg/50">
                   <img src={file.url} alt={file.filename} className="h-full w-full object-cover" />
                 </div>
+              ) : file.content_type?.startsWith("audio/") ? (
+                <div className="flex min-w-0 flex-col gap-1 py-1 pr-3">
+                  <audio src={file.url} controls preload="metadata" className="h-8 max-w-full" aria-label={file.filename} />
+                  <span className="flex items-center gap-1 text-muted">
+                    <Mic size={11} />
+                    <span className="max-w-48 truncate">{file.filename}</span>
+                    <span>· {formatBytes(locale, file.size)}</span>
+                  </span>
+                </div>
               ) : (
                 <>
                   <Paperclip size={12} className="shrink-0" />
@@ -1284,6 +1606,41 @@ function Composer({
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {/* La insignia. Pequeña a propósito: la del adjunto ocupa una fila entera
+          porque enseña un archivo; esta solo dice «te estoy oyendo» y va pegada
+          al botón, sin empujar el cuadro de escribir hacia abajo. */}
+      {recordingPhase !== "idle" ? (
+        <div className="mb-2 flex justify-end">
+          <div
+            className={`vm-badge flex h-7 items-center gap-2 rounded-full border border-line pl-2.5 pr-1 text-[11px] ${
+              recordingPhase === "recording" ? "text-danger" : "text-muted"
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {recordingPhase === "recording" ? (
+              <>
+                <WaveTrail bars={wave} />
+                <span className="tabular-nums font-semibold">{formatVoiceMessageTime(recordingElapsed)}</span>
+                <span className="sr-only">{t("message.audioRecording")}</span>
+              </>
+            ) : (
+              <span className="px-1">
+                {recordingPhase === "requesting" ? t("message.audioRequesting") : t("message.audioProcessing")}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={discardVoiceRecording}
+              className="grid h-5 w-5 shrink-0 place-items-center rounded-full text-current opacity-70 hover:bg-current/15 hover:opacity-100"
+            >
+              <X size={12} />
+              <span className="sr-only">{t("message.audioCancel")}</span>
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {error ? <div className="mb-2"><ErrorNote>{error}</ErrorNote></div> : null}
@@ -1369,11 +1726,7 @@ function Composer({
 
         <Menu
           flush
-          trigger={({ onClick }) => (
-            <IconButton label={t("picker.open")} onClick={onClick} className="shrink-0">
-              <Smile size={17} />
-            </IconButton>
-          )}
+          trigger={({ onClick }) => <PickerButton label={t("picker.open")} onClick={onClick} />}
         >
           {(close) => (
             <Picker
@@ -1390,7 +1743,26 @@ function Composer({
           )}
         </Menu>
 
-        <IconButton label={t("message.send")} onClick={() => void submit()} className="shrink-0 text-accent">
+        {canAttach && voiceMessagesSupported() ? (
+          /* Un solo botón para las dos cosas, como WhatsApp: tocar graba, tocar
+             otra vez manda. Sin un «detener» aparte que deja el audio esperando a
+             que además busques el botón de enviar. */
+          <IconButton
+            label={recordingPhase === "recording" ? t("message.audioSend") : t("message.audioRecord")}
+            onClick={() => (recordingPhase === "recording" ? finishVoiceRecording() : void startVoiceRecording())}
+            disabled={busy || (recordingPhase !== "idle" && recordingPhase !== "recording")}
+            className={`vm-mic shrink-0 ${recordingPhase === "recording" ? "is-recording text-danger" : ""}`}
+          >
+            <Microphone size={18} />
+          </IconButton>
+        ) : null}
+
+        <IconButton
+          label={t("message.send")}
+          onClick={() => void submit()}
+          disabled={busy || recordingPhase !== "idle"}
+          className="shrink-0 text-accent"
+        >
           <Send size={18} />
         </IconButton>
       </div>

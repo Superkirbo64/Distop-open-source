@@ -419,6 +419,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "message.react": "Reagir",
   "message.loadMore": "Carregar mensagens anteriores",
   "message.attach": "Anexar arquivo",
+  "message.audioSend": "Enviar o áudio",
   "message.audioRecord": "Gravar mensagem de voz",
   "message.audioRequesting": "Aguardando permissão para usar o microfone…",
   "message.audioRecording": "Gravando áudio",

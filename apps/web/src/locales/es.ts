@@ -418,6 +418,7 @@ export const es = {
   "message.react": "Reaccionar",
   "message.loadMore": "Cargar mensajes anteriores",
   "message.attach": "Adjuntar archivo",
+  "message.audioSend": "Enviar el audio",
   "message.audioRecord": "Grabar mensaje de audio",
   "message.audioRequesting": "Esperando permiso para usar el micrófono…",
   "message.audioRecording": "Grabando audio",

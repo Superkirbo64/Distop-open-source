@@ -786,6 +786,25 @@ figure {
    sobre su propio medio no suena, flota. El badajo entra un pelo después y va
    al revés, que es lo que hace que parezca que golpea. */
 .ai-bell [data-anim="dome"] { --ai-anim: ai-bell-ring 0.7s ease-in-out; transform-origin: top center; }
+
+/* ── Mensaje de audio ───────────────────────────────────────────────────
+   El micrófono del cuadro de escribir no espera al hover para animarse:
+   mientras graba tiene que decirlo solo, y en rojo, porque el estado importa
+   más que el gesto. La insignia entra estirándose desde el botón en vez de
+   aparecer de golpe — es la misma distancia, contada. */
+.vm-mic.is-recording .ai [data-anim] { animation: ai-voice-lift 1.1s ease-in-out infinite; }
+.vm-mic.is-recording { background: color-mix(in oklab, var(--danger) 14%, transparent); }
+
+.vm-badge {
+  background: color-mix(in oklab, var(--danger) 10%, var(--surface));
+  transform-origin: right center;
+  animation: vm-badge-in 0.34s cubic-bezier(0.22, 1.2, 0.36, 1);
+}
+
+@keyframes vm-badge-in {
+  from { opacity: 0; scale: 0.6 0.7; translate: 12px 0; }
+  to { opacity: 1; scale: 1; translate: 0 0; }
+}
 .ai-bell [data-anim="clapper"] { --ai-anim: ai-bell-clapper 0.7s ease-in-out 0.05s; transform-origin: top center; }
 
 @keyframes ai-bell-ring {
