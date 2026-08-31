@@ -67,11 +67,11 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
          una fila más de la lista de canales, es un panel propio. Y lleva el mismo
          banner que la tarjeta grande, para que configurar uno configure los dos:
          son las dos caras del mismo perfil, no dos ajustes distintos. */
-      /* Sin `overflow-hidden`: el menú de perfil se abre DENTRO de esta barra, y
-         recortarla lo dejaba invisible —existía y medía 304×582, pero no se
-         pintaba ni un píxel—. Para el fondo no hacía falta: un background-image
-         ya lo recorta el propio `rounded-card`. */
-      className="relative flex h-[var(--footer-h)] shrink-0 items-center gap-1 rounded-card border border-line/60 bg-raise/55 px-2 shadow-[var(--shadow)] backdrop-blur-md"
+      /* `overflow-hidden`: los botones (micro, auriculares, ajustes) tienen que
+         quedarse dentro del banner, nunca asomar sobre el fondo de la app. El
+         menú de perfil ya no se pinta aquí dentro para poder recortar esto: va
+         `floating`, que lo saca por portal a document.body. */
+      className="relative flex h-[var(--footer-h)] shrink-0 items-center gap-1 overflow-hidden rounded-card border border-line/60 bg-raise/55 px-2 shadow-[var(--shadow)] backdrop-blur-md"
     >
       {user.banner_url ? (
         <span
@@ -82,6 +82,7 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
       ) : null}
       <Menu
         flush
+        floating
         trigger={({ onClick }) => (
           <button
             onClick={onClick}
@@ -89,7 +90,10 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
           >
             <Avatar name={user.display_name} url={user.avatar_url} id={user.id} size={34} ring={ring} profile={user.profile_style} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-semibold">
+              {/* Tope duro de 15 caracteres: un nombre largo no debe ensanchar
+                  la barra ni empujar los botones de voz fuera del banner. El
+                  resto se lee en el tooltip nativo del `title`. */}
+              <span className="block max-w-[105px] truncate text-sm font-semibold" title={user.display_name}>
                 <DisplayName name={user.display_name} style={user.profile_style} accent={user.accent_color} />
               </span>
               {/* El estado escrito manda sobre el nombre de usuario: es lo que
@@ -118,6 +122,7 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
           pressed={local.muted || local.forcedMuted}
           disabled={local.forcedMuted}
           onClick={() => setMuted(!local.muted)}
+          tooltip={false}
           className={`rounded-r-[6px] ${local.muted || local.forcedMuted ? "text-danger" : ""}`}
         >
           <Microphone size={16} muted={local.muted || local.forcedMuted} />
@@ -128,7 +133,6 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
             <button
               onClick={onClick}
               aria-label={t("voice.openInputMenu")}
-              title={t("voice.openInputMenu")}
               className="-ml-1 flex h-9 w-5 items-center justify-center rounded-r-[10px] text-muted hover:bg-raise hover:text-ink"
             >
               <ChevronUp size={13} />
@@ -150,6 +154,7 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
           pressed={local.deafened || local.forcedDeafened}
           disabled={local.forcedDeafened}
           onClick={() => setDeafened(!local.deafened)}
+          tooltip={false}
           className={`rounded-r-[6px] ${local.deafened || local.forcedDeafened ? "text-danger" : ""}`}
         >
           <Headset size={16} muted={local.deafened || local.forcedDeafened} />
@@ -160,7 +165,6 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
             <button
               onClick={onClick}
               aria-label={t("voice.openOutputMenu")}
-              title={t("voice.openOutputMenu")}
               className="-ml-1 flex h-9 w-5 items-center justify-center rounded-r-[10px] text-muted hover:bg-raise hover:text-ink"
             >
               <ChevronUp size={13} />
@@ -170,7 +174,7 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
           {(close) => <AudioQuickMenu kind="output" close={close} onOpenSettings={() => onOpenSettings("voice")} />}
         </Menu>
       </div>
-      <IconButton label={t("settings.title")} onClick={() => onOpenSettings("profile")}>
+      <IconButton label={t("settings.title")} tooltip={false} onClick={() => onOpenSettings("profile")}>
         <Gear size={16} />
       </IconButton>
     </div>
@@ -188,17 +192,18 @@ function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: (tab?: "profil
   const [copiado, setCopiado] = useState(false);
   const [eligiendoEstado, setEligiendoEstado] = useState(false);
   const guardado = useRef(user?.custom_status ?? "");
+  const fraseRef = useRef(frase);
+  fraseRef.current = frase;
 
   useEffect(() => {
     setFrase(user?.custom_status ?? "");
     guardado.current = user?.custom_status ?? "";
   }, [user?.custom_status]);
 
-  if (!user) return null;
-
   async function guardar(cambios: { status?: UserStatus; custom_status?: string }) {
     // Optimista: el estado propio tiene que responder al instante o parece roto.
     const antes = user!;
+    if (cambios.custom_status !== undefined) guardado.current = cambios.custom_status;
     refreshUser({ ...antes, ...cambios } as typeof antes);
     try {
       const actualizado = await api<typeof antes>("PATCH", "/api/v1/users/me", cambios);
@@ -207,6 +212,19 @@ function ProfileMenu({ onOpenSettings, close }: { onOpenSettings: (tab?: "profil
       refreshUser(antes);
     }
   }
+
+  /* El menú se cierra al hacer clic fuera con `mousedown` (ui.tsx), y ese clic
+     puede desmontar este campo antes de que llegue su `onBlur` si el objetivo
+     no es enfocable. Sin esto, escribir y cerrar sin pasar por Tab/Enter
+     perdía el cambio en silencio. */
+  useEffect(
+    () => () => {
+      if (fraseRef.current !== guardado.current) void guardar({ custom_status: fraseRef.current.trim() });
+    },
+    [],
+  );
+
+  if (!user) return null;
 
   const etiquetas: Record<UserStatus, string> = {
     online: t("status.online"),

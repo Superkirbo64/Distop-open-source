@@ -20,6 +20,23 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Mientras la instancia esté "on", que Windows no la suspenda por
+/// inactividad (§28.1: la máquina se dormía y el server se caía con ella).
+/// Solo evita el sueño del sistema, no el apagado de pantalla.
+fn keep_awake() {
+    use windows::Win32::System::Power::{SetThreadExecutionState, ES_CONTINUOUS, ES_SYSTEM_REQUIRED};
+    unsafe {
+        let _ = SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED);
+    }
+}
+
+fn allow_sleep() {
+    use windows::Win32::System::Power::{SetThreadExecutionState, ES_CONTINUOUS};
+    unsafe {
+        let _ = SetThreadExecutionState(ES_CONTINUOUS);
+    }
+}
 // El 5000 es solo la preferencia, nunca un requisito (port.ts): si está
 // tomado, el sistema da otro libre.
 const PREFERRED_PORT: u16 = 5000;
@@ -189,6 +206,7 @@ pub fn stop(app: &AppHandle) -> HostStatus {
         let _ = child.kill();
         let _ = child.wait();
     }
+    allow_sleep();
     status(app)
 }
 
@@ -209,6 +227,7 @@ pub fn start(app: &AppHandle) -> HostStatus {
     }
 
     let fail = |message: String| -> HostStatus {
+        allow_sleep();
         let mut inner = shared.lock().unwrap();
         inner.child = None;
         inner._job = None;
@@ -302,6 +321,7 @@ pub fn start(app: &AppHandle) -> HostStatus {
                 Ok(Some(code)) => {
                     inner.child = None;
                     inner._job = None;
+                    allow_sleep();
                     if inner.state != "off" {
                         let exit = code.code().map(|c| c.to_string()).unwrap_or_else(|| "?".into());
                         set_state(
@@ -348,7 +368,9 @@ pub fn start(app: &AppHandle) -> HostStatus {
             let _ = child.kill();
         }
         inner._job = None;
+        allow_sleep();
         return set_state(app, &mut inner, "error", "La instancia no respondió a /health en 30 segundos.".into());
     }
+    keep_awake();
     set_state(app, &mut inner, "on", String::new())
 }

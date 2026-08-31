@@ -2,7 +2,7 @@
 # incógnita 1: la API multi-webview de tauri v2 vive detrás de ella.
 [package]
 name = "distop-desktop"
-version = "0.1.6"
+version = "0.1.7"
 description = "Cascarón Tauri de Distop (Proyecto B, spike)"
 edition = "2021"
 license = "AGPL-3.0"

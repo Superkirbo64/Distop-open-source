@@ -16,5 +16,5 @@ cuentes una copia que nunca hayas restaurado.
 
 Si ya administras Docker Compose, también puedes usar el `docker-compose.yml`
 del repositorio cambiando `build` por la imagen fija
-`ghcr.io/superkirbo64/distop:0.1.6`. El instalador es el camino recomendado
+`ghcr.io/superkirbo64/distop:0.1.7`. El instalador es el camino recomendado
 porque además configura `systemd`, permisos y una exposición HTTPS segura.

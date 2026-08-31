@@ -518,7 +518,7 @@ export function Sidebar({
         )}
       </Menu>
 
-      <nav aria-label={t("channel.create")} className="flex-1 overflow-y-auto px-2 py-3">
+      <nav aria-label={t("channel.create")} className="flex-1 overflow-x-hidden overflow-y-auto px-2 py-3">
         {data.channels.length === 0 ? (
           <p className="px-2 py-6 text-center text-sm text-muted">
             {t("channel.none")}

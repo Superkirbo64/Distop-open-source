@@ -4,7 +4,7 @@
  * y quien está conectada tiene un panel fijo encima de su barra de usuario con
  * lo que se usa cada dos minutos: callar, ensordecer y colgar.
  */
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Check,
   Clock3,
@@ -1582,11 +1582,7 @@ function StageLayout({
   };
 
   if (efectiva === "gallery") {
-    return (
-      <div className="grid flex-1 content-center gap-4 overflow-y-auto p-6 sm:grid-cols-2 lg:grid-cols-3">
-        {states.map(tile)}
-      </div>
-    );
+    return <StageGallery count={states.length}>{states.map(tile)}</StageGallery>;
   }
 
   /* Fijar manda sobre todo lo demás: es una decisión explícita de quien mira. */
@@ -1603,6 +1599,69 @@ function StageLayout({
           {resto.map(tile)}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * La galería, encajada de verdad.
+ *
+ * Una rejilla por breakpoints (`sm:2 lg:3`) no sabe nada de cuánta gente hay ni
+ * de la forma del hueco: con cuatro personas en un panel alto dejaba dos filas
+ * enanas y hueco de sobra debajo. Aquí se mide el contenedor y se prueban todas
+ * las columnas posibles (1..n), quedándose con la que hace las caras más
+ * grandes sin que la última fila se salga. Sale solo lo que se pide: en un
+ * hueco ancho y bajo, más columnas; en uno estrecho y alto, pilas.
+ */
+function StageGallery({ count, children }: { count: number; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const [{ cols, ancho }, setRejilla] = useState({ cols: 1, ancho: 0 });
+
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (!element || count === 0) return;
+    const GAP = 16; // gap-4
+    const medir = () => {
+      const { width, height } = element.getBoundingClientRect();
+      if (width <= 0 || height <= 0) return;
+      let mejor = 1;
+      let mayor = 0;
+      for (let c = 1; c <= count; c++) {
+        const filas = Math.ceil(count / c);
+        /* La celda la manda la más apretada de las dos medidas: el ancho de
+           columna, o la altura de fila traducida a ancho por el 16/9. */
+        const ancho = Math.min(
+          (width - GAP * (c - 1)) / c,
+          ((height - GAP * (filas - 1)) / filas) * (16 / 9),
+        );
+        if (ancho > mayor) {
+          mayor = ancho;
+          mejor = c;
+        }
+      }
+      setRejilla({ cols: mejor, ancho: mayor });
+    };
+    medir();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(medir);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [count]);
+
+  return (
+    <div ref={box} className="min-h-0 flex-1 overflow-y-auto p-6">
+      <div
+        className="grid h-full content-center justify-center gap-4"
+        style={{
+          gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+          /* Sin tope, una sola persona ocupa todo el ancho y su 16/9 se sale por
+             abajo. El tope es justo lo que cabe en alto. */
+          ...(ancho > 0 ? { maxWidth: `${Math.ceil(ancho * cols + 16 * (cols - 1))}px` } : {}),
+          marginInline: "auto",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }

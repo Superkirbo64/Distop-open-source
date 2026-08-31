@@ -95,7 +95,7 @@ export function Invite({ code, onEnter }: { code: string; onEnter: (communityId:
         />
 
         <div className="flex flex-col gap-4 p-6">
-          <div className="-mt-12 flex items-end gap-3">
+          <div className="-mt-8 flex items-end gap-3">
             <span
               className="grid h-16 w-16 place-items-center overflow-hidden rounded-[18px] border-4 border-surface text-white"
               style={{ background: preview.community.accent_color }}

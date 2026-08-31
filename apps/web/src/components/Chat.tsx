@@ -296,7 +296,7 @@ export function Chat({
           // Llegar abajo es haberlo leído: no hace falta un botón para decirlo.
           if (bottom) markRead(channel.id);
         }}
-        className="flex flex-1 flex-col overflow-y-auto px-3 py-4 sm:px-5"
+        className="flex min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-3 py-4 sm:px-5"
         role="log"
         aria-live="polite"
         aria-label={channel.name}
@@ -655,7 +655,7 @@ export function VoiceChatPanel({ onClose }: { onClose: () => void }) {
           atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
           if (atBottom.current) markRead(channel.id);
         }}
-        className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 py-3"
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-2 py-3"
       >
         {messages === undefined ? (
           <Spinner label={t("common.loading")} />

@@ -1720,12 +1720,16 @@ export function PanelResizeHandle() {
     document.querySelector<HTMLElement>(".app-grid")?.style.setProperty("--w-members-user", `${clampMembersWidth(stored)}px`);
   }, []);
 
+  // Sin `-translate-x-1/2`: centrada sobre el borde, la mitad izquierda de la
+  // tira caía sobre el panel de al lado, justo donde el chat pinta su barra de
+  // scroll nativa. Arrastrar esa barra redimensionaba la rejilla en vez de
+  // desplazar los mensajes. Entera dentro de su propio panel, no pisa al vecino.
   return (
     <div
       role="separator"
       aria-orientation="vertical"
       aria-label={t("common.resize")}
-      className="absolute top-0 left-0 z-10 hidden h-full w-1.5 -translate-x-1/2 cursor-col-resize touch-none wide:block hover:bg-accent/40"
+      className="absolute top-0 left-0 z-10 hidden h-full w-1.5 cursor-col-resize touch-none wide:block hover:bg-accent/40"
       onPointerDown={(event) => {
         const grid = event.currentTarget.closest<HTMLElement>(".app-grid");
         const pane = event.currentTarget.parentElement;

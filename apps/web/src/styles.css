@@ -4,8 +4,13 @@
    los 768px de `md:`. Entre 768 y 900 la interfaz ya era móvil pero los
    controles eran los de escritorio: desaparecía el botón de volver y no había
    forma de llegar a la barra de comunidades. En un móvil apaisado, callejón
-   sin salida. Esta variante mantiene los tres sitios en el mismo número. */
-@custom-variant wide (@media (min-width: 901px));
+   sin salida. Esta variante mantiene los tres sitios en el mismo número.
+
+   Y exige `pointer: coarse` además del ancho: un PC con ventana angosta (o en
+   vertical) tiene ratón, no dedo, y el sidebar no debe plegarse a la vista de
+   una sola columna solo porque la ventana es estrecha. El plegado de una sola
+   columna es para el teléfono de verdad, no para cualquier ventana angosta. */
+@custom-variant wide (@media not ((max-width: 900px) and (pointer: coarse)));
 
 /* ────────────────────────────────────────────────────────────────────────
    Sistema de tokens (§10.2).
@@ -87,9 +92,12 @@
   --dur-2: 0.26s;
   --dur-3: 0.42s;
 
-  /* Anchos de los paneles: variables porque son lo que se anima al plegarlos. */
+  /* Anchos de los paneles: variables porque son lo que se anima al plegarlos.
+     --w-sidebar a 18rem y no 16rem: es lo que le cabe a la barra de usuario
+     (avatar + nombre recortado a ~105px + micro + auriculares + ajustes) sin
+     que ningún botón quede recortado por el `overflow-hidden` del banner. */
   --w-rail: 4.5rem;
-  --w-sidebar: 16rem;
+  --w-sidebar: 18rem;
   --w-members: 15rem;
 
   /* Altura de la fila superior. Las cabeceras de los tres paneles la comparten
@@ -280,6 +288,10 @@
 .app-grid {
   display: grid;
   height: 100dvh;
+  /* El cascarón ocupa la ventana entera y cada panel se desplaza por su cuenta:
+     lo que se salga aquí sería una barra del documento moviendo la interfaz
+     completa, cabeceras incluidas, en vez de desplazar el chat. */
+  overflow: hidden;
   /* El ancho que el usuario haya arrastrado entra como VALOR POR DEFECTO, no
      como estilo en línea sobre --w-members: en línea ganaba a todo y plegar el
      panel dejaba de encogerlo, así que el hueco seguía ahí vacío y el chat no
@@ -338,7 +350,7 @@
 }
 
 /* Plegar es cosa del escritorio: en móvil manda data-mobile, más abajo. */
-@media (min-width: 901px) {
+@media not ((max-width: 900px) and (pointer: coarse)) {
   .app-grid[data-members="off"] {
     --w-members: 0rem;
   }
@@ -357,8 +369,10 @@
 }
 
 /* En móvil no hay cuatro columnas: el mismo hueco "main" muestra un panel u
-   otro según data-mobile, sin duplicar componentes ni montar rutas nuevas. */
-@media (max-width: 900px) {
+   otro según data-mobile, sin duplicar componentes ni montar rutas nuevas.
+   `pointer: coarse` aparta esto de una ventana de PC angosta: sin dedo de por
+   medio no es un móvil, es una ventana estrecha, y el sidebar se queda. */
+@media (max-width: 900px) and (pointer: coarse) {
   .app-grid {
     grid-template-columns: 1fr;
     grid-template-areas: "main";

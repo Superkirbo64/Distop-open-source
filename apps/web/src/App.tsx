@@ -107,12 +107,15 @@ function usePanel(name: string, fallback: boolean) {
   return [open, setOpen] as const;
 }
 
-/** El mismo punto de corte que la rejilla de styles.css, en un solo sitio. */
+/** El mismo punto de corte que la rejilla de styles.css, en un solo sitio.
+    `pointer: coarse` además del ancho: una ventana de PC angosta tiene ratón,
+    no dedo, y el sidebar no se pliega solo porque la ventana sea estrecha. */
+const MOBILE_QUERY = "(max-width: 900px) and (pointer: coarse)";
 function useIsMobile(): boolean {
-  const [mobile, setMobile] = useState(() => matchMedia("(max-width: 900px)").matches);
+  const [mobile, setMobile] = useState(() => matchMedia(MOBILE_QUERY).matches);
 
   useEffect(() => {
-    const query = matchMedia("(max-width: 900px)");
+    const query = matchMedia(MOBILE_QUERY);
     const onChange = (event: MediaQueryListEvent) => setMobile(event.matches);
     query.addEventListener("change", onChange);
     return () => query.removeEventListener("change", onChange);

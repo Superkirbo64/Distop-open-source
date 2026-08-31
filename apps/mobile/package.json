@@ -1,6 +1,6 @@
 {
   "name": "@distop/mobile",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "Cliente Android de Distop: el mismo cliente web, empaquetado con Capacitor.",
   "scripts": {

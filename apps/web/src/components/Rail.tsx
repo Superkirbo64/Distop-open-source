@@ -5,7 +5,7 @@
  */
 import { useState } from "react";
 import { useEffect, useMemo } from "react";
-import { MessageCircle } from "lucide-react";
+import { ChevronDown, MessageCircle } from "lucide-react";
 import { Bell, Compass, Cross, ServerCog } from "./icons.tsx";
 import { useStore } from "../store.ts";
 import { unreadNotices } from "../lib/notices.ts";
@@ -1069,21 +1069,25 @@ function ShareInstance() {
             </div>
           ) : mode === "tailscale" ? (
             <div className="flex flex-col gap-2 rounded-[10px] border border-line p-3">
-              <p className="text-xs font-semibold">{t("share.fixedStep", { step: String(tailscale?.step ?? 1) })}</p>
-              <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs text-muted">
-                <li>{t("share.tutorial.install")}</li>
-                <li>{t("share.tutorial.continue")}</li>
-                <li>{t("share.tutorial.authorize")}</li>
-                <li>{t("share.tutorial.finish")}</li>
-              </ol>
-              <a
-                className="text-xs font-semibold text-accent underline underline-offset-2"
-                href="https://tailscale.com/docs/features/tailscale-funnel"
-                target="_blank"
-                rel="noreferrer"
-              >
-                {t("share.officialTutorial")}
-              </a>
+              {tailscale?.state !== "active" ? (
+                <>
+                  <p className="text-xs font-semibold">{t("share.fixedStep", { step: String(tailscale?.step ?? 1) })}</p>
+                  <ol className="flex list-decimal flex-col gap-1 pl-5 text-xs text-muted">
+                    <li>{t("share.tutorial.install")}</li>
+                    <li>{t("share.tutorial.continue")}</li>
+                    <li>{t("share.tutorial.authorize")}</li>
+                    <li>{t("share.tutorial.finish")}</li>
+                  </ol>
+                  <a
+                    className="text-xs font-semibold text-accent underline underline-offset-2"
+                    href="https://tailscale.com/docs/features/tailscale-funnel"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t("share.officialTutorial")}
+                  </a>
+                </>
+              ) : null}
               <p className="text-xs text-muted">
                 {t(tailscale?.error === "TAILSCALE_FUNNEL_DOWN" ? "share.tailscale.down" : tailscaleTextKey[tailscale?.state ?? "ready"])}
               </p>
@@ -1184,6 +1188,10 @@ function CommunityPublishing({
   const communities = useStore((s) => s.communities);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<{ id: string; text: string } | null>(null);
+  /* Plegada por defecto: la lista es de comunidades, no de ajustes — los dos
+     selectores solo hacen falta cuando alguien quiere tocar la visibilidad de
+     ESA comunidad en concreto, no al mirar el listado entero. */
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   /* Sin estado local: el valor se lee de la comunidad y el servidor devuelve el
      COMMUNITY_UPDATE que refresca el store. Si el PATCH falla (sin permiso,
@@ -1238,9 +1246,15 @@ function CommunityPublishing({
                 ? { label: t("common.saving"), tone: "text-muted" }
                 : { label: t("share.status.live"), tone: "text-ok" };
 
+        const open = expanded[community.id] ?? false;
         return (
           <div key={community.id} className="flex flex-col gap-3 rounded-[10px] border border-line bg-surface p-3" role="group" aria-label={community.name}>
-            <div className="flex min-w-0 items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => setExpanded((state) => ({ ...state, [community.id]: !open }))}
+              aria-expanded={open}
+              className="flex min-w-0 items-center gap-2.5 text-left"
+            >
               {community.icon_url ? (
                 <img src={community.icon_url} alt="" className="h-8 w-8 shrink-0 rounded-[9px] object-cover" />
               ) : (
@@ -1253,42 +1267,47 @@ function CommunityPublishing({
                 <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
                 {isPending ? t("common.saving") : status.label}
               </span>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <Field label={t("community.visibility")}>
-                {(id) => (
-                  <Select
-                    id={id}
-                    compact
-                    value={community.visibility}
-                    disabled={isPending}
-                    onChange={(value) => void update(community.id, "visibility", value as CommunityVisibility)}
-                    options={[
-                      { value: "private", label: t("community.visibility.private") },
-                      { value: "unlisted", label: t("community.visibility.unlisted") },
-                      { value: "public", label: t("community.visibility.public") },
-                    ]}
-                  />
-                )}
-              </Field>
-              <Field label={t("community.joinPolicy")}>
-                {(id) => (
-                  <Select
-                    id={id}
-                    compact
-                    value={community.join_policy}
-                    disabled={isPending}
-                    onChange={(value) => void update(community.id, "join_policy", value as CommunityJoinPolicy)}
-                    options={[
-                      { value: "open", label: t("community.joinPolicy.open") },
-                      { value: "invite", label: t("community.joinPolicy.invite") },
-                      { value: "request", label: t("community.joinPolicy.request") },
-                    ]}
-                  />
-                )}
-              </Field>
-            </div>
-            {error?.id === community.id ? <ErrorNote>{error.text}</ErrorNote> : null}
+              <ChevronDown size={15} className={`shrink-0 text-muted transition-transform ${open ? "" : "-rotate-90"}`} aria-hidden />
+            </button>
+            {open ? (
+              <>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Field label={t("community.visibility")}>
+                    {(id) => (
+                      <Select
+                        id={id}
+                        compact
+                        value={community.visibility}
+                        disabled={isPending}
+                        onChange={(value) => void update(community.id, "visibility", value as CommunityVisibility)}
+                        options={[
+                          { value: "private", label: t("community.visibility.private") },
+                          { value: "unlisted", label: t("community.visibility.unlisted") },
+                          { value: "public", label: t("community.visibility.public") },
+                        ]}
+                      />
+                    )}
+                  </Field>
+                  <Field label={t("community.joinPolicy")}>
+                    {(id) => (
+                      <Select
+                        id={id}
+                        compact
+                        value={community.join_policy}
+                        disabled={isPending}
+                        onChange={(value) => void update(community.id, "join_policy", value as CommunityJoinPolicy)}
+                        options={[
+                          { value: "open", label: t("community.joinPolicy.open") },
+                          { value: "invite", label: t("community.joinPolicy.invite") },
+                          { value: "request", label: t("community.joinPolicy.request") },
+                        ]}
+                      />
+                    )}
+                  </Field>
+                </div>
+                {error?.id === community.id ? <ErrorNote>{error.text}</ErrorNote> : null}
+              </>
+            ) : null}
           </div>
         );
       })}

@@ -27,7 +27,7 @@ export function DirectSidebar({ onNavigate }: { onNavigate?: () => void }) {
   }
 
   return (
-    <aside data-pane="sidebar" className="flex min-h-0 flex-col border-r border-line bg-surface">
+    <aside data-pane="sidebar" className="flex min-h-0 flex-col rounded-br-card border-r border-line bg-surface">
       <header className="shrink-0 border-b border-line p-3">
         <button
           className="field flex h-10 min-h-10 w-full items-center gap-2 text-left text-sm text-muted"

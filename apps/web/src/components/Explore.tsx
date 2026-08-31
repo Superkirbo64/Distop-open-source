@@ -62,7 +62,7 @@ export function ExploreSidebar({
 }) {
   const t = useT();
   return (
-    <aside data-pane="sidebar" className="flex min-h-0 flex-col border-r border-line bg-surface">
+    <aside data-pane="sidebar" className="flex min-h-0 flex-col rounded-br-card border-r border-line bg-surface">
       <header className="flex h-14 shrink-0 items-center border-b border-line px-4">
         <h1 className="display text-lg font-bold">{t("explore.discover")}</h1>
       </header>
