@@ -61,6 +61,14 @@ export const en: Record<keyof typeof es, string> = {
   "auth.recoverTitle": "Accounts on this device",
   "auth.recoverHint": "These accounts have no password. Since you're on this device, you can just walk right in.",
   "auth.registrationClosed": "Registration is closed on this server.",
+  "auth.chooseProfile": "Who's signing in?",
+  "auth.chooseProfileHint": "Choose one of the profiles saved on this device.",
+  "auth.addProfile": "Add profile",
+  "auth.otherAccount": "Use another account",
+  "auth.profilePasswordTitle": "Welcome back, {name}",
+  "auth.profilePasswordHint": "This profile is protected. Enter your password to continue.",
+  "auth.createProfileHint": "Create a profile for this person on this device.",
+  "auth.backToProfiles": "Back to profiles",
 
   "setup.title": "Create your user",
   "setup.subtitle":
@@ -106,9 +114,10 @@ export const en: Record<keyof typeof es, string> = {
   "instance.offlineHelp":
     "The community lives on the host's machine. If that machine is off, there is no service until it returns.",
 
-  "connect.title": "Connect to a community",
+  "connect.title": "Your profiles on this device",
   "connect.hint":
-    "The app travels with you; each community lives on its own server. Paste the address of the community you want to join.",
+    "Distop will open this device's server and show only its registered profiles.",
+  "connect.localUnavailable": "The local server on this device could not be opened.",
   "connect.action": "Connect",
   "connect.checking": "Checking…",
   "connect.invalid": "That address is not valid. Only http or https addresses are accepted.",

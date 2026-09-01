@@ -333,11 +333,10 @@ setInterval(() => {
 /* ── respuesta ─────────────────────────────────────────────────────── */
 
 function corsHeaders(origin: string | undefined): Record<string, string> {
-  const allowed = config.corsOrigins.includes("*")
-    ? origin ?? "*"
-    : origin && config.corsOrigins.includes(origin)
-      ? origin
-      : "";
+  /* Nunca se refleja un comodín, aunque una configuración mal formada lograse
+     saltarse el filtro de config.ts. Los endpoints locales sin credenciales
+     convierten esa reflexión en lectura y toma de sesión desde cualquier web. */
+  const allowed = origin && origin !== "*" && config.corsOrigins.includes(origin) ? origin : "";
   if (!allowed) return {};
   return {
     "access-control-allow-origin": allowed,
