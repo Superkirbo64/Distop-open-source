@@ -7,7 +7,7 @@
  * (type stripping) y trae node:sqlite. La cuenta y los datos viven literalmente
  * en este ordenador: userData/instance/data (§7.2, §21).
  */
-import { app, utilityProcess, type UtilityProcess } from "electron";
+import { app, powerSaveBlocker, utilityProcess, type UtilityProcess } from "electron";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { instanceDataPath, serverPath } from "./paths";
@@ -45,7 +45,27 @@ export function onHostStatus(listener: (status: HostStatus) => void): () => void
   return () => listeners.delete(listener);
 }
 
+/* Mientras la instancia esté "on", que el sistema no se suspenda por
+   inactividad y se lleve el servidor por delante (§28.1). Es el equivalente
+   exacto del SetThreadExecutionState del cascarón Tauri: impide el sueño del
+   SISTEMA, nunca el apagado de pantalla. Va aquí, en el único sitio por el que
+   pasan TODOS los cambios de estado, y no en startHost/stopHost: un "error" o
+   una muerte inesperada del hijo también tienen que devolver el permiso de
+   dormir. */
+let awakeId = -1;
+
+function keepAwake(hosting: boolean): void {
+  if (hosting === awakeId >= 0) return;
+  if (hosting) {
+    awakeId = powerSaveBlocker.start("prevent-app-suspension");
+    return;
+  }
+  powerSaveBlocker.stop(awakeId);
+  awakeId = -1;
+}
+
 function setState(next: HostState, error = ""): void {
+  keepAwake(next === "on");
   state = next;
   lastError = error;
   const status = hostStatus();

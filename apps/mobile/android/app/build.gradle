@@ -1,5 +1,19 @@
 apply plugin: 'com.android.application'
 
+// versionCode y versionName salen de apps/mobile/package.json, que se sube en
+// cada release. Estaban clavados a 1 / "1.0", así que para Android TODOS los
+// APK publicados eran la misma versión y poner el nuevo encima del anterior no
+// era una actualización (§28.6).
+// Techo asumido: minor y patch por debajo de 100 (0.1.7 -> 107). Si algún día
+// hicieran falta más, se sube el múltiplo, nunca a la inversa: un versionCode
+// solo puede crecer, y bajarlo deja a la gente sin poder actualizar.
+def pkgVersion = new groovy.json.JsonSlurper().parseText(file('../../package.json').text).version
+def semver = pkgVersion.tokenize('.-')
+if (semver.size() < 3) {
+    throw new GradleException("Versión no semver en apps/mobile/package.json: ${pkgVersion}")
+}
+def appVersionCode = semver[0].toInteger() * 10000 + semver[1].toInteger() * 100 + semver[2].toInteger()
+
 android {
     namespace "com.distop.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,8 +21,8 @@ android {
         applicationId "com.distop.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName pkgVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

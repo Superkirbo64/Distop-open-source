@@ -155,9 +155,18 @@ npm run sync --workspace @distop/mobile    # build del cliente + cap sync
 npm run open --workspace @distop/mobile    # abre Android Studio para compilar
 ```
 
-El APK de release lo construye GitHub Actions al taguear (`v*`); se firma solo
-si existen los secretos del keystore (ver `.github/workflows/release.yml`).
-**El keystore jamás entra al repo, y perderlo = no poder actualizar el APK.**
+El APK de release lo construye GitHub Actions al taguear (`v*`), firmado con el
+keystore que llega por secretos (ver `.github/workflows/release.yml`), y se
+verifica con `apksigner` antes de subirlo: un APK sin firma lo rechaza el
+instalador de Android, así que publicarlo es publicar un fichero que nadie
+puede instalar. **El keystore jamás entra al repo, y perderlo = no poder
+actualizar el APK nunca más**: quien publica lo guarda fuera del repositorio y
+con copia de seguridad.
+
+`versionCode` y `versionName` los calcula `build.gradle` a partir de
+`apps/mobile/package.json`; no se escriben a mano. Dos APK con el mismo
+`versionCode` son la misma versión para Android, y ponerlo encima del anterior
+no cuenta como actualización.
 
 También se puede compilar en local sin Android Studio (JDK 21 + cmdline-tools):
 
@@ -166,7 +175,7 @@ $env:JAVA_HOME = "ruta\al\jdk21"; $env:ANDROID_HOME = "$env:LOCALAPPDATA\Android
 $env:ANDROID_KEYSTORE_PATH = "ruta\al\distop-release.keystore"
 $env:ANDROID_KEYSTORE_PASSWORD = "..."; $env:ANDROID_KEY_ALIAS = "distop"; $env:ANDROID_KEY_PASSWORD = "..."
 cd apps/mobile/android; .\gradlew.bat assembleRelease
-# → app/build/outputs/apk/release/app-release.apk (firmado)
+# → app/build/outputs/apk/release/app-arm64-v8a-release.apk (firmado)
 ```
 
 ## Producción con Docker
