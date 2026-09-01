@@ -1,4 +1,13 @@
 # CI (§16.1): cada push y PR pasa typecheck y la suite del node-server.
+#
+# Las acciones se fijan por SHA, no por etiqueta. `actions/checkout@v4` es una
+# etiqueta MÓVIL: quien controle ese repositorio (o le roben las credenciales)
+# la reapunta y a partir del siguiente push nuestro CI ejecuta código ajeno con
+# el token del repositorio, sin que nadie cambie una línea aquí. Un SHA no se
+# puede reapuntar. El coste —quedarse congelado en una versión con fallos de
+# seguridad— lo cubre .github/dependabot.yml, que abre PR semanales con el SHA
+# nuevo; el comentario `# vN` es lo que Dependabot lee para saber qué actualizar
+# y lo que nos deja entender el diff sin ir a buscar cada hash.
 name: ci
 
 on:
@@ -6,12 +15,21 @@ on:
     branches: [main]
   pull_request:
 
+# Sin este bloque el workflow hereda el permiso POR DEFECTO del repositorio, que
+# en repos creados antes del cambio de 2023 sigue siendo read/write sobre TODO:
+# contenido, packages, deployments... Este CI solo necesita leer el árbol, y
+# corre sobre PRs, así que el token que ve `npm ci` (y cualquier script de
+# postinstall que arrastre una dependencia) debe poder hacer lo mínimo (§22).
+# directory.yml e infra.yml ya lo declaraban; este fichero era el hueco.
+permissions:
+  contents: read
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm

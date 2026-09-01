@@ -11,7 +11,7 @@ import { extname, join, resolve, sep } from "node:path";
 import { config } from "./config.ts";
 import { countOwners, hostUserId, pruneSessions } from "./auth.ts";
 import { closeDatabase } from "./db.ts";
-import { handleRequest } from "./http.ts";
+import { handleRequest, strictTransport } from "./http.ts";
 import { closeGateway, handleUpgrade } from "./gateway.ts";
 import { setState, VERSION } from "./instance.ts";
 import { startIntegrityWork, stopIntegrityWork } from "./integrity.ts";
@@ -66,7 +66,11 @@ function documentPolicy(): string {
     "object-src 'none'",
     "frame-ancestors 'none'",
     "form-action 'self'",
-    `script-src 'self' 'wasm-unsafe-eval' ${hashes.join(" ")}`.trim(),
+    /* Sin 'wasm-unsafe-eval': el fondo de cámara —lo único que compilaba WASM—
+       se retiró, y en el cliente construido no queda ni una llamada a
+       WebAssembly, solo las cadenas de traducción que anunciaban que faltaba.
+       Vuelve a ponerse el día que vuelva la función, no antes. */
+    `script-src 'self' ${hashes.join(" ")}`.trim(),
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https:",
     "media-src 'self' data: blob: https:",
@@ -80,6 +84,14 @@ const DOCUMENT_HEADERS: Record<string, string> = {
   "content-security-policy": documentPolicy(),
   "x-frame-options": "DENY",
   "referrer-policy": "no-referrer",
+  /* Permissions-Policy manda sobre el CONTEXTO DE NAVEGACIÓN, así que solo
+     sirve de algo en el documento: en una respuesta JSON no gobierna nada.
+     Cámara y micrófono siguen abiertos para este origen —son la voz y el
+     vídeo de las salas—, pero no los hereda un iframe de terceros.
+     Geolocalización y pagos se cierran: la plataforma no los usa (§2).
+     display-capture no se nombra a propósito, o se rompería compartir
+     pantalla. */
+  "permissions-policy": "camera=(self), microphone=(self), geolocation=(), payment=()",
 };
 
 const MIME: Record<string, string> = {
@@ -130,7 +142,7 @@ function serveStatic(req: import("node:http").IncomingMessage, res: import("node
 
   res.writeHead(200, {
     "content-type": MIME[ext] ?? "application/octet-stream",
-    ...(ext === ".html" ? DOCUMENT_HEADERS : {}),
+    ...(ext === ".html" ? { ...DOCUMENT_HEADERS, ...strictTransport(req) } : {}),
     "cache-control": isAsset && ext !== ".html" ? "public, max-age=31536000, immutable" : "no-cache",
     "x-content-type-options": "nosniff",
     vary: "accept-encoding",

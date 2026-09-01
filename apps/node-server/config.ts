@@ -34,6 +34,11 @@ function list(key: string, fallback: string[]): string[] {
   return v.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
+/* Se lee aquí arriba y no dentro de `config` porque las guardas de más abajo lo
+   necesitan ANTES de construir el objeto: una comprobación que solo existe
+   dentro del literal llega tarde para decidir qué se mete en él. */
+const isProduction = process.env.NODE_ENV === "production";
+
 /**
  * Contenedores que puede producir MediaRecorder para un mensaje de voz.
  * Son parte del protocolo del chat, no de la lista personal de adjuntos del
@@ -174,6 +179,76 @@ function loadBackupPassphrase(): string {
 }
 const backupPassphrase = backupIntervalHours > 0 ? loadBackupPassphrase() : "";
 
+/**
+ * Cuántos proxies PROPIOS hay delante de la instancia (§22, §28.2).
+ *
+ * No es un ajuste de rendimiento: es lo que decide QUÉ elemento de
+ * X-Forwarded-For es la IP de verdad. Cada proxy AÑADE lo que ve a la DERECHA
+ * de la cadena que recibió, así que lo que está más a la izquierda lo pudo
+ * escribir el cliente. Contando desde el final, el salto número N es el último
+ * que puso un proxy de confianza (http.ts:clientIp).
+ *
+ * 1 es el despliegue normal: un Cloudflare Tunnel, un Nginx o un Traefik
+ * delante. 2 es Cloudflare por delante de un proxy propio.
+ *
+ * El número tiene que ser EXACTO, y equivocarse abre en los dos sentidos.
+ * Quedarse corto lee una entrada que escribió quien llama. Pasarse también,
+ * aunque cueste verlo: con 2 saltos declarados y 1 proxy real, quien llama
+ * manda «3.3.3.3», el proxy añade la suya, la cadena queda de 2 y la posición
+ * 2 desde el final es justo la que él escribió. Rellenando entradas se llega a
+ * cualquier número de saltos declarado. Cuenta las máquinas que hay delante de
+ * verdad; no pongas un número alto «por si acaso». Solo cuenta con TRUST_PROXY.
+ */
+const trustedProxyHops = int("TRUSTED_PROXY_HOPS", 1);
+if (trustedProxyHops < 1) {
+  throw new Error(`TRUSTED_PROXY_HOPS debe ser al menos 1 (el proxy que tienes delante), recibido: ${trustedProxyHops}`);
+}
+
+/**
+ * Orígenes del cliente web, con el comodín cerrado en producción (§22).
+ *
+ * "*" no significa "que cualquiera mire": http.ts refleja el Origin que llegue
+ * y le acompaña `access-control-allow-credentials: true`, así que una página
+ * cualquiera de internet podría leer respuestas de la instancia con lo que el
+ * navegador adjunte por su cuenta. Aquí el daño real es pequeño —la sesión
+ * viaja en `Authorization: Bearer`, que no se adjunta solo— pero el comentario
+ * de esta misma opción llevaba tiempo prometiendo una guarda que no existía, e
+ * `isProduction` estaba definido y sin usar en ningún sitio. Un comentario que
+ * describe una protección inexistente es peor que no tenerla: alguien lo lee,
+ * se lo cree y despliega con el comodín puesto.
+ *
+ * Se descarta el comodín y se sigue arrancando, en vez de morir aquí: hay un
+ * valor seguro al que caer —los orígenes concretos de la lista más los de las
+ * apps empaquetadas— y matar el proceso dejaría a la comunidad entera fuera,
+ * en Docker dentro de un bucle de reinicio que nadie mira, por una cabecera.
+ * Donde NO hay alternativa razonable, como la frase de las copias, este mismo
+ * fichero sí mata el arranque a propósito. El aviso sale por consola nombrando
+ * la variable: el fallo se ve, no se traga en silencio (§26).
+ */
+export function allowedCorsOrigins(configured: string[], production: boolean): string[] {
+  const comodin = configured.includes("*");
+  if (comodin && production) {
+    console.warn(
+      '[config] CORS_ORIGINS incluye "*" y NODE_ENV=production: el comodín se ignora. ' +
+        "Pon los orígenes concretos de tu cliente web separados por coma.",
+    );
+  }
+  return [
+    ...(comodin && production ? configured.filter((origin) => origin !== "*") : configured),
+    /* Las apps empaquetadas no las sirve esta instancia: traen su propio origen
+       fijo (el protocolo de la app de escritorio, el WebView de Android). Van
+       siempre, no en la variable: toda instancia debe aceptar a sus clientes
+       instalados sin que cada anfitrión tenga que saber que esto existe. */
+    "app://distop",
+    "capacitor://localhost",
+    "https://localhost",
+    /* La app Android sirve su cliente desde http://localhost (esquema http a
+       propósito: sigue siendo contexto seguro y permite hablar con instancias
+       http de la red local sin el bloqueo de contenido mixto del WebView). */
+    "http://localhost",
+  ];
+}
+
 export const config = {
   port: int("PORT", 5000),
   host: str("HOST", "0.0.0.0"),
@@ -228,6 +303,19 @@ export const config = {
    * sola IP y el primero que entra deja fuera al resto. Por eso es explícito.
    */
   trustProxy: bool("TRUST_PROXY", false),
+
+  /** Saltos de confianza para leer X-Forwarded-For; validado arriba. */
+  trustedProxyHops,
+
+  /**
+   * Qué direcciones cuentan como «el proxy» al otro lado del socket.
+   *
+   * Vacía —lo normal— acepta bucle local y redes privadas, que es donde está el
+   * proxy en todos los despliegues documentados. Ponla solo si tu proxy inverso
+   * corre en OTRA máquina con IP pública: ahí la heurística no vale, porque una
+   * IP pública al otro lado del socket es justo la señal de que no hay proxy.
+   */
+  trustedProxyIps: list("TRUSTED_PROXY_IPS", []),
 
   /**
    * Límites por IP y hora. Los de fábrica dan margen a una comunidad entrando
@@ -309,21 +397,11 @@ export const config = {
     "application/octet-stream",
   ])),
 
-  /** Orígenes del cliente web. "*" solo se acepta fuera de producción. */
-  corsOrigins: [
-    ...list("CORS_ORIGINS", ["http://localhost:5173", "http://127.0.0.1:5173"]),
-    /* Las apps empaquetadas no las sirve esta instancia: traen su propio origen
-       fijo (el protocolo de la app de escritorio, el WebView de Android). Van
-       siempre, no en la variable: toda instancia debe aceptar a sus clientes
-       instalados sin que cada anfitrión tenga que saber que esto existe. */
-    "app://distop",
-    "capacitor://localhost",
-    "https://localhost",
-    /* La app Android sirve su cliente desde http://localhost (esquema http a
-       propósito: sigue siendo contexto seguro y permite hablar con instancias
-       http de la red local sin el bloqueo de contenido mixto del WebView). */
-    "http://localhost",
-  ],
+  /** Orígenes del cliente web. "*" solo se acepta fuera de producción (arriba). */
+  corsOrigins: allowedCorsOrigins(
+    list("CORS_ORIGINS", ["http://localhost:5173", "http://127.0.0.1:5173"]),
+    isProduction,
+  ),
 
   /**
    * Servidores ICE para la voz (§9.4).
@@ -400,7 +478,7 @@ export const config = {
   telegramBotToken: str("TELEGRAM_BOT_TOKEN", ""),
 
   logLevel: str("LOG_LEVEL", "info"),
-  isProduction: process.env.NODE_ENV === "production",
+  isProduction,
 } as const;
 
 export const MAX_UPLOAD_BYTES = config.maxUploadMb * 1024 * 1024;

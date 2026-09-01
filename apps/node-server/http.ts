@@ -57,6 +57,102 @@ function llegaPorDelante(ctx: Ctx): boolean {
   return MARCAS_DE_REENVIO.some((cabecera) => ctx.req.headers[cabecera] !== undefined);
 }
 
+/**
+ * ¿Al otro lado del socket hay un proxy nuestro, o alguien de fuera?
+ *
+ * Con TRUSTED_PROXY_IPS puesta manda esa lista y nada más: es para el caso del
+ * proxy inverso en OTRA máquina, donde la heurística de abajo no sirve porque
+ * su IP es pública.
+ *
+ * Sin ella se aceptan bucle local y redes privadas, que es donde vive un proxy
+ * en todos los despliegues que documenta el proyecto: mismo host (127.0.0.1) o
+ * la red del contenedor (172.16/12 en Docker). No se acepta 169.254 —link-local
+ * no es sitio de un proxy— ni ninguna dirección pública, porque una dirección
+ * pública al otro lado del socket significa justamente que NO hay proxy delante.
+ */
+function esParDeConfianza(address: string, pares?: readonly string[]): boolean {
+  if (!address || address === "?") return false;
+  /* Node entrega las conexiones IPv4 sobre un socket IPv6 como ::ffff:1.2.3.4.
+     Sin quitar el prefijo, un 127.0.0.1 legítimo no casaba con nada. */
+  const limpia = address.startsWith("::ffff:") ? address.slice(7) : address;
+
+  if (pares && pares.length > 0) return pares.includes(limpia) || pares.includes(address);
+
+  if (limpia === "::1" || limpia === "127.0.0.1" || limpia.startsWith("127.")) return true;
+  if (limpia.startsWith("10.") || limpia.startsWith("192.168.")) return true;
+  /* 172.16.0.0/12 es de 172.16 a 172.31: comparar por prefijo de texto dejaría
+     fuera media red y dejaría dentro 172.32, que ya es pública. */
+  const cuatro = limpia.split(".");
+  if (cuatro.length === 4 && cuatro[0] === "172") {
+    const segundo = Number(cuatro[1]);
+    if (Number.isInteger(segundo) && segundo >= 16 && segundo <= 31) return true;
+  }
+  // fc00::/7 — direcciones únicas locales de IPv6, el equivalente a las de arriba.
+  const bajo = limpia.toLowerCase();
+  if (bajo.startsWith("fc") || bajo.startsWith("fd")) return true;
+  return false;
+}
+
+/**
+ * La IP de quien llama, mirando X-Forwarded-For por el extremo correcto (§22).
+ *
+ * Un proxy no REEMPLAZA la cabecera: AÑADE lo que ve a la DERECHA de la cadena
+ * que le llegó. Por eso el primer elemento no es «el cliente», es texto que
+ * escribió el cliente, y quedarse con `split(",")[0]` era regalarle la llave de
+ * todos los límites previos a la sesión —entrar, registrarse, recuperar, entrar
+ * de invitado, reclamar el anfitrión, enrolar un equipo y el global de 600/min
+ * de más abajo—: rotando la cabecera en cada petición, todos estrenaban
+ * contador y ninguno frenaba nada.
+ *
+ * Lo que no se puede falsear es el final de la cadena. Con un proxy propio
+ * delante, la última entrada la escribió ESE proxy; con dos (Cloudflare por
+ * delante de un Nginx propio), la penúltima. De ahí TRUSTED_PROXY_HOPS: se
+ * cuentan los saltos de confianza, no se adivinan.
+ *
+ * Y si la cadena trae MENOS entradas que saltos configurados, no cuadra con el
+ * despliegue que declaró quien hospeda y no vale para nada: se cae a la IP del
+ * socket. Eso mete a toda la comunidad detrás del proxy en un mismo contador
+ * —molesto, y visible— pero es fallar cerrado; caer al valor que mandó el
+ * cliente sería fallar justo hacia donde apunta el ataque.
+ */
+export function clientIp(
+  forwarded: string | string[] | undefined,
+  socketAddress: string | undefined,
+  trust: { proxy: boolean; hops: number; pares?: readonly string[] } = {
+    proxy: config.trustProxy,
+    hops: config.trustedProxyHops,
+    pares: config.trustedProxyIps,
+  },
+): string {
+  const delSocket = socketAddress || "?";
+  // Sin TRUST_PROXY la cabecera se ignora entera: es texto que escribe el cliente.
+  if (!trust.proxy) return delSocket;
+
+  /* Leer por el extremo correcto no basta: hay que comprobar que al otro lado
+     del socket esté DE VERDAD el proxy. Un proxy propio habla desde la misma
+     máquina —install-vps.sh publica --publish=127.0.0.1:5000:5000— o desde la
+     red privada del contenedor. Quien llega al puerto por su cuenta no es un
+     proxy, y docker-compose.yml publica el 5000 en 0.0.0.0 mientras su propio
+     comentario pide TRUST_PROXY=true cuando hay túnel: sin esta comprobación,
+     ese despliegue le regalaba ctx.ip a cualquiera de internet, que es
+     exactamente lo que esta función existe para impedir. Con par desconocido se
+     cae al socket: quien no pasa por el proxy se cuenta por su IP real. */
+  if (!esParDeConfianza(delSocket, trust.pares)) return delSocket;
+
+  const cadena = (Array.isArray(forwarded) ? forwarded.join(",") : forwarded ?? "")
+    .split(",")
+    .map((entrada) => entrada.trim())
+    /* Las entradas vacías se van: «1.2.3.4, , 5.6.7.8» o una coma suelta al
+       final desplazarían la cuenta desde el final y con ella la entrada que
+       acaba mandando. Contar posiciones exige que todas sean reales. */
+    .filter(Boolean);
+  if (cadena.length < trust.hops) return delSocket;
+
+  /* noUncheckedIndexedAccess: aunque el largo ya cuadre, indexar devuelve
+     T | undefined. El `??` no es adorno, es la misma caída cerrada de arriba. */
+  return cadena[cadena.length - trust.hops] ?? delSocket;
+}
+
 export function isLocalRequest(ctx: Ctx): boolean {
   if (config.trustProxy) return false;
 
@@ -253,12 +349,62 @@ function corsHeaders(origin: string | undefined): Record<string, string> {
   };
 }
 
+/* Cabeceras de las respuestas de la API (JSON). El documento y los ficheros
+   estáticos los sirve server.ts con las suyas; los adjuntos, storage.ts con una
+   CSP aún más estricta. Tres sitios, tres responsabilidades, sin pisarse. */
 const SECURITY_HEADERS: Record<string, string> = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
   "x-frame-options": "DENY",
   "cross-origin-resource-policy": "cross-origin",
+  /* Una respuesta JSON no parsea HTML ni ejecuta un script, así que aquí la
+     política correcta es la más cerrada que existe. La del DOCUMENTO no vive
+     aquí: la escribe server.ts:documentPolicy(), que calcula el hash del script
+     en línea LEYENDO el index.html al arrancar. Duplicarla en esta constante
+     significaba congelar ese hash: al tocar el script del tema, server.ts se
+     corrige solo y la copia de aquí se queda obsoleta en silencio. Una sola
+     fuente de verdad, y es la que lee el fichero. */
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
 };
+
+/**
+ * ¿La conversación ya viaja cifrada? Es lo que decide si sale HSTS (§22, §26).
+ *
+ * HSTS es la única cabecera de esta lista que el navegador RECUERDA, y durante
+ * un año: mandarla desde una instancia servida por http plano —la de casa, la
+ * del mini PC, la del móvil en la red local— deja ese equipo inalcanzable para
+ * quien la recibió, sin forma de deshacerlo desde el servidor y sin ningún
+ * mensaje que explique qué pasó. Es una decisión IRREVERSIBLE tomada en el
+ * navegador de otra persona. Por eso solo sale cuando ya se llega por HTTPS:
+ * prometer «solo https durante un año» desde una petición http es prometer un
+ * candado del que nadie tiene la llave.
+ *
+ * PUBLIC_URL con https NO vale como prueba, aunque lo parezca: es una respuesta
+ * de configuración a una pregunta que es POR PETICIÓN. El mismo proceso escucha
+ * a la vez detrás del túnel https y en http://IP-DE-LA-LAN:5000 (el host por
+ * defecto es 0.0.0.0), así que mirando PUBLIC_URL se mandaba HSTS por http
+ * plano. Que un navegador conforme lo ignore (RFC 6797 §8.1) no lo hace
+ * correcto: se decide con lo que trae la petición que se está respondiendo.
+ *
+ * `x-forwarded-proto` solo cuenta con TRUST_PROXY activo: sin proxy declarado,
+ * esa cabecera también la escribe el cliente.
+ */
+function llegaCifrada(req: IncomingMessage): boolean {
+  // Node marca `encrypted` en el socket cuando el TLS lo termina este proceso.
+  if ("encrypted" in req.socket && req.socket.encrypted === true) return true;
+  if (!config.trustProxy) return false;
+  /* Aquí sí manda el PRIMER elemento, al revés que en X-Forwarded-For: lo que
+     interesa es el salto que hizo el navegador, no el que hicieron los proxies
+     entre ellos por la red interna. Falsearlo solo se lo hace uno a sí mismo:
+     la cabecera vuelve a quien la mandó. */
+  const protocolo = String(req.headers["x-forwarded-proto"] ?? "").split(",")[0]?.trim().toLowerCase();
+  return protocolo === "https";
+}
+
+export function strictTransport(req: IncomingMessage): Record<string, string> {
+  if (!llegaCifrada(req)) return {};
+  return { "strict-transport-security": "max-age=31536000; includeSubDomains" };
+}
 
 export function send(ctx: Ctx, status: number, body: unknown, headers: Record<string, string> = {}): void {
   const payload = body === undefined ? "" : JSON.stringify(body, (_k, value) => (typeof value === "bigint" ? value.toString() : value));
@@ -266,6 +412,7 @@ export function send(ctx: Ctx, status: number, body: unknown, headers: Record<st
     "content-type": "application/json; charset=utf-8",
     "x-request-id": ctx.requestId,
     ...SECURITY_HEADERS,
+    ...strictTransport(ctx.req),
     ...corsHeaders(ctx.req.headers.origin),
     ...headers,
   });
@@ -373,9 +520,7 @@ export async function handleRequest(req: IncomingMessage, res: ServerResponse): 
   const requestId = randomUUID();
   const host = req.headers.host ?? `localhost:${config.port}`;
   const url = new URL(req.url ?? "/", `http://${host}`);
-  // Sin TRUST_PROXY, la cabecera se ignora: es texto que escribe el cliente.
-  const forwarded = config.trustProxy ? String(req.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim() : "";
-  const ip = forwarded || req.socket.remoteAddress || "?";
+  const ip = clientIp(req.headers["x-forwarded-for"], req.socket.remoteAddress);
 
   const ctx: Ctx = { req, res, url, params: {}, requestId, ip, auth: null };
 

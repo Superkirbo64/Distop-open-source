@@ -2,6 +2,12 @@
 # Instalador reproducible de Distop para Ubuntu/Debian amd64 o arm64.
 # Descárgalo junto a install-vps.sh.sha256 desde una release y verifica antes:
 #   sha256sum -c install-vps.sh.sha256 && sudo bash install-vps.sh
+#
+# --version elige la ETIQUETA que se instala, pero lo que queda escrito en el
+# servicio es el DIGEST al que apuntaba esa etiqueta en el momento de instalar
+# (§22). El porqué está junto a la resolución, más abajo: en resumen, la
+# etiqueta la puede reescribir quien controle el registro, y este servicio se
+# reinicia solo. Actualizar es volver a ejecutar este script con --version.
 set -Eeuo pipefail
 
 VERSION="0.1.7"
@@ -63,6 +69,59 @@ apt-get update
 apt-get install -y ca-certificates curl openssl
 if ! command -v docker >/dev/null 2>&1; then apt-get install -y docker.io; fi
 systemctl enable --now docker
+
+# ANCLAJE POR DIGEST. La unidad systemd de más abajo tiene Restart=always y su
+# ExecStartPre hacía `docker pull IMAGEN:ETIQUETA` en CADA arranque. Con una
+# etiqueta eso significa que, si alguien compromete GHCR y reescribe 0.1.7,
+# todas las instancias ya instaladas ejecutan código del atacante en su
+# siguiente reinicio —un corte de luz, un kernel nuevo, un systemctl restart—
+# sin que ningún administrador haya decidido nada y sin que nada lo delate. Una
+# etiqueta es un puntero móvil; un digest es el contenido.
+#
+# Se resuelve aquí una sola vez y la unidad se escribe con imagen@sha256:...
+# La instalación queda anclada a lo que el administrador aceptó hoy y reiniciar
+# deja de poder cambiar el software que corre. Actualizar vuelve a ser una
+# decisión explícita: volver a ejecutar este instalador con --version, que es
+# también lo que hace idempotente al script (misma versión, mismo digest,
+# misma unidad).
+echo "Resolviendo el digest de ${IMAGE}:${VERSION}..."
+if ! docker pull "${IMAGE}:${VERSION}"; then
+  echo "No se pudo descargar ${IMAGE}:${VERSION}. ¿Existe esa versión?" >&2
+  exit 1
+fi
+
+# RepoDigests es la referencia con content-addressing que el propio daemon
+# guardó al descargar. La alternativa era `docker buildx imagetools inspect`,
+# que da el digest sin descargar la imagen, pero buildx no viene en el paquete
+# docker.io de Debian y este script instala precisamente ese: se habría añadido
+# una dependencia que instalar para ahorrar un pull que igualmente hace falta.
+# Se filtra por prefijo con awk e index() —comparación literal— porque IMAGE
+# lleva puntos y barras, y con grep serían metacaracteres de expresión regular.
+# El `|| IMAGE_DIGEST=""` no es tolerancia al fallo: convierte cualquier error
+# de docker en "no hay digest", que es el caso que la comprobación de abajo
+# trata explícitamente en vez de morir aquí sin explicar nada por culpa de -e.
+FORMATO_DIGESTS='{{range .RepoDigests}}{{println .}}{{end}}'
+IMAGE_DIGEST="$(
+  docker image inspect --format "$FORMATO_DIGESTS" "${IMAGE}:${VERSION}" |
+    awk -v prefijo="${IMAGE}@sha256:" 'index($0, prefijo) == 1 { print; exit }'
+)" || IMAGE_DIGEST=""
+# Si no hay digest se FALLA; no se cae de vuelta a la etiqueta. Un fallback
+# reintroduciría el agujero justo en el caso raro (una imagen construida en
+# local, un registro sin content-addressing), que es además donde nadie mira.
+# Mejor no instalar que instalar sin anclar.
+[ -n "$IMAGE_DIGEST" ] || {
+  echo "No se pudo resolver el digest de ${IMAGE}:${VERSION}; se aborta antes de instalar nada." >&2
+  exit 1
+}
+# Esta cadena se escribe tal cual dentro de la unidad systemd: un espacio o un
+# salto de línea de más serían argumentos extra en ExecStart, así que se valida
+# la forma COMPLETA y no solo que contenga "sha256:". Los dos puntos entran en
+# el juego permitido porque IMAGE ya los admite (un registro con puerto, como
+# registro.local:5000/distop), y ahí no hay nada que inyectar.
+[[ "$IMAGE_DIGEST" =~ ^[A-Za-z0-9._/:-]+@sha256:[0-9a-f]{64}$ ]] || {
+  echo "Digest con formato inesperado: ${IMAGE_DIGEST}" >&2
+  exit 1
+}
 
 if $INSTALL_TAILSCALE && [ ! -x /usr/bin/tailscale ]; then
   CODENAME="$OS_CODENAME"
@@ -133,13 +192,21 @@ Requires=docker.service
 Wants=network-online.target
 
 [Service]
+# Versión legible de esta instalación: ${IMAGE}:${VERSION}
+# Debajo va el digest al que apuntaba esa etiqueta cuando se instaló. No se
+# menciona la etiqueta en ninguna orden a propósito: reiniciar no debe poder
+# traer bits distintos de los que se aceptaron. Para cambiar de versión,
+# vuelve a ejecutar install-vps.sh --version NUEVA.
 Type=simple
 Restart=always
 RestartSec=5
 TimeoutStopSec=45
 ExecStartPre=-/usr/bin/docker rm -f distop
-ExecStartPre=/usr/bin/docker pull ${IMAGE}:${VERSION}
-ExecStart=/usr/bin/docker run --name distop --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --cap-drop=ALL --security-opt=no-new-privileges --env-file=${ENV_FILE} --publish=127.0.0.1:5000:5000 --volume=/var/lib/distop:/data ${IMAGE}:${VERSION}
+# El pull se mantiene para que el servicio se recupere solo si alguien borró la
+# imagen local (docker system prune), pero ahora es por digest: solo puede
+# traer exactamente estos bytes o fallar.
+ExecStartPre=/usr/bin/docker pull ${IMAGE_DIGEST}
+ExecStart=/usr/bin/docker run --name distop --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --cap-drop=ALL --security-opt=no-new-privileges --env-file=${ENV_FILE} --publish=127.0.0.1:5000:5000 --volume=/var/lib/distop:/data ${IMAGE_DIGEST}
 ExecStop=/usr/bin/docker stop --time=30 distop
 ExecStopPost=-/usr/bin/docker rm -f distop
 
@@ -175,6 +242,14 @@ $healthy || { journalctl -u distop --no-pager -n 80 >&2; exit 1; }
 
 echo
 echo "Distop ${VERSION} está funcionando y sus datos viven en /var/lib/distop."
+# Se imprime el digest para que quede constancia de qué aceptó exactamente esta
+# instalación: es lo que permite auditarla después, y lo que hace verificable la
+# firma del proyecto sin depender de que la etiqueta siga apuntando al mismo
+# sitio. Quien quiera comprobarla (cosign no lo instala este script):
+#   cosign verify IMAGEN@sha256:...
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+#     --certificate-identity-regexp "/[.]github/workflows/release[.]yml@refs/tags/v"
+echo "Imagen anclada: ${IMAGE_DIGEST}"
 echo "Código para reclamar la instancia: ${SETUP_CODE}"
 if $INSTALL_TAILSCALE; then
   echo

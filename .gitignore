@@ -28,3 +28,9 @@ apps/mobile/release/
 # Instaladores locales (Electron + Tauri) copiados por conveniencia
 /release/
 apps/desktop-tauri/src-tauri/target/
+
+# Claves que la instancia se genera sola al arrancar: la identidad del nodo
+# (instance.key) y el secreto de sesiones (secret.key). No son de ejemplo,
+# son las de verdad de esa instalación, y hasta ahora nada impedía subirlas:
+# *.keystore no cubre *.key, aunque lo parezca al leerlo por encima.
+*.key

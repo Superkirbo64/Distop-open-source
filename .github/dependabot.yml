@@ -1,0 +1,74 @@
+# Dependabot: el contrapeso de fijar las acciones por SHA.
+#
+# Un SHA es inmutable, que es justo lo que se quería: nadie puede reapuntar
+# `actions/checkout@v4` y colarnos código en el CI. Pero inmutable también
+# significa CONGELADO: sin esto, la primera vulnerabilidad parcheada en una
+# acción se quedaría en el repositorio para siempre y habríamos cambiado un
+# riesgo de cadena de suministro por otro. Dependabot mueve los SHA en un PR
+# que se lee y se aprueba —una decisión— en vez de que se muevan solos.
+#
+# Dependabot entiende el patrón `uses: owner/repo@SHA # vN`: usa el comentario
+# para saber en qué versión estamos y reescribe SHA y comentario a la vez. Por
+# eso el `# vN` no es decorativo y no debe borrarse al editar un workflow.
+version: 2
+
+updates:
+  # 1) Las acciones de los cuatro workflows. Semanal y no diario a propósito:
+  #    este proyecto no tiene equipo de guardia (§3) y un PR al día que nadie
+  #    revisa acaba en "aprobar sin mirar", que es peor que no tenerlo.
+  - package-ecosystem: github-actions
+    # Aunque los ficheros vivan en .github/workflows, aquí siempre va "/":
+    # es la raíz del repositorio lo que Dependabot espera para este ecosistema.
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      # Un solo PR para todas: son diez acciones de tres mantenedores y diez
+      # PR semanales serían ruido. Agrupadas, el diff se revisa de una vez.
+      acciones:
+        patterns: ["*"]
+
+  # 2) npm. La raíz basta: es un monorepo de workspaces con UN package-lock.json
+  #    (apps/* y packages/*), y Dependabot resuelve el árbol completo desde ahí.
+  #    Ojo al revisar estos PR: el lock es compartido, así que se aprueban de
+  #    uno en uno y con el CI en verde, nunca en lote a ciegas.
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+    groups:
+      # Los parches y menores de desarrollo, juntos: no cambian lo que se
+      # publica a los usuarios y revisarlos por separado no aporta nada.
+      dev-menores:
+        dependency-type: development
+        update-types: ["minor", "patch"]
+    ignore:
+      # Electron y su cadena de empaquetado marcan la versión de Chromium que
+      # va dentro de la app de escritorio: subirla de major rompe el build y el
+      # auto-update, y eso se hace a mano cuando toca, no por un PR automático.
+      - dependency-name: "electron"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "electron-builder"
+        update-types: ["version-update:semver-major"]
+
+  # 3) La imagen base del servidor. apps/node-server/Dockerfile parte de
+  #    node:24-alpine, que es donde acaban corriendo TODAS las instancias
+  #    self-hosted: un CVE del sistema base ahí llega a cada VPS y cada
+  #    Raspberry (§28.5). El escaneo de Trivy en release.yml lo detecta al
+  #    publicar; esto es lo que además ofrece el arreglo.
+  - package-ecosystem: docker
+    directory: "/apps/node-server"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps"

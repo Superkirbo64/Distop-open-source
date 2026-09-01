@@ -1,3 +1,14 @@
+# Directorio global de Explorar (Deno Deploy): typecheck y tests del servicio.
+#
+# Las acciones van fijadas por SHA con el `# vN` al lado: una etiqueta de acción
+# es un puntero móvil y quien controle el repositorio de la acción puede
+# reapuntarla a código nuevo sin que este fichero cambie. Dependabot
+# (.github/dependabot.yml) es quien mueve estos SHA, en un PR revisable.
+#
+# denoland/setup-deno@v2 merece una nota aparte: ahí `v2` ni siquiera era una
+# etiqueta, era una RAMA. Una rama se reescribe con cada push del mantenedor,
+# así que era el puntero más volátil de todo el CI. Queda anclada al commit que
+# hoy publica v2.0.5.
 name: Directory
 
 on:
@@ -21,8 +32,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with:
           deno-version: v2.x
       - run: deno task check
