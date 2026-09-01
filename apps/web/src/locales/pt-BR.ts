@@ -62,6 +62,14 @@ export const ptBR: Record<keyof typeof es, string> = {
   "auth.recoverHint":
     "Estas contas não têm senha. Como você está neste equipamento, pode continuar sem digitar nada.",
   "auth.registrationClosed": "Este servidor está com o cadastro fechado.",
+  "auth.chooseProfile": "Quem vai entrar?",
+  "auth.chooseProfileHint": "Escolha um dos perfis salvos neste dispositivo.",
+  "auth.addProfile": "Adicionar perfil",
+  "auth.otherAccount": "Usar outra conta",
+  "auth.profilePasswordTitle": "Que bom ver você, {name}",
+  "auth.profilePasswordHint": "Este perfil é protegido. Digite sua senha para entrar.",
+  "auth.createProfileHint": "Crie um perfil para esta pessoa neste dispositivo.",
+  "auth.backToProfiles": "Voltar aos perfis",
 
   "setup.title": "Crie seu usuário",
   "setup.subtitle":
@@ -107,9 +115,10 @@ export const ptBR: Record<keyof typeof es, string> = {
   "instance.offlineHelp":
     "A comunidade vive na máquina de quem hospeda. Se ela estiver desligada, não há serviço até voltar.",
 
-  "connect.title": "Conectar a uma comunidade",
+  "connect.title": "Seus perfis neste dispositivo",
   "connect.hint":
-    "O aplicativo viaja com você; cada comunidade vive no seu próprio servidor. Cole o endereço da comunidade em que você quer entrar.",
+    "O Distop abrirá o servidor deste dispositivo e mostrará apenas os perfis cadastrados nele.",
+  "connect.localUnavailable": "Não foi possível abrir o servidor local deste dispositivo.",
   "connect.action": "Conectar",
   "connect.checking": "Verificando…",
   "connect.invalid": "Esse endereço não é válido. Só são aceitos endereços http ou https.",

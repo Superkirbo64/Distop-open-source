@@ -542,6 +542,7 @@ test("publicar la instancia deja de tratar a nadie como local", async () => {
   const antes = await call("GET", "/api/v1/info");
   assert.equal(antes.json.setup_requires_code, false, "sin publicar, desde el propio equipo no se pide código");
   assert.ok(Array.isArray(antes.json.recoverable), "y se ven las cuentas recuperables");
+  assert.ok(Array.isArray(antes.json.local_accounts), "y se ven los perfiles locales del selector");
 
   // Se finge una dirección pública sin levantar cloudflared: es el mismo estado.
   const { config } = await import("./config.ts");
@@ -551,6 +552,7 @@ test("publicar la instancia deja de tratar a nadie como local", async () => {
     const durante = await call("GET", "/api/v1/info");
     assert.equal(durante.json.setup_requires_code, true, "publicada, la reclamación sí pide código");
     assert.deepEqual(durante.json.recoverable, [], "y no se filtra ningún nombre de cuenta");
+    assert.deepEqual(durante.json.local_accounts, [], "ni se filtra ningún perfil del equipo");
 
     const robo = await call("POST", "/api/v1/auth/recover", { body: { username: "ada" } });
     assert.ok(!robo.json.access_token, "ni se entrega una sesión sin el código de la instancia");

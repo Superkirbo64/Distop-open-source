@@ -700,6 +700,26 @@ export const MIGRATIONS: string[] = [
     CHECK (category IN ('games','music','entertainment','science','education','students','other'));
   CREATE INDEX idx_communities_category ON communities(category) WHERE visibility = 'public';
   `,
+
+  /* Perfiles creados en el equipo anfitrión.
+
+     `users.kind = 'local'` significa cuenta normal de ESTA INSTANCIA, no cuenta
+     creada desde ESTE ORDENADOR: también lo reciben quienes se registran por
+     internet. La tabla separada conserva esa procedencia sin cambiar el sentido
+     histórico de `kind`. Al actualizar solo se puede afirmar con seguridad que
+     la cuenta anfitriona pertenece al equipo; las demás pueden añadirse al
+     registrarse o convertirse localmente a partir de esta versión. */
+  `
+  CREATE TABLE device_profiles (
+    user_id    TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  );
+
+  INSERT INTO device_profiles (user_id, created_at)
+  SELECT user_id, since
+    FROM host_authority
+   WHERE id = 1 AND user_id IS NOT NULL;
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

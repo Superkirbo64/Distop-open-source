@@ -28,6 +28,11 @@ está portado (plan y gates en [PLAN-PARIDAD.md](PLAN-PARIDAD.md)):
 | Auto-update (B3.6) | tauri-plugin-updater firmado, GitHub Releases, instala SOLO al salir (`src/updates.rs`) | ✔ compila; necesita release publicada con latest.json para el ciclo real |
 | F11, métricas, navegación (B3.7) | Script F11 en franja+cliente, `DISTOP_METRICS` con atribución WebView2, allowlist de navegación del cliente | ✔ compila |
 
+El job `tauri` de `.github/workflows/shells.yml` compila este cascarón
+(`cargo check`) en cada cambio bajo `apps/desktop-tauri/`. No publica nada:
+solo responde a "¿esto sigue compilando?" sin depender de que alguien tenga
+Rust instalado en su equipo.
+
 El puente `window.distop` expone la superficie COMPLETA de
 `apps/web/src/lib/instance.ts`: platform, host, games, apps, overlay —
 verificado por CDP. El cliente no distingue cascarón.
@@ -65,7 +70,9 @@ Tres lecciones que costaron debugging (no re-descubrirlas):
    PEDIR de verdad (getUserMedia). Verificar pidiendo, no consultando.
 
 ```powershell
-# Toolchain (ya instalado en esta máquina el 2026-08-24):
+# Toolchain. Comprueba que está: `cargo --version`. Sin Rust, este cascarón
+# no se compila en local y su código Rust se escribe a ciegas — que es como
+# el arreglo de suspensión de la 0.1.7 llegó a estar escrito sin compilar.
 winget install Rustlang.Rustup
 winget install Microsoft.VisualStudio.2022.BuildTools  # workload VCTools
 cd apps/desktop-tauri

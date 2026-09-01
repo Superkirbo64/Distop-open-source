@@ -1,0 +1,104 @@
+# Los dos cascarones que NO se compilan en el CI normal (§29.5).
+#
+# El CI de siempre corre typecheck y tests de TypeScript. El APK y el cascarón
+# Tauri no son TypeScript: el primero solo se construía al taguear —dos
+# releases salieron con un APK que Android rechazaba y nadie se enteró hasta
+# mirar los bytes— y el segundo no se construía en ningún sitio, así que su
+# código Rust se escribía sin que nada lo compilara nunca.
+#
+# Esto no publica nada. Solo responde a "¿esto sigue compilando?" antes de que
+# lo responda una release rota.
+#
+# Filtro por rutas: son dos jobs caros (un SDK de Android y una cadena de
+# compilación de Rust) para un código que se toca poco. Un cambio en el cliente
+# web no los despierta porque no cambia ni el Java ni el Rust; lo que sí los
+# despierta es tocar los cascarones, el protocolo o el script que empaqueta el
+# servidor dentro de ellos.
+name: shells
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "apps/desktop-tauri/**"
+      - "packages/protocol/**"
+      - "scripts/stage-server.mjs"
+      - "scripts/stage-protocol.mjs"
+      - ".github/workflows/shells.yml"
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "apps/desktop-tauri/**"
+      - "packages/protocol/**"
+      - "scripts/stage-server.mjs"
+      - "scripts/stage-protocol.mjs"
+      - ".github/workflows/shells.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ¿El APK se construye? Incluye el paso que faltaba: que build.gradle sea
+  # válido. La versión sale de package.json, y un error ahí solo se veía al
+  # publicar.
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/stage-server.mjs --mobile apps/web/dist/nodejs
+      - run: npx cap sync android
+        working-directory: apps/mobile
+      # Debug y no release: aquí solo se pregunta si compila. Firmar es cosa de
+      # release.yml, que es el único que tiene el keystore.
+      - run: ./gradlew assembleDebug
+        working-directory: apps/mobile/android
+      # El APK de depuración se firma solo, con la clave que gradle se genera en
+      # el runner: no hace falta keystore ni secreto ninguno para instalarlo y
+      # probarlo en un móvil. Lo que NO sirve es para publicar ni para
+      # actualizar encima de una release —esa clave cambia en cada máquina—,
+      # y por eso release.yml sigue exigiendo el keystore de verdad.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: distop-apk-debug
+          path: apps/mobile/android/app/build/outputs/apk/debug/*arm64*.apk
+          if-no-files-found: error
+
+      - name: La versión del APK no puede ser la de fábrica
+        run: |
+          APK=$(ls apps/mobile/android/app/build/outputs/apk/debug/*arm64*.apk | head -n 1)
+          VERSION=$(node -p "require('./apps/mobile/package.json').version")
+          # aapt del build-tools instalado por el propio Gradle.
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt2 | sort | tail -n 1)
+          "$AAPT" dump badging "$APK" | grep -q "versionName='$VERSION'"
+
+  # ¿El cascarón Tauri sigue compilando? windows-latest porque es código de
+  # Windows (webview2-com, SetThreadExecutionState): en Linux ni existe. La
+  # imagen del runner ya trae Rust, así que no hay que instalar cadena alguna.
+  tauri:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # Lo mismo que hace beforeBuildCommand: sin el sidecar de Node ni el
+      # cliente en staging/, la codegen de Tauri no tiene qué empaquetar.
+      - run: node scripts/stage-server.mjs
+        working-directory: apps/desktop-tauri
+      - run: cargo check --locked --all-targets
+        working-directory: apps/desktop-tauri/src-tauri

@@ -61,6 +61,14 @@ export const es = {
   "auth.recoverHint":
     "Estas cuentas no tienen contraseña. Como entras desde este equipo, puedes continuar sin escribir nada.",
   "auth.registrationClosed": "Este servidor tiene el registro cerrado.",
+  "auth.chooseProfile": "¿Quién va a entrar?",
+  "auth.chooseProfileHint": "Elige uno de los perfiles guardados en este equipo.",
+  "auth.addProfile": "Añadir perfil",
+  "auth.otherAccount": "Usar otra cuenta",
+  "auth.profilePasswordTitle": "Hola de nuevo, {name}",
+  "auth.profilePasswordHint": "Este perfil está protegido. Escribe tu contraseña para entrar.",
+  "auth.createProfileHint": "Crea un perfil para esta persona en este equipo.",
+  "auth.backToProfiles": "Volver a los perfiles",
 
   "setup.title": "Crea tu usuario",
   "setup.subtitle":
@@ -106,9 +114,10 @@ export const es = {
   "instance.offlineHelp":
     "La comunidad vive en el equipo de quien la hospeda. Si ese equipo está apagado, no hay servicio hasta que vuelva.",
 
-  "connect.title": "Conectar a una comunidad",
+  "connect.title": "Tus perfiles en este equipo",
   "connect.hint":
-    "La aplicación viaja contigo; las comunidades viven cada una en su servidor. Pega la dirección de la comunidad a la que quieres entrar.",
+    "Distop abrirá el servidor de este dispositivo y mostrará únicamente sus perfiles registrados.",
+  "connect.localUnavailable": "No se pudo abrir el servidor local de este dispositivo.",
   "connect.action": "Conectar",
   "connect.checking": "Comprobando…",
   "connect.invalid": "Esa dirección no es válida. Solo se admiten direcciones http o https.",
