@@ -131,8 +131,11 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
         >
           <Microphone size={16} muted={local.muted || local.forcedMuted} />
         </IconButton>
+        {/* `floating` como el menú de perfil: la barra recorta con overflow-hidden
+            y un menú pintado dentro quedaba tapado por el propio banner. */}
         <Menu
           flush
+          floating
           trigger={({ onClick }) => (
             <button
               onClick={onClick}
@@ -165,6 +168,7 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
         </IconButton>
         <Menu
           flush
+          floating
           trigger={({ onClick }) => (
             <button
               onClick={onClick}
