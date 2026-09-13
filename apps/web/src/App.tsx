@@ -158,10 +158,13 @@ export function App() {
   const [explore, setExplore] = useState(false);
   const [hosting, setHosting] = useState(false);
 
-  /* Una comunidad vive en un servidor. Desde la app sin servidor elegido se
-     enciende el de este PC y se entra en él; el formulario se abre al volver. */
+  /* Una comunidad vive en un servidor, y en el PC es SIEMPRE el suyo: aunque
+     estés conectado a otro (una VPS, el PC de un amigo) se enciende el de este
+     equipo y se entra en él; el formulario se abre al volver. Nunca se crea en
+     la comunidad a la que estabas conectado. */
   async function startCreate(): Promise<void> {
-    if (!appWithoutInstance()) {
+    const enSuServidor = window.distop ? isLocalInstance(instanceBase) : !appWithoutInstance();
+    if (enSuServidor) {
       setCreating(true);
       return;
     }
