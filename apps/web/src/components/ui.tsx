@@ -48,7 +48,11 @@ export function useErrorText() {
   const t = useT();
   return useCallback(
     (err: unknown): string => {
-      if (!(err instanceof RequestError)) return t("error.generic");
+      /* Lo que no es una respuesta de la instancia —un fetch que ni sale, un
+         directorio caído— lleva su detalle a la vista: sin él, "algo falló"
+         no se podía diagnosticar desde el teléfono. */
+      if (!(err instanceof RequestError))
+        return err instanceof Error && err.message ? `${t("error.generic")} (${err.name}: ${err.message})` : t("error.generic");
       if (err.code === "NETWORK") return t("error.network");
       if (err.code === "INSTANCE_UNREACHABLE")
         return t("error.unreachable", { status: err.status });
