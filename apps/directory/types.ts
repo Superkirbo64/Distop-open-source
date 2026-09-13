@@ -75,6 +75,10 @@ export interface StoredListing extends PublicCommunityProfile {
 /** Un solo registro renovable por instancia. Mantener las comunidades juntas
  * hace que una renovación diaria consuma una única escritura de Deno KV. */
 export interface StoredManifest {
+  /** Dirección que demostró servir este linaje. Ausente en fichas anteriores. */
+  origin?: string;
+  /** Reloj del directorio al registrar: decide quién se queda una dirección. */
+  registered_at?: number;
   identity: {
     instance_id: string;
     lineage_id: string;

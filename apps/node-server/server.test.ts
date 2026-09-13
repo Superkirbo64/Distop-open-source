@@ -578,8 +578,27 @@ test("los clientes empaquetados pasan el CORS y un origen ajeno no", async () =>
     assert.equal(res.headers.get("access-control-allow-origin"), origin, `${origin} debe estar admitido`);
   }
 
-  const ajeno = await fetch(`${base}/api/v1/info`, { headers: { origin: "https://ajeno.example" } });
+  const ajeno = await fetch(`${base}/api/v1/communities`, { headers: { origin: "https://ajeno.example" } });
   assert.equal(ajeno.headers.get("access-control-allow-origin"), null, "una web cualquiera no lee la API desde el navegador");
+  const preflightAjeno = await fetch(`${base}/api/v1/communities`, {
+    method: "OPTIONS",
+    headers: { origin: "https://ajeno.example", "access-control-request-method": "GET" },
+  });
+  assert.equal(preflightAjeno.headers.get("access-control-allow-origin"), null, "ni siquiera el preflight de una ruta privada");
+
+  // La tarjeta pública (/health, /api/v1/info) solo se abre a cualquier web
+  // cuando la petición va a la dirección pública de la instancia; la regla está
+  // probada en security-headers.test.ts. Aquí no hay dirección pública: sigue
+  // cerrada, también si alguien añade cabeceras de reenvío.
+  for (const ruta of ["/health", "/api/v1/info"]) {
+    for (const headers of [
+      { origin: "https://ajeno.example" },
+      { origin: "https://ajeno.example", "x-forwarded-host": "comunidad.example", "x-forwarded-for": "203.0.113.7" },
+    ]) {
+      const tarjeta = await fetch(`${base}${ruta}`, { headers });
+      assert.equal(tarjeta.headers.get("access-control-allow-origin"), null, `${ruta} sin dirección pública no la lee nadie de fuera`);
+    }
+  }
 
   // El preflight tiene que admitir TODOS los verbos de la API. PUT faltó una
   // vez y solo se notó cross-origin: same-origin no hace preflight.
@@ -829,4 +848,49 @@ test("la identidad del teléfono entra por una comunidad pública sin invitació
 
   const vuelve = await call("POST", "/api/v1/auth/portable", { body: identidad });
   assert.equal(vuelve.status, 200, "la segunda vez la identidad se reconoce sin puerta");
+});
+
+test("con dirección pública, la tarjeta se abre a cualquier web solo en su Host", async () => {
+  /* Integración de tarjetaPublicaAbierta con cabecerasCors y stableOrigin: la
+     regla pura está en security-headers.test.ts; aquí se comprueba que el
+     servidor la usa de verdad. fetch no deja fijar Host: se usa node:http. */
+  const { config } = await import("./config.ts");
+  const { fixedPublicUrl, setFixedPublicUrl } = await import("./tunnel.ts");
+  const { request } = await import("node:http");
+  const pedir = (ruta: string, headers: Record<string, string>) =>
+    new Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: any }>((resolve, reject) => {
+      const req = request(`${base}${ruta}`, { headers }, (res) => {
+        let texto = "";
+        res.setEncoding("utf8");
+        res.on("data", (trozo) => (texto += trozo));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body: texto ? JSON.parse(texto) : null }));
+      });
+      req.on("error", reject);
+      req.end();
+    });
+
+  const originalUrl = config.publicUrl;
+  const originalFija = fixedPublicUrl();
+  (config as { publicUrl: string }).publicUrl = "https://public.example";
+  setFixedPublicUrl("");
+  try {
+    for (const ruta of ["/health", "/api/v1/info"]) {
+      const publica = await pedir(ruta, { host: "public.example", origin: "https://ajeno.example" });
+      assert.equal(publica.status, 200, `${ruta} responde de verdad`);
+      assert.equal(typeof publica.body?.version, "string", `${ruta} trae la tarjeta, no un error`);
+      assert.equal(publica.headers["access-control-allow-origin"], "*", `${ruta} por la dirección pública se lee desde cualquier web`);
+      assert.equal(publica.headers["access-control-allow-credentials"], undefined, `${ruta} nunca con credenciales`);
+      const local = await pedir(ruta, { host: "localhost", origin: "https://ajeno.example" });
+      assert.equal(local.status, 200, `${ruta} por localhost también responde`);
+      assert.equal(local.headers["access-control-allow-origin"], undefined, `${ruta} por localhost sigue cerrada`);
+    }
+    const info = await pedir("/api/v1/info", { host: "public.example", origin: "https://ajeno.example" });
+    assert.equal(info.body?.public_url, "https://public.example", "la tarjeta abierta es la de esa dirección");
+    const privada = await pedir("/api/v1/communities", { host: "public.example", origin: "https://ajeno.example" });
+    assert.equal(privada.status, 401, "la ruta privada pide sesión");
+    assert.equal(privada.headers["access-control-allow-origin"], undefined, "la dirección pública no abre rutas privadas");
+  } finally {
+    (config as { publicUrl: string }).publicUrl = originalUrl;
+    setFixedPublicUrl(originalFija);
+  }
 });

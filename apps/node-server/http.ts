@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import type { ApiError } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
+import { stableOrigin } from "./tunnel.ts";
 import type { AuthContext } from "./auth.ts";
 import { authenticate } from "./auth.ts";
 import { beginRequest, freezeReason, writesAccepted, type WriteFreeze } from "./lifecycle.ts";
@@ -405,6 +406,66 @@ export function strictTransport(req: IncomingMessage): Record<string, string> {
   return { "strict-transport-security": "max-age=31536000; includeSubDomains" };
 }
 
+/* La tarjeta pública de la instancia. Explorar la lee desde la web de quien
+   mira para comprobar a dónde va a entrar, y ese origen no está (ni puede
+   estar) en la lista estricta: sin esto el navegador tiraba la respuesta y
+   salía "No se pudo verificar la instancia". No lleva sesión ni datos privados,
+   así que va con `*` y SIN credenciales. Un origen de la lista sigue igual. */
+const TARJETA_PUBLICA = new Set(["/health", "/api/v1/health", "/api/v1/info"]);
+
+/**
+ * ¿Se abre la tarjeta a cualquier web? Solo si la petición va dirigida a la
+ * dirección pública de la instancia. El navegador no puede falsificar Host, así
+ * que una web que apunte a localhost o a una IP de la LAN de quien hospeda nunca
+ * lo consigue, aunque haya PUBLIC_URL o proxy. X-Forwarded-Host solo cuenta si
+ * el socket es un proxy de confianza ya validado, nunca por venir la cabecera.
+ */
+export function tarjetaPublicaAbierta(opts: {
+  host: string | undefined;
+  forwardedHost: string | string[] | undefined;
+  socket: string | undefined;
+  publicUrl: string;
+  trustProxy: boolean;
+  trustedProxies?: readonly string[];
+}): boolean {
+  if (!opts.publicUrl) return false;
+  let publica: string;
+  try {
+    publica = new URL(opts.publicUrl).host.toLowerCase();
+  } catch {
+    return false;
+  }
+  const reenviado = Array.isArray(opts.forwardedHost) ? opts.forwardedHost[0] : opts.forwardedHost;
+  const efectivo =
+    opts.trustProxy && reenviado && esParDeConfianza(opts.socket ?? "", opts.trustedProxies)
+      ? reenviado.split(",")[0]!.trim()
+      : opts.host;
+  return (efectivo ?? "").toLowerCase() === publica;
+}
+
+function cabecerasCors(ctx: Ctx): Record<string, string> {
+  const origin = ctx.req.headers.origin;
+  const estricta = corsHeaders(origin);
+  const method = ctx.req.method ?? "GET";
+  if (Object.keys(estricta).length > 0 || !origin || !TARJETA_PUBLICA.has(ctx.url.pathname)) return estricta;
+  if (method !== "GET" && method !== "HEAD" && method !== "OPTIONS") return estricta;
+  const abierta = tarjetaPublicaAbierta({
+    host: ctx.req.headers.host,
+    forwardedHost: ctx.req.headers["x-forwarded-host"],
+    socket: ctx.req.socket.remoteAddress,
+    publicUrl: stableOrigin(),
+    trustProxy: config.trustProxy,
+    trustedProxies: config.trustedProxyIps,
+  });
+  if (!abierta) return estricta;
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, HEAD, OPTIONS",
+    "access-control-max-age": "86400",
+    vary: "origin",
+  };
+}
+
 export function send(ctx: Ctx, status: number, body: unknown, headers: Record<string, string> = {}): void {
   const payload = body === undefined ? "" : JSON.stringify(body, (_k, value) => (typeof value === "bigint" ? value.toString() : value));
   ctx.res.writeHead(status, {
@@ -412,7 +473,7 @@ export function send(ctx: Ctx, status: number, body: unknown, headers: Record<st
     "x-request-id": ctx.requestId,
     ...SECURITY_HEADERS,
     ...strictTransport(ctx.req),
-    ...corsHeaders(ctx.req.headers.origin),
+    ...cabecerasCors(ctx),
     ...headers,
   });
   ctx.res.end(payload);

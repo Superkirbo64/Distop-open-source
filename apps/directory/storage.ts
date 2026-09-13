@@ -21,6 +21,8 @@ export interface DirectoryStorage {
   set<T>(key: KvKey, value: T, options?: { expireIn?: number }): Promise<void>;
   setIfVersion<T>(key: KvKey, version: string | null, value: T, options?: { expireIn?: number }): Promise<boolean>;
   delete(key: KvKey): Promise<void>;
+  /** Borra solo si nadie la cambió desde que se leyó esa versión. */
+  deleteIfVersion(key: KvKey, version: string): Promise<boolean>;
   list<T>(prefix: KvKey, options?: { cursor?: string; limit?: number }): Promise<ListPage<T>>;
 }
 
@@ -46,6 +48,14 @@ export class DenoKvStorage implements DirectoryStorage {
 
   async delete(key: KvKey): Promise<void> {
     await this.kv.delete(key as Deno.KvKey);
+  }
+
+  async deleteIfVersion(key: KvKey, version: string): Promise<boolean> {
+    const result = await this.kv.atomic()
+      .check({ key: key as Deno.KvKey, versionstamp: version })
+      .delete(key as Deno.KvKey)
+      .commit();
+    return result.ok;
   }
 
   async list<T>(prefix: KvKey, options: { cursor?: string; limit?: number } = {}): Promise<ListPage<T>> {
@@ -94,6 +104,13 @@ export class MemoryStorage implements DirectoryStorage {
 
   async delete(key: KvKey): Promise<void> {
     this.data.delete(this.id(key));
+  }
+
+  async deleteIfVersion(key: KvKey, version: string): Promise<boolean> {
+    const current = await this.get(key);
+    if (current.version !== version) return false;
+    await this.delete(key);
+    return true;
   }
 
   async list<T>(prefix: KvKey, options: { cursor?: string; limit?: number } = {}): Promise<ListPage<T>> {

@@ -3,7 +3,7 @@ import { canonicalJson } from "@distop/protocol";
 import { config } from "./config.ts";
 import { db, meta, setMeta, INSTANCE_ID } from "./db.ts";
 import { LINEAGE_ID, instanceEpoch, instanceFingerprint, instancePublicKey, instanceRole, signAsInstance } from "./identity.ts";
-import { fixedPublicUrl } from "./tunnel.ts";
+import { stableOrigin } from "./tunnel.ts";
 
 const DAY = 24 * 60 * 60_000;
 
@@ -33,18 +33,6 @@ const RETRY = 60 * 60_000;
 interface Challenge {
   nonce: string;
   expires_at: number;
-}
-
-function stableOrigin(): string {
-  const raw = fixedPublicUrl() || config.publicUrl;
-  if (!raw) return "";
-  try {
-    const url = new URL(raw);
-    if (url.protocol !== "https:" || url.hostname.endsWith(".trycloudflare.com")) return "";
-    return url.origin;
-  } catch {
-    return "";
-  }
 }
 
 function safeAssetUrl(value: unknown, origin: string): string | null {

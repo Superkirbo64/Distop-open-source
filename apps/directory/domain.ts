@@ -226,6 +226,8 @@ export class DirectoryService {
         issued_at: manifest.payload.issued_at,
         expires_at: manifest.payload.expires_at,
       })),
+      origin: manifest.payload.origin,
+      registered_at: now,
       issued_at: manifest.payload.issued_at,
       expires_at: manifest.payload.expires_at,
     };
@@ -233,7 +235,68 @@ export class DirectoryService {
       expireIn: Math.max(1, manifest.payload.expires_at - now) + RETENTION,
     });
     if (!saved) throw new Error("CONCURRENT_RENEWAL");
+    /* El manifiesto ya está guardado: que falle la limpieza no convierte el
+       registro en error. Si lo hiciera, el reintento con el mismo issued_at
+       caería en STALE_MANIFEST. Lo que quede lo limpia el siguiente registro. */
+    try {
+      await this.settleOrigin(manifest.payload.origin);
+    } catch (error) {
+      console.warn(`[directorio] no se pudo limpiar ${manifest.payload.origin}: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return { published: manifest.payload.communities.length, expires_at: manifest.payload.expires_at };
+  }
+
+  /**
+   * Una dirección sirve un solo linaje. verifyOrigin demostró quién responde ahí
+   * al registrar, así que las fichas de otros linajes en esa dirección son de una
+   * instancia que ya no está (reinstalada, borrada): sin esto seguían en
+   * Explorar hasta que caducara su lease de 24 h.
+   *
+   * Gana la ficha registrada más tarde según el reloj del DIRECTORIO (el de las
+   * instancias no se compara entre máquinas); empate, el lineage_id menor. Se
+   * borran todas las perdedoras que se ven, la propia incluida. Nadie borra
+   * nunca algo más nuevo que lo que ve como ganadora, así que la ganadora global
+   * sobrevive siempre, y quien guarda el último ve a todas: queda exactamente
+   * una, nunca cero. deleteIfVersion no borra una ficha renovada mientras tanto.
+   *
+   * Si Deno KV falla a mitad, puede quedar un duplicado temporal (lo limpia el
+   * siguiente registro en esa dirección), pero nunca una respuesta fallida
+   * después de guardar ni cero fichas por una carrera normal.
+   */
+  private async settleOrigin(origin: string): Promise<void> {
+    const rivals: StoredManifest[] = [];
+    let cursor: string | undefined;
+    // ponytail: recorre todas las fichas; un índice por dirección si el directorio crece mucho.
+    do {
+      const page = await this.storage.list<StoredManifest>(["manifest"], { cursor, limit: 100 });
+      for (const bundle of page.values) {
+        if ((bundle.origin ?? bundle.communities[0]?.origin) === origin) rivals.push(bundle);
+      }
+      cursor = page.cursor || undefined;
+    } while (cursor);
+
+    const rank = (bundle: StoredManifest) => bundle.registered_at ?? 0;
+    const winner = rivals.reduce<StoredManifest | null>((best, bundle) => {
+      if (!best) return bundle;
+      if (rank(bundle) !== rank(best)) return rank(bundle) > rank(best) ? bundle : best;
+      return bundle.identity.lineage_id < best.identity.lineage_id ? bundle : best;
+    }, null);
+
+    for (const bundle of rivals) {
+      if (!winner || bundle.identity.lineage_id === winner.identity.lineage_id) continue;
+      const key = ["manifest", bundle.identity.lineage_id] as const;
+      /* Cada perdedora por su cuenta: un borrado que falla no impide limpiar
+         las demás. */
+      try {
+        const current = await this.storage.get<StoredManifest>(key);
+        /* Solo si sigue siendo la misma ficha: si ese linaje se renovó o se mudó
+           entre la lista y aquí, la decisión ya no vale y no se toca. */
+        if (!current.version || current.value?.registered_at !== bundle.registered_at) continue;
+        await this.storage.deleteIfVersion(key, current.version);
+      } catch (error) {
+        console.warn(`[directorio] no se pudo retirar ${bundle.identity.lineage_id}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
 
   async explore(options: { language?: string; tag?: string; cursor?: string; limit?: number } = {}): Promise<{ communities: StoredListing[]; cursor: string }> {

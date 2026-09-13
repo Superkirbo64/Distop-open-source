@@ -62,6 +62,30 @@ export function publicUrl(): string {
   return fixedPublicUrl() || (state.status === "on" && state.url ? state.url : config.publicUrl);
 }
 
+/**
+ * Una dirección que se puede anunciar: HTTPS y nunca un túnel rápido, que
+ * cambia en cada arranque. Devuelve su origin, o "" si no vale.
+ */
+export function publishableOrigin(raw: string): string {
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.hostname.endsWith(".trycloudflare.com")) return "";
+    return url.origin;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * La dirección estable de la instancia: la fijada por quien hospeda o
+ * PUBLIC_URL, nunca el túnel vivo sin fijar. Es lo que se anuncia en Explorar
+ * y lo único para lo que se abre la tarjeta pública al resto de webs.
+ */
+export function stableOrigin(): string {
+  return publishableOrigin(fixedPublicUrl() || config.publicUrl);
+}
+
 /* ── conseguir cloudflared sin pedirle nada a nadie ─────────────────── */
 
 const BIN_DIR = join(dirname(resolve(config.databasePath)), "bin");
