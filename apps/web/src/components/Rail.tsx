@@ -15,6 +15,7 @@ import { api } from "../lib/api.ts";
 import { CLOUD_GUIDE_URL, RASPBERRY_GUIDE_URL, VPS_INSTALL_GUIDE_URL, detectLane, hasStablePublicAddress } from "../lib/publish.ts";
 import { describeSchedule, sortBackupFiles, type BackupJob, type BackupsView } from "../lib/backups.ts";
 import {
+  canCreateCommunity,
   clientOrigin,
   connectToInstance,
   forgetKnownCommunity,
@@ -24,7 +25,6 @@ import {
   normalizeInstanceUrl,
   parseInvite,
   appWithoutInstance,
-  canCreateCommunity,
   rememberCommunities,
   setActiveInstance,
   storePendingCommunity,
