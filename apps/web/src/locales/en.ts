@@ -47,7 +47,7 @@ export const en: Record<keyof typeof es, string> = {
   "status.noCommunity": "No community yet",
   "phone.createTitle": "Create your user",
   "phone.createHint":
-    "Choose how others will see you. It's saved on this phone and goes with you to every community you join.",
+    "Choose how others will see you. It's saved on this device and goes with you to every community you join.",
   "phone.createAction": "Enter",
   "auth.login": "Sign in",
   "auth.register": "Create account",
@@ -123,9 +123,6 @@ export const en: Record<keyof typeof es, string> = {
   "instance.offlineHelp":
     "The community lives on the host's machine. If that machine is off, there is no service until it returns.",
 
-  "connect.title": "Your profiles on this device",
-  "connect.hint":
-    "Distop will open this device's server and show only its registered profiles.",
   "connect.localUnavailable": "The local server on this device could not be opened.",
   "connect.invalid": "That address is not valid. Only http or https addresses are accepted.",
   "connect.unreachable":
@@ -133,7 +130,6 @@ export const en: Record<keyof typeof es, string> = {
   "connect.notInstance": "Something answers at that address, but it is not a Distop server.",
   "connect.hostHint":
     "Your community runs on this computer, inside the app: your data stays with you. It will be available while this machine is on, and speed depends on your connection.",
-  "connect.hostEnter": "Enter my community",
   "connect.preparing": "Starting your server…",
   "connect.preparingHint":
     "The first run creates your database on this machine. Your community and your data live here, with you.",

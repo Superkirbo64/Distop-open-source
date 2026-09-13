@@ -152,9 +152,32 @@ export function isPackaged(): boolean {
   return Boolean(window.distop) || Boolean(window.Capacitor?.isNativePlatform?.());
 }
 
-/** El teléfono antes de su primera comunidad: no hospeda ni tiene a quién preguntar. */
-export function phoneWithoutInstance(): boolean {
-  return isPackaged() && !window.distop && !instanceBase;
+/** La app instalada (PC o teléfono) sin servidor elegido: el usuario vive en el dispositivo. */
+export function appWithoutInstance(): boolean {
+  return isPackaged() && !instanceBase;
+}
+
+const PENDING_CREATE = "distop.pendingCreate";
+
+/**
+ * "Crear comunidad" en el PC: una comunidad vive en un servidor, y el de este
+ * equipo se enciende y se hace el activo (con recarga). Al volver, App abre el
+ * formulario. Devuelve el detalle del fallo, o null si ya va camino del servidor.
+ */
+export async function hostHere(): Promise<string | null> {
+  const status = await window.distop!.host.start();
+  if (status.state !== "on" || !status.url) return status.error || status.log.slice(-3).join("\n");
+  localStorage.setItem(PENDING_CREATE, "1");
+  const result = await connectToInstance(status.url);
+  if (result === "ok") return null;
+  localStorage.removeItem(PENDING_CREATE);
+  return result;
+}
+
+export function takePendingCreate(): boolean {
+  const pending = localStorage.getItem(PENDING_CREATE) === "1";
+  localStorage.removeItem(PENDING_CREATE);
+  return pending;
 }
 
 /** El directorio central por defecto, el mismo que usa el servidor (DIRECTORY_URL en config.ts). */
@@ -295,20 +318,6 @@ export function peekPendingCommunity(): PendingCommunity | null {
 
 export function clearPendingCommunity(): void {
   sessionStorage.removeItem(PENDING_COMMUNITY);
-}
-
-/* "Cambiar de instancia" pone esta marca antes de recargar: sin ella, la app
-   de escritorio volvería a hospedar y conectar sola, y sería una trampa. */
-const MANUAL_FLAG = "distop.chooseInstance";
-
-export function requestManualConnect(): void {
-  sessionStorage.setItem(MANUAL_FLAG, "1");
-}
-
-export function takeManualConnect(): boolean {
-  const flagged = sessionStorage.getItem(MANUAL_FLAG) === "1";
-  if (flagged) sessionStorage.removeItem(MANUAL_FLAG);
-  return flagged;
 }
 
 /**

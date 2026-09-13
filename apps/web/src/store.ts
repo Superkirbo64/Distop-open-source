@@ -39,7 +39,7 @@ import { addNotice, loadNotices, saveNotices, type Notice, type NoticeKind } fro
 import { configureVoice, currentChannel, handleSignal, leaveVoice, rejectVoiceJoin, resumeVoice, setSoundError, setVideoMode, setVoiceMode, syncPeers } from "./lib/voice.ts";
 import { playClip } from "./lib/relay.ts";
 import { onRecordingUpdate } from "./lib/record.ts";
-import { CENTRAL_DIRECTORY_URL, forgetCommunity, instanceBase, peekPendingInvite, peekPendingPublicJoin, phoneWithoutInstance, rememberCommunities, setDesktopAvailabilityStatus, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
+import { CENTRAL_DIRECTORY_URL, appWithoutInstance, clearPendingPublicJoin, forgetCommunity, instanceBase, isLocalInstance, isPackaged, peekPendingInvite, peekPendingPublicJoin, rememberCommunities, setActiveInstance, setDesktopAvailabilityStatus, takePendingInvite, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
 import { localUser, portableAuthPayload, syncPortableMedia } from "./lib/portable.ts";
 
 export type ThemeChoice = "light" | "dark" | "system";
@@ -443,9 +443,9 @@ export const useStore = create<State>()((set, get) => ({
     // El idioma detectado puede necesitar su chunk; no se espera a la descarga.
     ensureLocale(get().prefs.locale);
 
-    /* El teléfono sin comunidad todavía no tiene servidor al que preguntar: el
-       usuario vive en el dispositivo y Explorar tira del directorio central. */
-    if (phoneWithoutInstance()) {
+    /* La app (PC o teléfono) sin servidor elegido no tiene a quién preguntar:
+       el usuario vive en el dispositivo y Explorar tira del directorio central. */
+    if (appWithoutInstance()) {
       set({ user: localUser(), ready: true, directoryUrl: CENTRAL_DIRECTORY_URL });
       return;
     }
@@ -512,6 +512,31 @@ export const useStore = create<State>()((set, get) => ({
         // Puede ser una instancia vieja, apagada o una identidad aún no
         // registrada sin invitación. La pantalla de recuperación decide qué
         // enseñar; aquí no se degrada silenciosamente a invitado.
+      }
+    }
+
+    /* La app instalada no enseña formularios de acceso. Su propio servidor,
+       recién puesto en marcha, la recibe con el usuario del dispositivo; un
+       servidor ajeno que no la conoce la devuelve a la app, donde se entra
+       por Explorar o por invitación. Queda un caso con pantalla: el servidor
+       de este PC con perfiles de antes, donde se elige cuál es el tuyo. */
+    const identity = localUser();
+    const setup = get().setup;
+    if (isPackaged() && identity) {
+      if (!isLocalInstance(instanceBase)) {
+        takePendingInvite();
+        clearPendingPublicJoin();
+        setActiveInstance(null);
+        return;
+      }
+      if (setup?.required && !setup.requiresCode) {
+        try {
+          await get().authenticate("/api/v1/auth/bootstrap", { display_name: identity.display_name });
+          set({ ready: true });
+          return;
+        } catch {
+          // Cae a la pantalla de perfiles de este equipo.
+        }
       }
     }
 

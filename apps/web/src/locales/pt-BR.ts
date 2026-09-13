@@ -47,7 +47,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "status.noCommunity": "Sem comunidade ainda",
   "phone.createTitle": "Crie seu usuário",
   "phone.createHint":
-    "Escolha como os outros vão te ver. Fica salvo neste celular e te acompanha em cada comunidade em que você entrar.",
+    "Escolha como os outros vão te ver. Fica salvo neste dispositivo e te acompanha em cada comunidade em que você entrar.",
   "phone.createAction": "Entrar",
   "auth.login": "Entrar",
   "auth.register": "Criar conta",
@@ -124,9 +124,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "instance.offlineHelp":
     "A comunidade vive na máquina de quem hospeda. Se ela estiver desligada, não há serviço até voltar.",
 
-  "connect.title": "Seus perfis neste dispositivo",
-  "connect.hint":
-    "O Distop abrirá o servidor deste dispositivo e mostrará apenas os perfis cadastrados nele.",
   "connect.localUnavailable": "Não foi possível abrir o servidor local deste dispositivo.",
   "connect.invalid": "Esse endereço não é válido. Só são aceitos endereços http ou https.",
   "connect.unreachable":
@@ -134,7 +131,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "connect.notInstance": "Algo responde nesse endereço, mas não é um servidor do Distop.",
   "connect.hostHint":
     "Sua comunidade roda neste computador, dentro do aplicativo: seus dados ficam com você. Ela estará disponível enquanto esta máquina estiver ligada, e a velocidade depende da sua conexão.",
-  "connect.hostEnter": "Entrar na minha comunidade",
   "connect.preparing": "Iniciando seu servidor…",
   "connect.preparingHint":
     "Na primeira vez, seu banco de dados é criado nesta máquina. Sua comunidade e seus dados vivem aqui, com você.",

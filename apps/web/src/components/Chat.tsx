@@ -15,7 +15,7 @@ import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLoc
 import { CameraPickerButton, useCameras } from "./CameraPicker.tsx";
 import { MeetingHeaderBadges, MeetingHeaderControls, MeetingPanel } from "./Meeting.tsx";
 import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
-import { phoneWithoutInstance } from "../lib/instance.ts";
+import { appWithoutInstance } from "../lib/instance.ts";
 import {
   audioExtension,
   baseAudioMime,
@@ -153,19 +153,21 @@ export function Chat({
             crear la primera comunidad. */}
         <EmptyState
           title={t("community.empty")}
-          hint={t(phoneWithoutInstance() ? "welcome.phoneBody" : "community.emptyHint")}
+          hint={t(appWithoutInstance() ? "welcome.phoneBody" : "community.emptyHint")}
           action={
             <div className="flex flex-wrap justify-center gap-2">
-              {/* El teléfono no crea comunidades: le toca encontrarlas. */}
-              {phoneWithoutInstance() ? (
+              {/* Sin servidor, lo primero es encontrar comunidades. Crear solo
+                  existe donde hay un servidor que encender: el PC, no el teléfono. */}
+              {appWithoutInstance() ? (
                 <Button variant="primary" onClick={onExplore}>
                   {t("welcome.explore")}
                 </Button>
-              ) : (
-                <Button variant="primary" onClick={onCreateCommunity}>
+              ) : null}
+              {!appWithoutInstance() || window.distop ? (
+                <Button variant={appWithoutInstance() ? "ghost" : "primary"} onClick={onCreateCommunity}>
                   {t("community.create")}
                 </Button>
-              )}
+              ) : null}
               <Button onClick={onJoinCommunity}>{t("community.join")}</Button>
             </div>
           }
