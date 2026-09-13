@@ -54,6 +54,16 @@ async function call(
   return { status: res.status, json: text ? JSON.parse(text) : null };
 }
 
+/* Solo quien hospeda crea comunidades (§28.5): en este proceso es "ana", la
+   primera cuenta local, que registra "el camino completo". Las pruebas que
+   necesitan una comunidad la montan con ella. */
+async function anfitrion(): Promise<string> {
+  // Todas salen de la misma cuenta: su tope de 5 comunidades por hora no es lo que se prueba aquí.
+  (await import("./http.ts")).resetRateLimits();
+  const login = await call("POST", "/api/v1/auth/login", { body: { username: "ana", password: "contrasena-larga-1" } });
+  return login.json.access_token as string;
+}
+
 test("health reporta el estado real de la instancia", async () => {
   const { status, json } = await call("GET", "/health");
   assert.equal(status, 200);
@@ -91,10 +101,7 @@ test("registro, comunidad, canal y mensaje: el camino completo", async () => {
 });
 
 test("un extraño no ve la comunidad y un invitado sí puede entrar por enlace", async () => {
-  const owner = await call("POST", "/api/v1/auth/register", {
-    body: { username: "beto", password: "contrasena-larga-2" },
-  });
-  const ownerToken = owner.json.access_token as string;
+  const ownerToken = await anfitrion();
   const community = await call("POST", "/api/v1/communities", { token: ownerToken, body: { name: "Privada" } });
 
   const stranger = await call("POST", "/api/v1/auth/guest", { body: { display_name: "curioso" } });
@@ -134,10 +141,13 @@ test("los mensajes directos son privados, persistentes y marcan lo leído", asyn
   const bobToken = bob.json.access_token as string;
   const strangerToken = stranger.json.access_token as string;
 
+  const hostToken = await anfitrion();
   const community = await call("POST", "/api/v1/communities", {
-    token: aliceToken,
+    token: hostToken,
     body: { name: "Amistades DM" },
   });
+  const aliceInvite = await call("POST", `/api/v1/communities/${community.json.id}/invites`, { token: hostToken, body: {} });
+  await call("POST", `/api/v1/invites/${aliceInvite.json.code}/join`, { token: aliceToken });
   const beforeJoining = await call("POST", "/api/v1/direct-conversations", {
     token: aliceToken,
     body: { user_id: bob.json.user.id },
@@ -145,7 +155,7 @@ test("los mensajes directos son privados, persistentes y marcan lo leído", asyn
   assert.equal(beforeJoining.status, 404, "sin comunidad en común no se puede abrir el hilo");
 
   const invite = await call("POST", `/api/v1/communities/${community.json.id}/invites`, {
-    token: aliceToken,
+    token: hostToken,
     body: {},
   });
   await call("POST", `/api/v1/invites/${invite.json.code}/join`, { token: bobToken });
@@ -226,7 +236,7 @@ test("los mensajes directos son privados, persistentes y marcan lo leído", asyn
   assert.equal(acceptedFriend.status, 200);
   assert.ok((await call("GET", "/api/v1/social", { token: aliceToken })).json.friends.some((friend: any) => friend.id === bob.json.user.id));
 
-  const secondInvite = await call("POST", `/api/v1/communities/${community.json.id}/invites`, { token: aliceToken, body: {} });
+  const secondInvite = await call("POST", `/api/v1/communities/${community.json.id}/invites`, { token: hostToken, body: {} });
   await call("POST", `/api/v1/invites/${secondInvite.json.code}/join`, { token: strangerToken });
   const unwanted = await call("POST", "/api/v1/direct-conversations", {
     token: strangerToken,
@@ -280,10 +290,7 @@ test("los mensajes directos son privados, persistentes y marcan lo leído", asyn
 });
 
 test("visibilidad y entrada son políticas separadas", async () => {
-  const owner = await call("POST", "/api/v1/auth/register", {
-    body: { username: "directorio-owner", password: "contrasena-larga-directorio" },
-  });
-  const ownerToken = owner.json.access_token as string;
+  const ownerToken = await anfitrion();
 
   const open = await call("POST", "/api/v1/communities", {
     token: ownerToken,
@@ -322,10 +329,7 @@ test("visibilidad y entrada son políticas separadas", async () => {
 });
 
 test("nadie puede concederse permisos que no tiene", async () => {
-  const owner = await call("POST", "/api/v1/auth/register", {
-    body: { username: "carla", password: "contrasena-larga-3" },
-  });
-  const ownerToken = owner.json.access_token as string;
+  const ownerToken = await anfitrion();
   const community = await call("POST", "/api/v1/communities", { token: ownerToken, body: { name: "Jerarquia" } });
   const communityId = community.json.id as string;
 
@@ -361,7 +365,10 @@ test("eliminar la cuenta la borra de verdad, con sus comunidades y sus archivos"
   const token = cuenta.json.access_token as string;
   const userId = cuenta.json.user.id as string;
 
-  const comunidad = await call("POST", "/api/v1/communities", { token, body: { name: "De paso" } });
+  /* Crear comunidades es cosa de quien hospeda; aquí solo importa que la cuenta
+     tenga una suya al borrarse, así que se le da directamente en la base. */
+  const { seedCommunity } = await import("./db.ts");
+  const comunidad = { json: { id: seedCommunity({ name: "De paso", slug: `de-paso-${Date.now()}`, ownerId: userId, isPublic: false }) } };
   const boot = await call("GET", `/api/v1/communities/${comunidad.json.id}/bootstrap`, { token });
   const canal = boot.json.channels.find((c: any) => c.kind === "text");
   await call("POST", `/api/v1/channels/${canal.id}/messages`, { token, body: { content: "hola" } });
@@ -432,7 +439,7 @@ test("el túnel se maneja desde el equipo anfitrión, no por cualquier admin rem
     token: forastero.json.access_token,
     body: { name: "La mía" },
   });
-  assert.equal(suya.status, 200, "es administrador de su propia comunidad");
+  assert.equal(suya.status, 403, "tampoco crea comunidades en la máquina de otro");
 
   const local = await call("GET", "/api/v1/instance/tunnel", { token: forastero.json.access_token });
   assert.equal(local.status, 200, "desde el PC anfitrión sí puede manejar el servicio de ese PC");
@@ -816,10 +823,7 @@ test("la contraseña corta se rechaza y la del mínimo justo entra", async () =>
    portable tiene que poder nacer con una comunidad pública abierta, no solo
    con invitación. Y solo con esa: una privada no puede servir de puerta. */
 test("la identidad del teléfono entra por una comunidad pública sin invitación", async () => {
-  const duena = await call("POST", "/api/v1/auth/register", {
-    body: { username: "puerta-duena", password: "contrasena-puerta" },
-  });
-  const token = duena.json.access_token as string;
+  const token = await anfitrion();
   const privada = await call("POST", "/api/v1/communities", { token, body: { name: "Puerta Privada" } });
   const abierta = await call("POST", "/api/v1/communities", { token, body: { name: "Puerta Abierta" } });
   const publicar = await call("PATCH", `/api/v1/communities/${abierta.json.id}`, {

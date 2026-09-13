@@ -98,12 +98,11 @@ test("sin cuenta se puede lo mismo que con cuenta", async () => {
   const token = invitado.json.access_token as string;
   assert.equal(invitado.json.user.kind, "guest");
 
+  /* Crear comunidades gasta la máquina de quien hospeda, así que no lo hace
+     nadie más: ni un invitado ni una cuenta con contraseña. */
+  assert.equal(invitado.json.user.can_create_communities, false);
   const comunidad = await call("POST", "/api/v1/communities", { token, body: { name: "La de Kirbo" } });
-  assert.equal(comunidad.status, 200, "un invitado crea su comunidad igual que cualquiera");
-
-  const boot = await call("GET", `/api/v1/communities/${comunidad.json.id}/bootstrap`, { token });
-  const { PERMISSIONS, has, toBits } = await import("@distop/protocol");
-  assert.ok(has(toBits(boot.json.permissions), PERMISSIONS.ADMINISTRATOR), "y la administra");
+  assert.equal(comunidad.status, 403, "un invitado no crea comunidades en la instancia de otro");
 
   // Ponerle contraseña no cambia nada de lo anterior: solo permite volver.
   const cuenta = await call("POST", "/api/v1/users/me/upgrade", {

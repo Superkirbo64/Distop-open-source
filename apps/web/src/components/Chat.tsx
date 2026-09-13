@@ -15,7 +15,7 @@ import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLoc
 import { CameraPickerButton, useCameras } from "./CameraPicker.tsx";
 import { MeetingHeaderBadges, MeetingHeaderControls, MeetingPanel } from "./Meeting.tsx";
 import { joinVoice, leaveVoice, setVideoSource } from "../lib/voice.ts";
-import { appWithoutInstance } from "../lib/instance.ts";
+import { appWithoutInstance, canCreateCommunity } from "../lib/instance.ts";
 import {
   audioExtension,
   baseAudioMime,
@@ -163,7 +163,7 @@ export function Chat({
                   {t("welcome.explore")}
                 </Button>
               ) : null}
-              {!appWithoutInstance() || window.distop ? (
+              {canCreateCommunity(user) ? (
                 <Button variant={appWithoutInstance() ? "ghost" : "primary"} onClick={onCreateCommunity}>
                   {t("community.create")}
                 </Button>

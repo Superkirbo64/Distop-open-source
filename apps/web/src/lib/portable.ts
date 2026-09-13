@@ -169,6 +169,8 @@ export function localUser(): SelfUser | null {
     theme: "system",
     settings: {},
     has_password: false,
+    // En la app sin servidor este perfil representa a su propio anfitrión.
+    can_create_communities: true,
   };
 }
 

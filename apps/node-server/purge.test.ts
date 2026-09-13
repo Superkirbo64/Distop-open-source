@@ -47,11 +47,16 @@ async function call(method: string, path: string, opts: { token?: string; body?:
   return { status: res.status, json: text ? (JSON.parse(text) as any) : null };
 }
 
+/* Solo quien hospeda crea comunidades: la reclama la primera prueba y la
+   siguiente monta su comunidad con esa misma sesión. */
+let tokenAnfitriona = "";
+
 test("limpiar datos vacía el historial pero no toca la comunidad, y solo puede quien hospeda", async () => {
   // La dueña reclama la instancia y monta su comunidad con un canal.
   const claim = await call("POST", "/api/v1/auth/bootstrap", { body: { display_name: "Dueña Prueba" } });
   assert.equal(claim.status, 200);
   const token = claim.json.access_token as string;
+  tokenAnfitriona = token;
 
   const community = await call("POST", "/api/v1/communities", { token, body: { name: "La Casa" } });
   assert.equal(community.status, 200);
@@ -95,11 +100,7 @@ test("limpiar datos vacía el historial pero no toca la comunidad, y solo puede 
 });
 
 test("salir e irse borrando lo escrito son dos acciones distintas", async () => {
-  const dueña = await call("POST", "/api/v1/auth/register", {
-    body: { username: "duena-plaza", password: "contrasena-larga-para-salidas" },
-  });
-  assert.equal(dueña.status, 200);
-  const tokenDueña = dueña.json.access_token as string;
+  const tokenDueña = tokenAnfitriona;
   const comunidad = await call("POST", "/api/v1/communities", { token: tokenDueña, body: { name: "La Plaza" } });
   const boot = await call("GET", `/api/v1/communities/${comunidad.json.id}/bootstrap`, { token: tokenDueña });
   const canal = (boot.json.channels as Array<{ id: string; kind: string }>).find((c) => c.kind === "text")!;

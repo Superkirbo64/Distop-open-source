@@ -24,6 +24,7 @@ import {
   normalizeInstanceUrl,
   parseInvite,
   appWithoutInstance,
+  canCreateCommunity,
   rememberCommunities,
   setActiveInstance,
   storePendingCommunity,
@@ -214,7 +215,7 @@ export function Rail({
       </ul>
 
       {/* Crear también sin servidor en el PC: enciende el suyo (App). */}
-      {offline && !window.distop ? null : (
+      {!canCreateCommunity(user) ? null : (
         <IconButton label={t("community.create")} onClick={onCreate} className="h-12 w-12 border border-dashed border-line">
           <Cross size={20} />
         </IconButton>

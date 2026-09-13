@@ -118,6 +118,14 @@ async function waitFor(client: Client, type: string, matches?: (data: any) => bo
   }
 }
 
+/* Solo quien hospeda crea comunidades: en este proceso es "ana", la primera
+   cuenta local. Quien monta la comunidad en cada prueba entra con ella. */
+async function anfitrion(): Promise<any> {
+  // Todas salen de la misma cuenta: su tope de 5 comunidades por hora no es lo que se prueba aquí.
+  (await import("./http.ts")).resetRateLimits();
+  return call("POST", "/api/v1/auth/login", { body: { username: "ana", password: "contrasena-larga-1" } });
+}
+
 test("el gateway rechaza una conexión sin token válido", async () => {
   const socket = new WebSocket(`${wsBase}?token=inventado`);
   const error = await new Promise<Error>((resolve) => socket.once("error", resolve));
@@ -172,7 +180,7 @@ test("dos personas en el mismo canal se ven escribir en tiempo real", async () =
 });
 
 test("el vídeo se anuncia a la sala y respeta el permiso de cada fuente", async () => {
-  const rita = await call("POST", "/api/v1/auth/register", { body: { username: "rita", password: "contrasena-larga-5" } });
+  const rita = await anfitrion();
   const tom = await call("POST", "/api/v1/auth/register", { body: { username: "tom", password: "contrasena-larga-6" } });
 
   const community = await call("POST", "/api/v1/communities", { token: rita.access_token, body: { name: "Vídeo" } });
@@ -224,7 +232,7 @@ test("la voz pasa por la instancia y solo llega a quien está en la sala", async
      túnel y la instancia lo reparte. Aquí se comprueba lo que el servidor debe
      garantizar: que llegue a la sala, que NO llegue a quien está fuera, y que
      silenciado signifique silenciado aunque el cliente insista. */
-  const ana = await call("POST", "/api/v1/auth/register", { body: { username: "anav", password: "contrasena-larga-7" } });
+  const ana = await anfitrion();
   const bea = await call("POST", "/api/v1/auth/register", { body: { username: "beav", password: "contrasena-larga-8" } });
   const eva = await call("POST", "/api/v1/auth/register", { body: { username: "evav", password: "contrasena-larga-a" } });
 
@@ -318,7 +326,7 @@ test("volver a entrar en la misma sala renueva la hora de entrada", async () => 
      entrada nueva el resto de la sala no tiene forma de saber que hay que
      rehacer la conexión WebRTC: se quedan hablándole a un navegador que ya no
      existe, y esa persona ve "conectando" para siempre. */
-  const nel = await call("POST", "/api/v1/auth/register", { body: { username: "nel", password: "contrasena-larga-9" } });
+  const nel = await anfitrion();
   const community = await call("POST", "/api/v1/communities", { token: nel.access_token, body: { name: "Recarga" } });
   const boot = await call("GET", `/api/v1/communities/${community.id}/bootstrap`, { token: nel.access_token });
   const channel = boot.channels.find((c: any) => c.kind === "voice");
@@ -342,7 +350,7 @@ test("volver a entrar en la misma sala renueva la hora de entrada", async () => 
 });
 
 test("un canal sin permiso de lectura no se emite a quien no lo ve", async () => {
-  const ada = await call("POST", "/api/v1/auth/register", { body: { username: "ada", password: "contrasena-larga-3" } });
+  const ada = await anfitrion();
   const nino = await call("POST", "/api/v1/auth/register", { body: { username: "nino", password: "contrasena-larga-4" } });
 
   const community = await call("POST", "/api/v1/communities", { token: ada.access_token, body: { name: "Reservada" } });
@@ -386,7 +394,7 @@ test("un sonido de la tabla llega a la sala, y solo a la sala", async () => {
      instancia y lo suena a calidad original. Lo que el servidor tiene que
      garantizar es a quién se lo reenvía, porque el id lo escribe el cliente y
      un cliente lo escribe cualquiera. */
-  const zoe = await call("POST", "/api/v1/auth/register", { body: { username: "zoes", password: "contrasena-larga-s1" } });
+  const zoe = await anfitrion();
   const ian = await call("POST", "/api/v1/auth/register", { body: { username: "ians", password: "contrasena-larga-s2" } });
   const noa = await call("POST", "/api/v1/auth/register", { body: { username: "noas", password: "contrasena-larga-s3" } });
 
@@ -525,7 +533,7 @@ test("salirse de la carrera no cierra la que está corriendo", async () => {
      sala se borraba entera y el siguiente que pulsaba abría una carrera nueva
      con otra semilla. Se puede salir, pero la carrera de los demás sigue y al
      volver se entra en ESA, no en una distinta. */
-  const leo = await call("POST", "/api/v1/auth/register", { body: { username: "leor", password: "contrasena-larga-r1" } });
+  const leo = await anfitrion();
   const mia = await call("POST", "/api/v1/auth/register", { body: { username: "miar", password: "contrasena-larga-r2" } });
 
   const community = await call("POST", "/api/v1/communities", { token: leo.access_token, body: { name: "Carreras" } });
@@ -571,7 +579,7 @@ test("salirse de la carrera no cierra la que está corriendo", async () => {
 });
 
 test("borrar la comunidad la borra para TODOS los conectados, no solo para quien la borró", async () => {
-  const dana = await call("POST", "/api/v1/auth/register", { body: { username: "dana", password: "contrasena-larga-31" } });
+  const dana = await anfitrion();
   const ivo = await call("POST", "/api/v1/auth/register", { body: { username: "ivo", password: "contrasena-larga-32" } });
 
   const community = await call("POST", "/api/v1/communities", { token: dana.access_token, body: { name: "Efímera" } });
