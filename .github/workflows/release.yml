@@ -231,7 +231,12 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Validar el instalador de VPS
+        # La versión por defecto se sella con la del tag: el script publicado
+        # instala su propia release sin `--version`, y ninguna constante se
+        # queda atrás al subir package.json.
         run: |
+          sed -i "s/^VERSION=\".*\"$/VERSION=\"${GITHUB_REF_NAME#v}\"/" scripts/install-vps.sh
+          grep -qx "VERSION=\"${GITHUB_REF_NAME#v}\"" scripts/install-vps.sh
           bash -n scripts/install-vps.sh
           shellcheck --severity=error scripts/install-vps.sh
           cd scripts

@@ -27,7 +27,8 @@ function versionDePackage(): string {
   } catch {
     // Sin package.json al lado: vale el respaldo.
   }
-  return "0.1.7";
+  // Un número fijo aquí se quedaba viejo y parecía la versión de verdad.
+  return "desconocida";
 }
 
 export const VERSION = versionDePackage();

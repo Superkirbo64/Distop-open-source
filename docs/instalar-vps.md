@@ -5,8 +5,9 @@ ejecuta directamente desde Internet: primero se descargan el archivo y su
 checksum, se comprueba y solo entonces se usa `sudo`.
 
 ```sh
-curl -fLO https://github.com/Superkirbo64/Distop-open-source/releases/download/v0.1.7/install-vps.sh
-curl -fLO https://github.com/Superkirbo64/Distop-open-source/releases/download/v0.1.7/install-vps.sh.sha256
+cd /tmp
+curl -fLO https://github.com/Superkirbo64/Distop-open-source/releases/latest/download/install-vps.sh
+curl -fLO https://github.com/Superkirbo64/Distop-open-source/releases/latest/download/install-vps.sh.sha256
 sha256sum -c install-vps.sh.sha256
 sudo bash install-vps.sh
 ```
@@ -42,13 +43,14 @@ antes de depender de ella.
 
 ## Actualizar
 
-Descarga el instalador y checksum de la nueva release y ejecútalo otra vez con
-`--version`. Conserva los datos, `AUTH_SECRET` y `SETUP_CODE`; actualiza la
+No se actualiza sola: la imagen queda anclada por digest y cambiar de versión
+es una decisión tuya. Para pasar a la última release, repite los mismos cinco
+comandos de arriba. Cada `install-vps.sh` publicado instala la versión de su
+propia release, conserva los datos, `AUTH_SECRET` y `SETUP_CODE`, actualiza la
 unidad y reinicia el contenedor.
 
-```sh
-sudo bash install-vps.sh --version 0.1.7
-```
+Para fijar o volver a una versión concreta, añade `--version`:
 
-No uses `latest` para una comunidad importante: una versión fija hace posible
-decidir cuándo cambias y volver atrás si fuese necesario.
+```sh
+sudo bash install-vps.sh --version 0.1.9
+```
