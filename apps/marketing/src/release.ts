@@ -23,21 +23,19 @@ export const APP_VERSION: string = desktop.version;
 export const RELEASE_TAG = `v${APP_VERSION}`;
 
 /**
- * El nombre del archivo tal como lo escribe electron-builder y tal como lo
- * guarda el navegador: con espacios. Es el que la persona ve en su carpeta de
- * descargas, así que es el que debe aparecer en la guía.
+ * El nombre del archivo tal como se publica y tal como lo guarda el navegador:
+ * con guiones. release.yml renombra el de electron-builder ("Distop Setup X.exe")
+ * al que pide latest.yml, así que la guía, la descarga y el actualizador
+ * nombran el mismo archivo.
  */
-export const INSTALLER_NAME = `Distop Setup ${APP_VERSION}.exe`;
+export const INSTALLER_NAME = `Distop-Setup-${APP_VERSION}.exe`;
 
 /**
- * La descarga directa del artefacto publicado en la release.
- *
- * GitHub sustituye los espacios del nombre por puntos al servir el activo, de
- * ahí la diferencia con `INSTALLER_NAME`. Esta URL solo funciona una vez que
- * existe el tag: sin release publicada, el enlace da 404 —que es preferible a
- * ofrecer un archivo viejo como si fuera el actual.
+ * La descarga directa del artefacto publicado en la release. Solo funciona una
+ * vez que existe el tag: sin release publicada, el enlace da 404 —que es
+ * preferible a ofrecer un archivo viejo como si fuera el actual.
  */
-export const DOWNLOAD_URL = `${REPO_URL}/releases/download/${RELEASE_TAG}/${INSTALLER_NAME.replace(/ /g, ".")}`;
+export const DOWNLOAD_URL = `${REPO_URL}/releases/download/${RELEASE_TAG}/${INSTALLER_NAME}`;
 
 /** La página de la release, para quien quiera ver el resto de archivos y el hash. */
 export const RELEASE_URL = `${REPO_URL}/releases/tag/${RELEASE_TAG}`;

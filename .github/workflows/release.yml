@@ -9,13 +9,14 @@
 # "422 Validation Failed: already_exists" — arrastrando a Android y al resto,
 # que dependían de él. Dos versiones seguidas se publicaron a medias por eso.
 #
-# Windows: NSIS .exe + latest.yml (el feed que lee electron-updater).
+# Windows: NSIS .exe + latest.yml (el feed que lee electron-updater), con el
+# .exe renombrado al nombre exacto que pide latest.yml.
 # Android: APK firmado con el keystore de los secretos (ANDROID_KEYSTORE_BASE64,
-# ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD, más la
-# variable ANDROID_SIGNING). Antes, sin secretos, se publicaba el APK SIN
-# firmar: un fichero que el instalador de Android rechaza de plano. Salió así
-# dos releases seguidas sin que nada fallara. Ahora se verifica con apksigner
-# antes de subirlo, y si no está firmado el job muere.
+# ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD). Antes,
+# sin secretos, se publicaba el APK SIN firmar: un fichero que el instalador de
+# Android rechaza de plano. Ahora se verifica con apksigner antes de subirlo, y
+# si faltan los secretos el APK se salta con un aviso visible, sin tumbar la
+# release entera.
 # Docker: imagen multi-arch del servidor en GHCR (arm64 para Raspberry Pi y
 # VPS ARM, amd64 para el resto). Corre en paralelo: no toca la release.
 #
@@ -98,12 +99,23 @@ jobs:
       - run: npm run dist --workspace @distop/desktop -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      # latest.yml pide "Distop-Setup-X.exe" (con guiones) y electron-builder
+      # deja "Distop Setup X.exe". Al subirlo, GitHub cambia los espacios por
+      # puntos: el actualizador de cada copia instalada pedía un nombre que no
+      # existía (404) y nadie se actualizaba. Se renombra aquí y se comprueba
+      # contra latest.yml, para que no vuelva a depender de subirlo a mano.
       - name: Publicar instalador y feed de actualización
         shell: bash
         working-directory: apps/desktop/release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" *.exe *.blockmap latest.yml --clobber
+        run: |
+          for f in *.exe *.blockmap; do
+            [ "$f" = "${f// /-}" ] || mv "$f" "${f// /-}"
+          done
+          FEED=$(sed -n 's/^path: //p' latest.yml)
+          test -f "$FEED" || { echo "latest.yml pide '$FEED' y no está entre: $(ls)"; exit 1; }
+          gh release upload "$GITHUB_REF_NAME" *.exe *.blockmap latest.yml --clobber
 
   android:
     # Ya no depende de windows: la release existe antes que los dos.
@@ -181,8 +193,25 @@ jobs:
       # el shell, y aquí se decodifica base64, donde un byte de más rompe el
       # keystore. umask 077 antes de la redirección crea el fichero ya en 0600,
       # sin la ventana en la que existe legible por todos.
+      # Sin keystore no hay APK publicable (Android rechaza uno sin firmar). Antes
+      # eso tumbaba el job y cada release salía "failure", y un fallo de verdad
+      # quedaba escondido entre los esperados. Ahora se avisa y se salta el APK;
+      # el host bundle de arriba ya se publicó. Solo se mira si el secreto está
+      # vacío: su contenido no sale de este paso.
+      - name: ¿Hay keystore para firmar?
+        id: firma
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Release sin APK::Faltan los secretos del keystore (ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD). El APK no se publica."
+            echo "### Release sin APK: faltan los secretos del keystore" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Preparar keystore (si hay secretos)
-        if: ${{ vars.ANDROID_SIGNING == 'true' }}
+        if: ${{ steps.firma.outputs.ok == 'true' }}
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
@@ -193,12 +222,12 @@ jobs:
           test -s "$RUNNER_TEMP/release.keystore"
 
       - name: Construir APK
+        if: ${{ steps.firma.outputs.ok == 'true' }}
         working-directory: apps/mobile/android
         env:
           # app/build.gradle decide si firma mirando si ANDROID_KEYSTORE_PATH
-          # tiene valor: la cadena vacía es falsy en Groovy, así que sin
-          # secretos esto vale "" y el APK sale sin firmar, igual que antes.
-          ANDROID_KEYSTORE_PATH: ${{ vars.ANDROID_SIGNING == 'true' && format('{0}/release.keystore', runner.temp) || '' }}
+          # tiene valor. Este paso ya solo corre con keystore.
+          ANDROID_KEYSTORE_PATH: ${{ format('{0}/release.keystore', runner.temp) }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -211,6 +240,7 @@ jobs:
       # tranquilo. apksigner es quien lo dice de verdad, mirando la firma y no el
       # nombre: si no verifica, aquí se acaba la release.
       - name: Verificar la firma y renombrar el APK
+        if: ${{ steps.firma.outputs.ok == 'true' }}
         run: |
           APK=$(ls apps/mobile/android/app/build/outputs/apk/release/*arm64*.apk | head -n 1)
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort | tail -n 1)
@@ -218,6 +248,7 @@ jobs:
           cp "$APK" "Distop-${GITHUB_REF_NAME}.apk"
 
       - name: Publicar APK en la release
+        if: ${{ steps.firma.outputs.ok == 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" "Distop-${GITHUB_REF_NAME}.apk" --clobber
@@ -242,7 +273,11 @@ jobs:
           cd scripts
           sha256sum install-vps.sh > install-vps.sh.sha256
           sha256sum --check install-vps.sh.sha256
-      - name: Smoke real en Ubuntu limpio y persistencia tras reinicio
+      # Actualizar, no solo instalar: primero la release estable anterior con el
+      # servicio vivo, y encima la del tag. Así se probó el fallo de 0.1.10, que
+      # una instalación limpia no podía ver: el instalador reescribía la unidad
+      # pero dejaba corriendo el contenedor viejo y daba la versión por buena.
+      - name: Smoke real en Ubuntu limpio, actualización y persistencia tras reinicio
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # github.actor tampoco se interpola dentro del `run:`. No es un
@@ -251,7 +286,15 @@ jobs:
           REGISTRY_USER: ${{ github.actor }}
         run: |
           printf '%s' "$GH_TOKEN" | sudo docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          PREV=$(gh release list --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '.[].tagName' \
+            | grep -E '^v[0-9]' | grep -vx "$GITHUB_REF_NAME" | head -n 1 || true)
+          if [ -n "$PREV" ]; then
+            echo "Instalando primero $PREV para probar la actualización"
+            sudo bash scripts/install-vps.sh --version "${PREV#v}" --no-tailscale --name "Distop smoke"
+          fi
           sudo bash scripts/install-vps.sh --version "${GITHUB_REF_NAME#v}" --no-tailscale --name "Distop smoke"
+          # Lo que corre de verdad, no lo que dice el instalador.
+          curl --fail --silent http://127.0.0.1:5000/health | jq -e --arg v "${GITHUB_REF_NAME#v}" '.version == $v'
           BEFORE=$(curl --fail --silent http://127.0.0.1:5000/api/v1/info | jq -r .instance_id)
           test -n "$BEFORE" && test "$BEFORE" != null
           # Este reinicio es además la prueba del anclaje por digest: la unidad
