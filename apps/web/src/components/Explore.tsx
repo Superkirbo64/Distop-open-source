@@ -11,9 +11,11 @@ import {
 import { useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
 import {
+  EXPLORE_PAGE_SIZE,
   collectDirectory,
   directorySources,
   enterDirectoryCommunity,
+  onlineOnly,
   type DirectoryCommunity,
   type DirectoryListing,
 } from "../lib/directory.ts";
@@ -130,6 +132,9 @@ export function Explore({
   const [joinError, setJoinError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<ExploreCategory>("home");
+  const [page, setPage] = useState(0);
+  /** Las de la página actual cuyo servidor contestó; null mientras se comprueba. */
+  const [visible, setVisible] = useState<DirectoryCommunity[] | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -155,6 +160,23 @@ export function Explore({
       visibleInCategory(community, category) && (!needle || searchable(community).includes(needle)),
     );
   }, [category, listing, query]);
+
+  useEffect(() => setPage(0), [category, listing, query]);
+  const pages = Math.max(1, Math.ceil(communities.length / EXPLORE_PAGE_SIZE));
+  const pageItems = useMemo(
+    () => communities.slice(page * EXPLORE_PAGE_SIZE, (page + 1) * EXPLORE_PAGE_SIZE),
+    [communities, page],
+  );
+
+  /* Solo se sondean las 20 que se van a pintar, y solo se enseñan las que
+     contestan: una ficha de un servidor apagado es una puerta que no abre. */
+  const hereInstanceId = useStore((state) => state.instance?.instance_id);
+  useEffect(() => {
+    let active = true;
+    setVisible(null);
+    void onlineOnly(pageItems, hereInstanceId).then((online) => { if (active) setVisible(online); });
+    return () => { active = false; };
+  }, [pageItems, hereInstanceId]);
 
   async function enter(community: DirectoryCommunity): Promise<void> {
     if (mine.some((item) => item.id === community.id)) {
@@ -255,6 +277,10 @@ export function Explore({
             <ErrorNote>{errorText(failure.error)}</ErrorNote>
           ) : communities.length === 0 ? (
             <EmptyState title={query || category !== "home" ? t("explore.noResults") : t("explore.empty")} hint={query || category !== "home" ? t("explore.noResultsHint") : t("explore.emptyHint")} />
+          ) : visible === null ? (
+            <Spinner label={t("explore.checkingOnline")} />
+          ) : visible.length === 0 ? (
+            <EmptyState title={t("explore.pageOffline")} />
           ) : (
             /* `flex-wrap`, no grid: la referencia fija `width: 340px` en la
                propia tarjeta, y una rejilla con columnas elásticas la habría
@@ -262,7 +288,7 @@ export function Explore({
                flexbox cada tarjeta mide siempre 340px y solo cambia cuántas
                caben por fila. */
             <ul className="flex flex-wrap gap-4">
-              {communities.map((community) => {
+              {visible.map((community) => {
                 const own = mine.some((item) => item.id === community.id);
                 const actionable = own || community.join_policy === "open" || community.join_policy === "request";
                 /* El `group` vive en el <li> y no en la tarjeta a propósito:
@@ -344,6 +370,13 @@ export function Explore({
               })}
             </ul>
           )}
+          {listing && pages > 1 ? (
+            <nav className="flex items-center justify-center gap-3" aria-label={t("explore.pages")}>
+              <Button disabled={page === 0} onClick={() => setPage(page - 1)}>{t("explore.pagePrev")}</Button>
+              <span className="text-sm text-muted tabular-nums">{t("explore.pageOf", { page: page + 1, pages })}</span>
+              <Button disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>{t("explore.pageNext")}</Button>
+            </nav>
+          ) : null}
           {joinError ? <ErrorNote>{joinError}</ErrorNote> : null}
           {listing && listing.communities.length > 0 && listing.failures.length > 0 ? <ErrorNote>{t("explore.partialFailure")}</ErrorNote> : null}
         </section>

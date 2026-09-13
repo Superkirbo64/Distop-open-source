@@ -165,3 +165,46 @@ export async function collectDirectory(sources: DirectorySource[]): Promise<Dire
   });
   return { communities, failures };
 }
+
+/** Explorar enseña de 20 en 20: la app solo comprueba lo que va a pintar. */
+export const EXPLORE_PAGE_SIZE = 20;
+
+/**
+ * ¿Contesta ese servidor ahora? `no-cors` a propósito: no hace falta leer la
+ * respuesta, solo saber si llega. Con CORS normal, un servidor encendido que no
+ * abre su /health a este origen parecería apagado; así solo cuenta la red.
+ */
+async function respondsHealth(origin: string): Promise<boolean> {
+  try {
+    await fetch(`${origin}/health`, { mode: "no-cors", signal: AbortSignal.timeout(4_000) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Deja solo las comunidades cuyo servidor contesta ahora. El directorio de Deno
+ * no puede saberlo en tiempo real, así que lo comprueba la app, página a página.
+ * Las de la instancia activa no se sondean: ya estás ahí. Se reconoce por su
+ * `instance_id` y no solo por la dirección, porque una instancia servida en
+ * localhost anuncia la de su túnel. Un servidor con varias comunidades se
+ * pregunta una sola vez.
+ */
+export async function onlineOnly(
+  list: DirectoryCommunity[],
+  hereInstanceId?: string,
+  probe: (origin: string) => Promise<boolean> = respondsHealth,
+): Promise<DirectoryCommunity[]> {
+  const here = normalizeInstanceUrl(clientOrigin());
+  const checks = new Map<string, Promise<boolean>>();
+  const alive = await Promise.all(
+    list.map((community) => {
+      const origin = community.origin ? normalizeInstanceUrl(community.origin) : null;
+      if (!origin || origin === here || (hereInstanceId && community.instance_id === hereInstanceId)) return true;
+      if (!checks.has(origin)) checks.set(origin, probe(origin));
+      return checks.get(origin)!;
+    }),
+  );
+  return list.filter((_, index) => alive[index]);
+}

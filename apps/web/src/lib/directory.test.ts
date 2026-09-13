@@ -27,7 +27,7 @@ Object.defineProperty(globalThis, "localStorage", {
 // Un `window` vacío basta: instance.ts solo mira `window.distop` con `?.`.
 Object.defineProperty(globalThis, "window", { configurable: true, value: {} });
 
-const { collectDirectory, directorySources } = await import("./directory.ts");
+const { collectDirectory, directorySources, onlineOnly } = await import("./directory.ts");
 
 const ficha = (id: string, name: string): DirectoryCommunity => ({
   id,
@@ -78,6 +78,29 @@ test("una fuente caída no tumba a las demás, pero queda dicha con nombre", asy
 
 test("sin fuentes no hay lista ni fallos, y no lanza", async () => {
   assert.deepEqual(await collectDirectory([]), { communities: [], failures: [] });
+});
+
+test("Explorar solo enseña las comunidades cuyo servidor contesta, y pregunta una vez por servidor", async () => {
+  Object.defineProperty(globalThis, "location", { configurable: true, value: { origin: "https://aqui.example", search: "" } });
+  const preguntas: string[] = [];
+  const visibles = await onlineOnly(
+    [
+      ficha("local", "Sin origen"),
+      { ...ficha("aqui", "De esta instancia"), origin: "https://aqui.example" },
+      { ...ficha("viva-1", "Viva"), origin: "https://viva.example" },
+      { ...ficha("viva-2", "Viva también"), origin: "https://viva.example/" },
+      { ...ficha("apagada", "Apagada"), origin: "https://apagada.example" },
+      // La instancia activa servida en localhost anuncia la dirección de su túnel.
+      { ...ficha("mia-por-tunel", "Mía por túnel"), origin: "https://mi-tunel.example", instance_id: "yo" },
+    ],
+    "yo",
+    async (origin) => {
+      preguntas.push(origin);
+      return origin === "https://viva.example";
+    },
+  );
+  assert.deepEqual(visibles.map((c) => c.id), ["local", "aqui", "viva-1", "viva-2", "mia-por-tunel"], "la apagada no se enseña; la propia sí, aunque anuncie otra dirección");
+  assert.deepEqual(preguntas.sort(), ["https://apagada.example", "https://viva.example"], "ni la propia ni un servidor repetido se sondean dos veces");
 });
 
 /* ── Explorar en la app instalada (Android/escritorio) ───────────────────
