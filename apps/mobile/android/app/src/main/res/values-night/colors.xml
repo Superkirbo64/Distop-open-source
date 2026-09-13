@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- --bg de la paleta oscura (apps/web/src/styles.css). -->
+    <!-- Fondo de la paleta oscura (variable bg de apps/web/src/styles.css). -->
     <color name="distop_bars">#0d0e12</color>
     <bool name="distop_light_bars">false</bool>
 </resources>
