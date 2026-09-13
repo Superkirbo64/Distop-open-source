@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  El directorio de Deno firma con la cadena nueva de Let's Encrypt
+  (YE1, Root YE, ISRG Root X2). ISRG Root X2 solo viene de fabrica desde
+  Android 14, y la firma cruzada desde X1 caduco en 2025: en telefonos
+  anteriores la WebView cortaba la conexion y Explorar decia
+  "TypeError: Failed to fetch". Se anade X2 como raiz propia de la app,
+  junto a las del sistema. La huella SHA-256 esta en res/raw.
+
+  cleartextTrafficPermitted: con este fichero Android ignora
+  usesCleartextTraffic del manifest, y los servidores http de la red local
+  tienen que seguir funcionando.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/isrg_root_x2" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

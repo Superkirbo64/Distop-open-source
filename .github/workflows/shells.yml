@@ -74,6 +74,13 @@ jobs:
           name: distop-apk-debug
           path: apps/mobile/android/app/build/outputs/apk/debug/*arm64*.apk
           if-no-files-found: error
+      # El del emulador: x86_64. Las imágenes de Android 13 no traducen ARM, y
+      # el APK de teléfono (arm64) no se instala ahí (NO_MATCHING_ABIS).
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: distop-apk-debug-x86_64
+          path: apps/mobile/android/app/build/outputs/apk/debug/*x86_64*.apk
+          if-no-files-found: error
 
       - name: La versión del APK no puede ser la de fábrica
         run: |
@@ -95,7 +102,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: distop-apk-debug
+          name: distop-apk-debug-x86_64
           path: apk
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -108,7 +115,11 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
-          api-level: 34
+          # Android 13 y no 14: no trae ISRG Root X2 de fábrica, que es justo lo
+          # que rompía Explorar en teléfonos reales. No más viejo: la imagen de
+          # Android 11 lleva una WebView de Chrome 83 que ningún teléfono en uso
+          # tiene y en la que el cliente ni carga.
+          api-level: 33
           arch: x86_64
           target: google_apis
           disable-animations: true
