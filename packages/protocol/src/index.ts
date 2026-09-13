@@ -168,6 +168,8 @@ export interface SelfUser extends PublicUser {
   /** Si la cuenta tiene contraseña. Decide qué ofrece Ajustes → Cuenta:
       ponerla (invitado o anfitrión recién puesto en marcha) o cambiarla. */
   has_password: boolean;
+  /** Solo quien hospeda la instancia puede crear comunidades en este nodo. */
+  can_create_communities: boolean;
 }
 
 /* ── personalización del perfil (§10.1, §10.2) ─────────────────────────

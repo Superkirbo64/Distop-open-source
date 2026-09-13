@@ -42,6 +42,7 @@ import {
   normalizeInstanceUrl,
   peekPendingCommunity,
   appWithoutInstance,
+  canCreateCommunity,
   hostHere,
   setActiveInstance,
   takePendingCreate,
@@ -643,7 +644,7 @@ function WelcomeCreate({
   const [dismissed, setDismissed] = useState(false);
   // Sin servidor, el primer paso es encontrar comunidades; crear, solo en el PC.
   const phone = appWithoutInstance();
-  const canCreate = !phone || Boolean(window.distop);
+  const canCreate = canCreateCommunity(user);
 
   const open = ready && Boolean(user) && communities.length === 0 && !dismissed && !blocked;
   if (!open) return null;

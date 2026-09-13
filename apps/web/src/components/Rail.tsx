@@ -15,6 +15,7 @@ import { api } from "../lib/api.ts";
 import { CLOUD_GUIDE_URL, RASPBERRY_GUIDE_URL, VPS_INSTALL_GUIDE_URL, detectLane, hasStablePublicAddress } from "../lib/publish.ts";
 import { describeSchedule, sortBackupFiles, type BackupJob, type BackupsView } from "../lib/backups.ts";
 import {
+  canCreateCommunity,
   clientOrigin,
   connectToInstance,
   forgetKnownCommunity,
@@ -215,7 +216,7 @@ export function Rail({
       </ul>
 
       {/* Crear también sin servidor en el PC: enciende el suyo (App). */}
-      {offline && !window.distop ? null : (
+      {!canCreateCommunity(user) ? null : (
         <IconButton label={t("community.create")} onClick={onCreate} className="h-12 w-12 border border-dashed border-line">
           <Cross size={20} />
         </IconButton>

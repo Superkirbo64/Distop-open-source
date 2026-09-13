@@ -227,6 +227,7 @@ export function toSelfUser(row: UserRow): SelfUser {
     theme: row.theme,
     settings: safeJson(row.settings),
     has_password: row.password_hash !== null,
+    can_create_communities: isInstanceOwner(row.id),
   };
 }
 

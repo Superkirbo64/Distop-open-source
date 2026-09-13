@@ -51,13 +51,20 @@ async function call(
   return { status: res.status, json: text ? JSON.parse(text) : null };
 }
 
+/* Solo quien hospeda crea comunidades: la primera cuenta local del proceso.
+   Se registra una vez y monta la comunidad de cada prueba. */
+let laAnfitriona: { token: string; id: string } | null = null;
+async function anfitriona(): Promise<{ token: string; id: string }> {
+  if (!laAnfitriona) {
+    const ana = await call("POST", "/api/v1/auth/register", { body: { username: "ana", password: "contrasena-larga-1" } });
+    laAnfitriona = { token: ana.json.access_token as string, id: ana.json.user.id as string };
+  }
+  return laAnfitriona;
+}
+
 /** Deja montada una comunidad con dos personas dentro y devuelve lo necesario. */
 async function comunidadConDos(prefijo: string) {
-  const ana = await call("POST", "/api/v1/auth/register", {
-    body: { username: `${prefijo}-ana`, password: "contrasena-larga-1" },
-  });
-  const anaToken = ana.json.access_token as string;
-  const anaId = ana.json.user.id as string;
+  const { token: anaToken, id: anaId } = await anfitriona();
 
   const community = await call("POST", "/api/v1/communities", { token: anaToken, body: { name: `C ${prefijo}` } });
   const communityId = community.json.id as string;
@@ -125,10 +132,7 @@ test("marcar leído nunca retrocede", async () => {
 });
 
 test("quien entra por invitación no hereda el historial como pendiente", async () => {
-  const ana = await call("POST", "/api/v1/auth/register", {
-    body: { username: "nueva-ana", password: "contrasena-larga-1" },
-  });
-  const anaToken = ana.json.access_token as string;
+  const { token: anaToken } = await anfitriona();
   const community = await call("POST", "/api/v1/communities", { token: anaToken, body: { name: "Con historial" } });
   const communityId = community.json.id as string;
   const boot = await call("GET", `/api/v1/communities/${communityId}/bootstrap`, { token: anaToken });

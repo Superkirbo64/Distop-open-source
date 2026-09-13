@@ -326,6 +326,11 @@ export function rateLimit(key: string, limit: number, windowMs: number): void {
   }
 }
 
+/** Solo para las pruebas: vacía los contadores de todas las ventanas. */
+export function resetRateLimits(): void {
+  buckets.clear();
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [key, bucket] of buckets) if (bucket.resetAt < now) buckets.delete(key);

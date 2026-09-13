@@ -792,9 +792,11 @@ route("POST", "/api/v1/users/me/sessions/revoke-all", (ctx) => {
 route("GET", "/api/v1/communities", (ctx) => communitiesForUser(requireAuth(ctx).user.id));
 
 route("POST", "/api/v1/communities", async (ctx) => {
-  // Sin cuenta se puede lo mismo que con cuenta (§7.1): la contraseña sirve para
-  // volver desde otro dispositivo, no para desbloquear funciones.
   const { user } = requireAuth(ctx);
+  // Administrar una comunidad no concede autoridad sobre el nodo que la aloja.
+  // Crear otra comunidad consume los recursos del anfitrión, así que solo quien
+  // hospeda esta instancia puede hacerlo.
+  if (!isInstanceOwner(user.id)) throw forbidden("Solo quien hospeda la instancia puede crear comunidades.");
   rateLimit(`community:${user.id}`, 5, 60 * 60_000);
 
   const body = await readJson(ctx);
