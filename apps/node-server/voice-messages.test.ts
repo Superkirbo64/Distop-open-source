@@ -121,6 +121,20 @@ test("con los audios suspendidos el servidor rechaza el adjunto, no solo la inte
   assert.equal(conFoto.status, 200, JSON.stringify(conFoto.json));
 });
 
+test("la app de PC y la de Android pueden descargar un audio con fetch, una web ajena no", async () => {
+  /* Los sonidos de la sala se bajan con fetch (hay que decodificarlos), y eso
+     sí exige CORS. Sin cabeceras, en app://distop y http://localhost el sonido
+     fallaba con "no se pudo descargar el sonido desde el servidor". */
+  const audioId = await subirAudio();
+  for (const origen of ["app://distop", "http://localhost"]) {
+    const res = await fetch(`${base}/api/v1/files/${audioId}`, { headers: { origin: origen } });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get("access-control-allow-origin"), origen, `la app en ${origen} puede leerlo`);
+  }
+  const ajena = await fetch(`${base}/api/v1/files/${audioId}`, { headers: { origin: "https://ajena.example" } });
+  assert.equal(ajena.headers.get("access-control-allow-origin"), null, "un origen fuera de la lista no recibe permiso");
+});
+
 test("volver a encenderlo devuelve los audios", async () => {
   const encendido = await call("PATCH", `/api/v1/communities/${comunidad}`, { token, body: { voice_messages: true } });
   assert.equal(encendido.json.voice_messages, true);

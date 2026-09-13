@@ -13,7 +13,7 @@ import { uuidv7 } from "@distop/protocol";
 import type { Attachment } from "@distop/protocol";
 import { config } from "./config.ts";
 import { db } from "./db.ts";
-import { HttpError, badRequest, notFound, rateLimit, type Ctx, HANDLED } from "./http.ts";
+import { HttpError, badRequest, corsHeaders, notFound, rateLimit, type Ctx, HANDLED } from "./http.ts";
 
 export const ROOT = resolve(config.storagePath);
 mkdirSync(ROOT, { recursive: true });
@@ -520,6 +520,7 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
     if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "El archivo no se pudo traer.");
 
     ctx.res.writeHead(200, {
+      ...corsHeaders(ctx.req.headers.origin),
       "content-type": row.content_type,
       "cache-control": "public, max-age=31536000, immutable",
       "x-content-type-options": "nosniff",
@@ -539,7 +540,12 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
     (row.content_type.startsWith("image/") && row.content_type !== "image/svg+xml") ||
     row.content_type.startsWith("audio/");
 
+  /* CORS como el resto de la API: un <img> no lo necesita, pero la app de PC
+     (app://distop) y la de Android (http://localhost) descargan los sonidos de
+     la sala y los audios con fetch, y sin estas cabeceras el navegador los
+     bloqueaba ("no se pudo descargar el sonido desde el servidor"). */
   ctx.res.writeHead(200, {
+    ...corsHeaders(ctx.req.headers.origin),
     "content-type": row.content_type,
     "content-length": String(row.size),
     "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.filename)}`,

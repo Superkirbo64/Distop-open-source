@@ -338,7 +338,7 @@ setInterval(() => {
 
 /* ── respuesta ─────────────────────────────────────────────────────── */
 
-function corsHeaders(origin: string | undefined): Record<string, string> {
+export function corsHeaders(origin: string | undefined): Record<string, string> {
   /* Nunca se refleja un comodín, aunque una configuración mal formada lograse
      saltarse el filtro de config.ts. Los endpoints locales sin credenciales
      convierten esa reflexión en lectura y toma de sesión desde cualquier web. */
