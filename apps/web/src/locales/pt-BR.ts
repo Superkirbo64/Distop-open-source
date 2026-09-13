@@ -71,6 +71,8 @@ export const ptBR: Record<keyof typeof es, string> = {
   "auth.recoverHint":
     "Estas contas não têm senha. Como você está neste equipamento, pode continuar sem digitar nada.",
   "auth.registrationClosed": "Este servidor está com o cadastro fechado.",
+  "auth.deviceProfileUnknown":
+    "Este servidor ainda não conhece seu perfil deste dispositivo. Entre com um convite ou pelo Explorar.",
   "auth.chooseProfile": "Quem vai entrar?",
   "auth.chooseProfileHint": "Escolha um dos perfis salvos neste dispositivo.",
   "auth.addProfile": "Adicionar perfil",
