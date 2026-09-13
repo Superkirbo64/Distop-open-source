@@ -15,7 +15,7 @@ import { Check, ChevronLeft, ChevronRight, ChevronUp, Copy, LogOut, Pencil } fro
 import { USER_STATUSES, type UserStatus } from "@distop/protocol";
 import { gameOf, useStore } from "../store.ts";
 import { api } from "../lib/api.ts";
-import { phoneWithoutInstance } from "../lib/instance.ts";
+import { appWithoutInstance } from "../lib/instance.ts";
 import { Gear, Headset, Microphone } from "./icons.tsx";
 import { Avatar, avatarOverflow, DisplayName, IconButton, Menu, StatusDot, useT, type PresenceRing } from "./ui.tsx";
 import { CardEffectLayer, profileBannerStyle, profileSurfaceBackground } from "./ProfileStyle.tsx";
@@ -57,7 +57,7 @@ export function UserBar({ onOpenSettings }: { onOpenSettings: (tab?: "profile" |
         ? t("voice.inChannel")
         : user.kind === "guest"
           ? t("members.guest")
-          : phoneWithoutInstance()
+          : appWithoutInstance()
             ? // Sin servidor no hay presencia que enseñar; "Desconectado" sonaba a fallo.
               t("status.noCommunity")
             : t(`status.${status === "online" ? user.status : "offline"}`);

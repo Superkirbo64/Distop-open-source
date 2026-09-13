@@ -45,7 +45,7 @@ export const es = {
   "status.noCommunity": "Sin comunidad todavía",
   "phone.createTitle": "Crea tu usuario",
   "phone.createHint":
-    "Elige cómo te verán los demás. Se guarda en este teléfono y te acompaña a cada comunidad en la que entres.",
+    "Elige cómo te verán los demás. Se guarda en este dispositivo y te acompaña a cada comunidad en la que entres.",
   "phone.createAction": "Entrar",
   "auth.login": "Entrar",
   "auth.register": "Crear cuenta",
@@ -123,9 +123,6 @@ export const es = {
   "instance.offlineHelp":
     "La comunidad vive en el equipo de quien la hospeda. Si ese equipo está apagado, no hay servicio hasta que vuelva.",
 
-  "connect.title": "Tus perfiles en este equipo",
-  "connect.hint":
-    "Distop abrirá el servidor de este dispositivo y mostrará únicamente sus perfiles registrados.",
   "connect.localUnavailable": "No se pudo abrir el servidor local de este dispositivo.",
   "connect.invalid": "Esa dirección no es válida. Solo se admiten direcciones http o https.",
   "connect.unreachable":
@@ -133,7 +130,6 @@ export const es = {
   "connect.notInstance": "En esa dirección responde algo, pero no es un servidor de Distop.",
   "connect.hostHint":
     "Tu comunidad corre en este ordenador, dentro de la aplicación: tus datos se quedan contigo. Estará disponible mientras este equipo esté encendido, y la velocidad depende de tu conexión.",
-  "connect.hostEnter": "Entrar en mi comunidad",
   "connect.preparing": "Arrancando tu servidor…",
   "connect.preparingHint":
     "La primera vez se crea tu base de datos en este equipo. Tu comunidad y tus datos viven aquí, contigo.",

@@ -54,7 +54,10 @@ rmSync(out, { recursive: true, force: true });
 /* servidor */
 const serverOut = join(out, "node-server");
 stageDir(join(root, "apps", "node-server"), serverOut);
-writeFileSync(join(serverOut, "package.json"), `${JSON.stringify({ name: "distop-node-server", private: true, type: "module" }, null, 2)}\n`);
+// Con la versión: instance.ts la lee de aquí, y sin ella el servidor empaquetado
+// anunciaba la de respaldo en vez de la real.
+const { version } = JSON.parse(readFileSync(join(root, "apps", "node-server", "package.json"), "utf8"));
+writeFileSync(join(serverOut, "package.json"), `${JSON.stringify({ name: "distop-node-server", version, private: true, type: "module" }, null, 2)}\n`);
 if (mobile) cpSync(join(root, "scripts", "mobile", "sqlite-shim.js"), join(serverOut, "sqlite-shim.js"));
 
 /* protocolo, como paquete resoluble */

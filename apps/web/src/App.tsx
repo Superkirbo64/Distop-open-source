@@ -15,7 +15,7 @@ import { Members } from "./components/Members.tsx";
 import { DirectChat, DirectSidebar } from "./components/Direct.tsx";
 import { Explore, ExploreSidebar } from "./components/Explore.tsx";
 import { Auth } from "./views/Auth.tsx";
-import { Connect, CreateProfile } from "./views/Connect.tsx";
+import { CreateProfile } from "./views/Connect.tsx";
 import { Compass } from "./components/icons.tsx";
 import { Setup } from "./views/Setup.tsx";
 import { Invite } from "./views/Invite.tsx";
@@ -42,8 +42,10 @@ import {
   normalizeInstanceUrl,
   peekPendingCommunity,
   peekPendingPublicJoin,
-  phoneWithoutInstance,
+  appWithoutInstance,
+  hostHere,
   setActiveInstance,
+  takePendingCreate,
   takePendingInvite,
   type PendingCommunity,
 } from "./lib/instance.ts";
@@ -154,6 +156,27 @@ export function App() {
   const [creating, setCreating] = useState(false);
   const [joining, setJoining] = useState(false);
   const [explore, setExplore] = useState(false);
+  const [hosting, setHosting] = useState(false);
+
+  /* Una comunidad vive en un servidor. Desde la app sin servidor elegido se
+     enciende el de este PC y se entra en él; el formulario se abre al volver. */
+  async function startCreate(): Promise<void> {
+    if (!appWithoutInstance()) {
+      setCreating(true);
+      return;
+    }
+    setHosting(true);
+    const error = await hostHere().catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
+    if (error === null) return;
+    setHosting(false);
+    const body =
+      error === "unreachable" ? t("connect.unreachable") : error === "not-instance" ? t("connect.notInstance") : error === "invalid" ? t("connect.invalid") : error;
+    useStore.getState().pushNotice({ kind: "error", title: t("connect.autoFailed"), body });
+  }
+
+  useEffect(() => {
+    if (ready && user && takePendingCreate()) setCreating(true);
+  }, [ready, user]);
   const [pendingCommunity, setPendingCommunity] = useState<PendingCommunity | null>(() => peekPendingCommunity());
   const [mobilePane, setMobilePane] = useState<"nav" | "main" | "members">("main");
   const [membersOpen, setMembersOpen] = usePanel("members", true);
@@ -225,9 +248,7 @@ export function App() {
   }, [activeChannelId, activeChannel?.kind, isMobile, setMembersOpen]);
 
   useEffect(() => {
-    // Empaquetado y sin instancia elegida no hay a quién preguntar todavía.
-    // (El teléfono sí arranca: boot sabe entrar sin servidor.)
-    if (window.distop && !instanceBase) return;
+    // Sin servidor elegido también se arranca: boot entra con el usuario del dispositivo.
     void (async () => {
       /* Si la comunidad activa vive en ESTE aparato, su servidor se enciende
          antes de preguntar nada: abrir la app debe encender tu comunidad, no
@@ -349,13 +370,10 @@ export function App() {
     if (user && !pendingCommunity && !directOpen && !activeCommunityId && communities[0]) void openCommunity(communities[0].id);
   }, [user, pendingCommunity, directOpen, activeCommunityId, communities, openCommunity]);
 
-  // La app instalada no la sirvió ninguna instancia. El escritorio arranca la
-  // suya; el teléfono no hospeda: crea su usuario aquí y entra a la app vacía.
+  // La app instalada sin servidor elegido: PC y teléfono crean su usuario aquí
+  // y entran a la app vacía. Hospedar es "Crear comunidad", no el arranque.
   // En la web esta rama no existe (§4).
-  if (isPackaged() && !instanceBase) {
-    if (window.distop) return <Connect />;
-    if (ready && !user) return <CreateProfile />;
-  }
+  if (appWithoutInstance() && ready && !user) return <CreateProfile />;
 
   if (ready && pendingCommunity && (!user || instance)) {
     const missing = !user || !communities.some((community) => community.id === pendingCommunity.id);
@@ -402,9 +420,9 @@ export function App() {
   // Con sesión abierta —de cuenta o de invitado— se entra directo: un invitado
   // puede crear su comunidad igual, y ponerle contraseña después reclama la
   // instancia sin repetir este paso.
-  // El teléfono solo participa: nunca pone en marcha una instancia ajena.
-  const phoneApp = isPackaged() && !window.distop;
-  if (setup?.required && !user && !phoneApp) return <Setup requiresCode={setup.requiresCode} />;
+  // La app instalada nunca: su propio servidor lo pone en marcha boot con el
+  // usuario del dispositivo, y uno ajeno no se reclama desde un teléfono o PC cualquiera.
+  if (setup?.required && !user && !isPackaged()) return <Setup requiresCode={setup.requiresCode} />;
   if (!user) return <Auth />;
 
   return (
@@ -422,9 +440,17 @@ export function App() {
     >
       {/* Fuera de la rejilla: se pinta encima de todo y no empuja nada. */}
       <NoticeToaster />
+      {hosting ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-bg/90 p-4">
+          <div className="flex flex-col items-center gap-3">
+            <Spinner label={t("connect.preparing")} />
+            <p className="max-w-sm text-center text-xs text-muted">{t("connect.preparingHint")}</p>
+          </div>
+        </div>
+      ) : null}
       <Rail
         onNavigate={() => { setExplore(false); setMobilePane("main"); }}
-        onCreate={() => setCreating(true)}
+        onCreate={() => void startCreate()}
         onJoin={() => setJoining(true)}
         onExplore={() => { setExplore(true); setMobilePane("main"); }}
       />
@@ -450,7 +476,7 @@ export function App() {
           onToggleMembers={() => (isMobile ? setMobilePane(mobilePane === "members" ? "main" : "members") : setMembersOpen(!membersOpen))}
           membersOpen={membersOpen}
           onOpenSidebar={() => setMobilePane("nav")}
-          onCreateCommunity={() => setCreating(true)}
+          onCreateCommunity={() => void startCreate()}
           onJoinCommunity={() => setJoining(true)}
           onExplore={() => { setExplore(true); setMobilePane("main"); }}
         />
@@ -489,7 +515,7 @@ export function App() {
       <CreateCommunity open={creating} onClose={() => setCreating(false)} onCreated={() => setInvite(true)} />
       <JoinCommunity open={joining} onClose={() => setJoining(false)} />
       <WelcomeCreate
-        onCreate={() => setCreating(true)}
+        onCreate={() => void startCreate()}
         onJoin={() => setJoining(true)}
         onExplore={() => { setExplore(true); setMobilePane("main"); }}
         /* La frase de las copias se enseña una sola vez: la bienvenida, que
@@ -621,8 +647,9 @@ function WelcomeCreate({
   const user = useStore((s) => s.user);
   const communities = useStore((s) => s.communities);
   const [dismissed, setDismissed] = useState(false);
-  // El teléfono no crea comunidades: su primer paso es encontrar dónde están.
-  const phone = phoneWithoutInstance();
+  // Sin servidor, el primer paso es encontrar comunidades; crear, solo en el PC.
+  const phone = appWithoutInstance();
+  const canCreate = !phone || Boolean(window.distop);
 
   const open = ready && Boolean(user) && communities.length === 0 && !dismissed && !blocked;
   if (!open) return null;
@@ -649,9 +676,10 @@ function WelcomeCreate({
             <Compass size={18} />
             {t("welcome.explore")}
           </Button>
-        ) : (
+        ) : null}
+        {canCreate ? (
           <Button
-            variant="primary"
+            variant={phone ? "ghost" : "primary"}
             onClick={() => {
               setDismissed(true);
               onCreate();
@@ -659,7 +687,7 @@ function WelcomeCreate({
           >
             {t("welcome.create")}
           </Button>
-        )}
+        ) : null}
         <Button
           onClick={() => {
             setDismissed(true);

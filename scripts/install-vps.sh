@@ -20,7 +20,7 @@ INSTALL_TAILSCALE=true
 usage() {
   cat <<'EOF'
 Uso: sudo bash install-vps.sh [opciones]
-  --version VERSION       Etiqueta de la imagen (por defecto 0.1.7)
+  --version VERSION       Etiqueta de la imagen (por defecto, la de esta release)
   --image IMAGEN          Imagen OCI alternativa
   --name NOMBRE           Nombre inicial de la instancia
   --public-url HTTPS_URL  URL estable si ya tienes proxy/dominio

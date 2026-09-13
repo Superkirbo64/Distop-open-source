@@ -8,7 +8,7 @@
  */
 import { toProfileStyle, type SelfUser } from "@distop/protocol";
 import { api, upload } from "./api.ts";
-import { clientOrigin, phoneWithoutInstance } from "./instance.ts";
+import { clientOrigin, appWithoutInstance } from "./instance.ts";
 
 const KEY = "distop.portableIdentity";
 const MEDIA_DB = "distop-portable-profile";
@@ -122,7 +122,7 @@ export async function ensurePortableIdentity(user: SelfUser): Promise<PortableId
   localStorage.setItem(KEY, JSON.stringify(identity));
   // El teléfono antes de su primera comunidad: la identidad ya es la cuenta y
   // todavía no hay servidor al que presentarla.
-  if (phoneWithoutInstance()) return identity;
+  if (appWithoutInstance()) return identity;
   await api("PUT", "/api/v1/users/me/portable", {
     identity_id: identity.identity_id,
     secret: identity.secret,
