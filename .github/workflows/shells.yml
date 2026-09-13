@@ -108,7 +108,9 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
-          api-level: 34
+          # Android 11 y no 14: no trae ISRG Root X2 de fábrica, que es
+          # justo lo que rompía Explorar en teléfonos reales.
+          api-level: 30
           arch: x86_64
           target: google_apis
           disable-animations: true
