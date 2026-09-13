@@ -27,10 +27,24 @@ linaje L, época 1, clave KA   ──cert firmado por KA──▶   linaje L, é
 El linaje no cambia: es la misma comunidad. La instancia y la clave sí. La época
 sube exactamente uno — ni salta, ni se repite, ni retrocede.
 
-## Cómo se hace
+## Estado actual: protocolo técnico, no asistente de usuario
 
-**En el equipo viejo**, autoriza al nuevo y guarda el código que aparece. Se
-enseña una sola vez, porque solo se guarda su hash:
+El servidor y la herramienta `adopt.ts` implementan el relevo, pero la aplicación
+todavía no ofrece un asistente que complete este recorrido. Los comandos de esta
+sección son una referencia para desarrollo y administración avanzada: requieren una
+sesión local del anfitrión (`$TOKEN`), dos terminales coordinadas y acceso a
+`adopt.ts` en la máquina nueva. No presentes este flujo como «mover a VPS con un
+clic» hasta que exista y se pruebe esa interfaz.
+
+El orden importa. Autorizar al sucesor no empieza la copia: después de que la
+máquina nueva se enrola, el anfitrión viejo todavía debe crear el `handover`. Si se
+omite ese paso, `adopt.ts` espera un bundle que nadie ha pedido preparar y termina
+por tiempo agotado.
+
+## Cómo funciona el protocolo
+
+**En el equipo viejo**, autoriza al nuevo y guarda tanto el `id` como el código que
+aparecen. El código se enseña una sola vez, porque solo se guarda su hash:
 
 ```bash
 curl -X POST http://localhost:5000/api/v1/instance/successors \
@@ -38,25 +52,42 @@ curl -X POST http://localhost:5000/api/v1/instance/successors \
   -d '{"label":"el portátil de Ana"}'
 ```
 
-**En el equipo nuevo**, con su instancia parada:
+**En el equipo nuevo**, con su instancia parada, inicia la adopción y deja esa
+terminal abierta. Primero se enrolará y después esperará a que el equipo viejo
+prepare la copia:
 
 ```bash
 DISTOP_ENROL_CODE='XXXX-XXXX-XXXX-XXXX' node apps/node-server/adopt.ts \
   --from https://equipo-viejo.ts.net --origin https://equipo-nuevo.ts.net --target ./data
 ```
 
-Se presenta con su clave, espera a que el viejo prepare la copia, la descarga
+**De nuevo en el equipo viejo**, comprueba que el sucesor aparece con
+`"enrolled": true` y empieza el relevo usando el `id` guardado en el primer paso:
+
+```bash
+curl http://localhost:5000/api/v1/instance/successors \
+  -H "authorization: Bearer $TOKEN"
+
+curl -X POST http://localhost:5000/api/v1/instance/handover \
+  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"successor_id":"<id-del-sucesor>"}'
+```
+
+La máquina nueva detecta entonces el relevo, espera a que el viejo prepare la copia, la descarga
 —reanudable, por rangos—, la verifica entera y firma un recibo. Al terminar
 tiene todos los datos y **no manda**: queda en reserva.
 
-**En el equipo viejo**, cuando quieras cortar:
+**En el equipo viejo**, cuando hayan pasado las 24 horas del aviso y quieras
+cortar, inicia la activación y deja esa petición abierta mientras completas el
+paso siguiente:
 
 ```bash
 curl -X POST http://localhost:5000/api/v1/instance/handover/activate \
   -H "authorization: Bearer $TOKEN"
 ```
 
-**En el equipo nuevo**, para terminar:
+**En el equipo nuevo**, en otra terminal, termina el relevo. Descarga la copia
+final, envía el recibo que permite retirarse al equipo viejo y asciende al nuevo:
 
 ```bash
 node apps/node-server/adopt.ts --promote --target ./data
@@ -176,10 +207,28 @@ POST /api/v1/communities/:id/migration
 POST /api/v1/communities/:id/migration/export   {"passphrase":"..."}
 GET  /api/v1/communities/:id/migration/bundle
 
-# 3. En el destino, importar (con su instancia parada).
+# 3. Copiar el bundle y la respuesta JSON de exportación al destino e importar.
 # 4. De vuelta en el origen, activar.
 POST /api/v1/communities/:id/migration/complete
 ```
+
+Una VPS instalada con `install-vps.sh` incorpora la entrada offline del paso 3.
+Esta detiene Distop si estaba activo, importa usando exactamente la imagen
+anclada de esa instalación y vuelve a arrancar el servicio:
+
+```bash
+sudo distop-import-community comunidad.distop-backup migration-export.json
+```
+
+`migration-export.json` puede contener el certificado solo o la respuesta JSON
+completa de `POST .../migration/export`. La herramienta pide la frase sin
+mostrarla ni ponerla en la lista de procesos, valida que el certificado fue
+emitido para la identidad de esa VPS y aborta antes de escribir si encuentra
+colisiones. Solo después de comprobar la comunidad en el destino se ejecuta
+`migration/complete` en el origen.
+
+La creación del borrador, la descarga y el envío seguro de los dos archivos
+siguen siendo pasos técnicos: todavía no tienen asistente en la aplicación.
 
 Lo pide **quien administra la comunidad**, no quien hospeda: llevarse los datos
 propios es el derecho del §21. La instancia solo pone la firma que permite al

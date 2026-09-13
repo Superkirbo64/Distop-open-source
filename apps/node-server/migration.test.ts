@@ -10,9 +10,11 @@
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 const raiz = mkdtempSync(join(tmpdir(), "distop-migracion-"));
@@ -41,6 +43,7 @@ let comunidadId = "";
 let mensajeId = "";
 let certificado: any = null;
 let bundle = "";
+const importCli = fileURLToPath(new URL("./import-community.ts", import.meta.url));
 
 /** La instancia de destino: una base con el mismo esquema y nada dentro. */
 function crearDestino(): void {
@@ -48,6 +51,7 @@ function crearDestino(): void {
   try {
     destino.exec("PRAGMA foreign_keys = ON");
     for (const paso of MIGRATIONS) destino.exec(paso);
+    destino.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
     destino.prepare("INSERT INTO meta (key, value) VALUES ('instance_id', ?)").run(INSTANCIA_B);
     destino.prepare("INSERT INTO meta (key, value) VALUES ('lineage_id', ?)").run(uuidv7());
   } finally {
@@ -175,12 +179,23 @@ test("exportar produce un bundle y un certificado que lo ata a ese destino", asy
 });
 
 test("el destino importa conservando los ids, y hacerlo dos veces no duplica", async () => {
-  const primera = await importMigration({
-    file: bundle,
-    passphrase: FRASE,
-    dataDir: dirB,
-    certificate: certificado,
-  });
+  const certificateFile = join(raiz, "migration-export.json");
+  writeFileSync(certificateFile, JSON.stringify({ certificate: certificado }));
+  const ejecutarCli = () => JSON.parse(execFileSync(process.execPath, [
+    importCli,
+    "--bundle", bundle,
+    "--certificate", certificateFile,
+    "--target", dirB,
+    "--confirm-stopped",
+  ], {
+    encoding: "utf8",
+    env: { ...process.env, DISTOP_MIGRATION_PASSPHRASE: FRASE },
+  })) as Awaited<ReturnType<typeof importMigration>>;
+
+  /* El hijo hereda DATABASE_PATH apuntando a A. La CLI debe sobrescribirlo
+     ANTES de importar community-migration.ts: si cambia ese orden, esta prueba
+     escribe en A o rechaza el certificado y deja de pasar. */
+  const primera = ejecutarCli();
   assert.equal(primera.ok, true, JSON.stringify(primera.collisions));
   assert.deepEqual(primera.collisions, []);
   assert.equal(primera.inserted.communities, 1);
@@ -196,12 +211,7 @@ test("el destino importa conservando los ids, y hacerlo dos veces no duplica", a
   });
 
   // Reintentar es normal —una conexión doméstica, treinta gigas— y tiene que ser seguro.
-  const segunda = await importMigration({
-    file: bundle,
-    passphrase: FRASE,
-    dataDir: dirB,
-    certificate: certificado,
-  });
+  const segunda = ejecutarCli();
   assert.equal(segunda.ok, true);
   assert.equal(segunda.inserted.messages, 0, "nada nuevo");
   assert.equal(segunda.skipped.messages, 1, "porque ya estaba");

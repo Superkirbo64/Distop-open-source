@@ -31,12 +31,16 @@ Si después de eso sigues queriendo una máquina alquilada, sigue leyendo.
 |---|---|---|---|
 | **Raspberry Pi / mini-PC** | sin cuota de hosting | Hardware bajo tu control | Electricidad, conexión y copias son tuyas. Es el único «gratis para siempre» si ya tienes el equipo. |
 | **VPS Ubuntu/Debian** | precio del proveedor | Disco persistente y control total | El instalador de Distop deja la aplicación lista, pero la cuenta, cobro y disponibilidad dependen del proveedor. |
+| **Google Cloud Free Tier (`e2-micro`)** | máquina y disco pueden entrar en la franquicia | Una VPS pequeña en regiones concretas | La IPv4 pública se cobra aparte (US$0,005/h en la tarifa consultada); también hay límites y cargos de salida. No debe anunciarse como R$0 permanente. |
 | [**PikaPods**](https://www.pikapods.com/) | desde US$1,80/mes | Disco, HTTPS, dominio del pod y gestión sencilla | Da US$5 iniciales sin tarjeta, no una capa gratuita permanente. Distop debe ser admitido en su catálogo. |
 | [**Railway**](https://docs.railway.com/pricing) | prueba; luego desde US$5/mes | Docker, HTTPS y volúmenes | La prueba es crédito temporal. El volumen se factura aparte y hay que validar persistencia antes de publicar la plantilla. |
 | [**Northflank Sandbox**](https://northflank.com/docs/v1/application/billing/pricing-on-northflank) | servicios gratis | Servicios siempre activos para pruebas | Exige método de pago, no recomienda Sandbox para producción y el volumen persistente es un recurso facturado aparte. |
 
 Los precios y las condiciones cambian sin avisar. Contrasta antes de pagar. En
-particular, un crédito de bienvenida no es una VPS gratuita permanente.
+particular, un crédito de bienvenida no es una VPS gratuita permanente. Para
+Google Cloud, comprueba la [capa gratuita de Compute Engine](https://cloud.google.com/free/docs/free-cloud-features#compute)
+y los [precios actuales de direcciones IP](https://cloud.google.com/vpc/network-pricing#ipaddress)
+antes de dejar la máquina encendida.
 
 ## Instalación lista
 

@@ -26,8 +26,15 @@ sudo tailscale funnel --bg --yes 5000
 sudo distop-set-public-url https://nombre-de-tu-equipo.tu-red.ts.net
 ```
 
-Abre esa URL, crea la cuenta dueña usando el código y guarda la frase de copia
-de seguridad fuera de la VPS.
+Si esta será una instancia nueva, abre esa URL, crea la cuenta dueña usando el
+código y guarda la frase de copia de seguridad fuera de la VPS.
+
+Si quieres trasladar una comunidad que ya existe en otro equipo, no crees otra
+comunidad con el mismo nombre ni des por hecho que aparecerá al instalar. El
+instalador solo prepara una instancia vacía. El proyecto conserva un protocolo
+técnico de relevo en [relevo.md](relevo.md), pero todavía no hay un asistente de
+usuario que haga el traslado completo a una VPS. Haz primero una copia verificada
+y no mantengas dos copias de la misma instancia escribiendo a la vez.
 
 ## Operación
 
@@ -36,6 +43,13 @@ sudo systemctl status distop
 sudo journalctl -u distop -f
 sudo systemctl restart distop
 ```
+
+Para importar una sola comunidad exportada desde otra instancia, copia a la VPS
+el bundle y la respuesta JSON de exportación y ejecuta
+`sudo distop-import-community BUNDLE CERTIFICADO_JSON`. La orden pide la frase
+de forma oculta, detiene y recupera el servicio y rechaza un certificado dirigido
+a otra instancia. El recorrido completo y sus limitaciones están en
+[relevo.md](relevo.md#mudar-una-sola-comunidad).
 
 Los secretos están en `/etc/distop/distop.env` con permisos `0600`. Para una
 copia en frío, detén Distop y copia `/var/lib/distop`; comprueba una restauración
@@ -52,5 +66,5 @@ unidad y reinicia el contenedor.
 Para fijar o volver a una versión concreta, añade `--version`:
 
 ```sh
-sudo bash install-vps.sh --version 0.1.9
+sudo bash install-vps.sh --version X.Y.Z
 ```
