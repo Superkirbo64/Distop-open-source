@@ -70,6 +70,8 @@ export const es = {
   "auth.recoverHint":
     "Estas cuentas no tienen contraseña. Como entras desde este equipo, puedes continuar sin escribir nada.",
   "auth.registrationClosed": "Este servidor tiene el registro cerrado.",
+  "auth.deviceProfileUnknown":
+    "Este servidor todavía no conoce tu perfil de este dispositivo. Entra con una invitación o desde Explorar.",
   "auth.chooseProfile": "¿Quién va a entrar?",
   "auth.chooseProfileHint": "Elige uno de los perfiles guardados en este equipo.",
   "auth.addProfile": "Añadir perfil",

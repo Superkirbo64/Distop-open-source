@@ -3,9 +3,10 @@
  * Se puede ver a qué te invitan antes de decidir: nombre, gente dentro y quién
  * hospeda. Entrar sin cuenta es una opción de primera clase, no un truco.
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { BRAND } from "../brand.ts";
-import { api, getTokens } from "../lib/api.ts";
+import { api, getTokens, RequestError } from "../lib/api.ts";
+import { clearPendingInvite, storePendingInvite } from "../lib/instance.ts";
 import { useStore } from "../store.ts";
 import { Button, ErrorNote, Field, Spinner, useT, useErrorText } from "../components/ui.tsx";
 
@@ -37,22 +38,22 @@ export function Invite({ code, onEnter }: { code: string; onEnter: (communityId:
   const [guestName, setGuestName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const automatic = useRef(false);
-
   useEffect(() => {
     api<InvitePreview>("GET", `/api/v1/invites/${code}`)
       .then(setPreview)
-      .catch(() => setInvalid(true));
+      .catch((err) => {
+        setInvalid(true);
+        // El enlace ya no vale: no se retoma más. Un corte de red no la borra.
+        if (err instanceof RequestError && err.status >= 400 && err.status < 500) clearPendingInvite(code);
+      });
   }, [code]);
 
+  /* Sin sesión, desde aquí se sale a entrar o a crear el perfil. El código se
+     guarda ANTES de salir y App vuelve a esta invitación en cuanto hay usuario:
+     antes, pulsar Entrar llevaba a "/" y había que volver a pegar el enlace. */
   useEffect(() => {
-    if (!user || !preview || automatic.current) return;
-    automatic.current = true;
-    void join(false);
-    // `join` usa el código y el usuario de este mismo render; automatic impide
-    // repetir el POST cuando llegan READY o la lista de comunidades.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, preview]);
+    if (!user) storePendingInvite(code);
+  }, [user, code]);
 
   async function join(asGuest: boolean) {
     setBusy(true);
@@ -60,6 +61,8 @@ export function Invite({ code, onEnter }: { code: string; onEnter: (communityId:
     try {
       if (asGuest && !getTokens()) await authenticate("/api/v1/auth/guest", { display_name: guestName });
       const result = await api<{ community: { id: string } }>("POST", `/api/v1/invites/${code}/join`);
+      // Confirmada la unión, la invitación ya no hay que retomarla.
+      clearPendingInvite(code);
       await reloadCommunities();
       onEnter(result.community.id);
     } catch (err) {

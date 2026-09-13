@@ -45,7 +45,7 @@ import {
   hostHere,
   setActiveInstance,
   takePendingCreate,
-  takePendingInvite,
+  peekPendingInvite,
   type PendingCommunity,
 } from "./lib/instance.ts";
 import { ensurePortableIdentity } from "./lib/portable.ts";
@@ -304,10 +304,12 @@ export function App() {
     };
   }, [user]);
 
-  // Una invitación pegada antes de conectar se abre en cuanto la app está en pie.
+  /* Una invitación pendiente (pegada antes de conectar, o abierta sin sesión)
+     se retoma en cuanto hay usuario. No se borra aquí: la borra Invite cuando
+     el servidor confirma la unión, o si el enlace ya no vale. */
   useEffect(() => {
     if (!ready || !user) return;
-    const code = takePendingInvite();
+    const code = peekPendingInvite();
     if (code) navigate(`/invite/${code}`);
   }, [ready, user, navigate]);
 

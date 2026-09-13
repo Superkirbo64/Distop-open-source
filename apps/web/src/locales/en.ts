@@ -70,6 +70,7 @@ export const en: Record<keyof typeof es, string> = {
   "auth.recoverTitle": "Accounts on this device",
   "auth.recoverHint": "These accounts have no password. Since you're on this device, you can just walk right in.",
   "auth.registrationClosed": "Registration is closed on this server.",
+  "auth.deviceProfileUnknown": "This server doesn't know your profile from this device yet. Join with an invite or from Explore.",
   "auth.chooseProfile": "Who's signing in?",
   "auth.chooseProfileHint": "Choose one of the profiles saved on this device.",
   "auth.addProfile": "Add profile",

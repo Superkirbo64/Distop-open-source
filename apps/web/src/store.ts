@@ -447,6 +447,13 @@ export const useStore = create<State>()((set, get) => ({
        el usuario vive en el dispositivo y Explorar tira del directorio central. */
     if (appWithoutInstance()) {
       set({ user: localUser(), ready: true, directoryUrl: CENTRAL_DIRECTORY_URL });
+      /* Si se vuelve aquí porque un servidor no reconoció el perfil del
+         dispositivo, se explica en vez de volver en silencio. */
+      const aviso = sessionStorage.getItem(AVISO_ENTRADA);
+      sessionStorage.removeItem(AVISO_ENTRADA);
+      if (aviso === "auth.deviceProfileUnknown" || aviso === "connect.unreachable") {
+        get().pushNotice({ kind: "error", title: mensaje(aviso), body: "" });
+      }
       return;
     }
 
@@ -528,10 +535,13 @@ export const useStore = create<State>()((set, get) => ({
       if (!isLocalInstance(instanceBase)) {
         /* Un corte de red no borra la invitación ni la comunidad elegida en
            Explorar: se reintenta al volver. Un rechazo del servidor, sí. */
-        if (!(portableError instanceof RequestError && portableError.status === 0)) {
+        const deRed = portableError instanceof RequestError && portableError.status === 0;
+        if (!deRed) {
           takePendingInvite();
           clearPendingPublicJoin();
         }
+        // La app vuelve a su inicio, pero explicando por qué (se enseña al llegar).
+        sessionStorage.setItem(AVISO_ENTRADA, deRed ? "connect.unreachable" : "auth.deviceProfileUnknown");
         setActiveInstance(null);
         return;
       }
@@ -1016,6 +1026,9 @@ export const useStore = create<State>()((set, get) => ({
 }));
 
 /** Traducir fuera de React: el store avisa, y un aviso en inglés fijo sería peor. */
+/** Por qué la app volvió a su inicio desde un servidor: se enseña al llegar. */
+const AVISO_ENTRADA = "distop.avisoEntrada";
+
 function mensaje(key: MessageKey, vars?: Record<string, string | number>): string {
   return translate(useStore.getState().prefs.locale, key, vars);
 }

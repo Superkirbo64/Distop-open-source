@@ -176,3 +176,15 @@ test("una alerta para una dirección que no vigilamos no toca nada", () => {
   assert.equal(watchAlert(CASA), undefined);
   assert.equal(knownInstances()[0]!.conflict, undefined);
 });
+
+test("una invitación abierta sin sesión sobrevive a entrar o crear perfil y solo se olvida al confirmarla", async () => {
+  limpiar();
+  const { storePendingInvite, peekPendingInvite, clearPendingInvite } = await import("./instance.ts");
+  storePendingInvite("abc123");
+  assert.equal(peekPendingInvite(), "abc123");
+  assert.equal(peekPendingInvite(), "abc123", "mirarla para volver a /invite no la consume");
+  clearPendingInvite("otra");
+  assert.equal(peekPendingInvite(), "abc123", "confirmar otra invitación no borra esta");
+  clearPendingInvite("abc123");
+  assert.equal(peekPendingInvite(), null, "confirmada, se olvida");
+});

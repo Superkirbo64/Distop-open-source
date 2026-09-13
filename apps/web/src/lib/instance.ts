@@ -257,12 +257,14 @@ export function clientOrigin(): string {
   return instanceBase || location.origin;
 }
 
-/* Una invitación pegada antes de conectar sobrevive a la recarga: se apunta
-   aquí y App.tsx la abre en cuanto la aplicación vuelve a estar en pie. */
+/* Una invitación pegada antes de conectar, o abierta sin sesión, sobrevive a la
+   recarga y a entrar o crear el perfil: se apunta aquí y App.tsx vuelve a ella
+   en cuanto hay usuario. Solo se olvida al confirmar la unión o si el enlace ya
+   no vale. */
 const PENDING_INVITE = "distop.pendingInvite";
 const PENDING_PUBLIC_JOIN = "distop.pendingPublicJoin";
 
-function storePendingInvite(code: string): void {
+export function storePendingInvite(code: string): void {
   localStorage.setItem(PENDING_INVITE, code);
 }
 
@@ -274,6 +276,11 @@ export function takePendingInvite(): string | null {
   const code = localStorage.getItem(PENDING_INVITE);
   if (code) localStorage.removeItem(PENDING_INVITE);
   return code;
+}
+
+/** Olvida la invitación pendiente, pero solo si es esa. */
+export function clearPendingInvite(code: string): void {
+  if (localStorage.getItem(PENDING_INVITE) === code) localStorage.removeItem(PENDING_INVITE);
 }
 
 export interface PendingPublicJoin {
