@@ -24,6 +24,7 @@ import {
   normalizeInstanceUrl,
   parseInvite,
   appWithoutInstance,
+  railCommunities,
   rememberCommunities,
   setActiveInstance,
   storePendingCommunity,
@@ -92,18 +93,18 @@ export function Rail({
   const [knownRevision, setKnownRevision] = useState(0);
   const [unavailable, setUnavailable] = useState<{ community: CachedCommunity; url: string } | null>(null);
 
+  /* Hasta READY la lista está vacía por no haber llegado, no porque te fueras:
+     guardarla entonces olvidaba el servidor (y su identidad fijada) en cada
+     arranque. `instance` solo lo pone READY. */
+  const loaded = useStore((s) => s.instance !== null);
   useEffect(() => {
-    if (isPackaged() && instanceBase) rememberCommunities(instanceBase, communities);
-  }, [communities, knownRevision]);
+    if (loaded && isPackaged() && instanceBase) rememberCommunities(instanceBase, communities);
+  }, [loaded, communities, knownRevision]);
 
   const visibleCommunities = useMemo(() => {
-    const here = communities.map((community) => ({ community, url: instanceBase }));
-    if (!isPackaged()) return here;
-    const elsewhere = knownInstances()
-      .filter((known) => known.url !== instanceBase)
-      .flatMap((known) => (known.communities ?? []).map((community) => ({ community, url: known.url })));
-    return [...here, ...elsewhere];
-  }, [communities]);
+    if (!isPackaged()) return communities.map((community) => ({ community, url: instanceBase }));
+    return railCommunities(knownInstances(), instanceBase, communities);
+  }, [communities, knownRevision]);
 
   async function selectCommunity(community: CachedCommunity, url: string): Promise<void> {
     if (!url || url === instanceBase) {

@@ -385,12 +385,39 @@ export function knownInstances(): KnownInstance[] {
   }
 }
 
+/* Cada servidor conserva su sitio: la barra pinta las comunidades en este
+   orden, y mover el último usado al principio hacía saltar los iconos. */
+function withKnown(list: KnownInstance[], entry: KnownInstance): KnownInstance[] {
+  const at = list.findIndex((known) => known.url === entry.url);
+  if (at !== -1) return list.map((known, index) => (index === at ? entry : known));
+  if (list.length < 20) return [...list, entry];
+  /* Llena: sale la menos usada, no la primera. Con orden fijo la posición ya no
+     dice antigüedad, y en listas guardadas antes la primera era la más reciente. */
+  const oldest = list.reduce((min, known, index) => ((known.last_seen ?? 0) < (list[min]!.last_seen ?? 0) ? index : min), 0);
+  return [...list.filter((_, index) => index !== oldest), entry];
+}
+
+/**
+ * Las comunidades de la barra en orden fijo: el de la lista de servidores, con
+ * las del servidor activo recién llegadas en su sitio. Solo va delante un
+ * servidor activo que la lista aún no conoce.
+ */
+export function railCommunities(
+  known: KnownInstance[],
+  base: string,
+  live: CachedCommunity[],
+): Array<{ community: CachedCommunity; url: string }> {
+  const here = live.map((community) => ({ community, url: base }));
+  const ordered = known.flatMap((item) =>
+    item.url === base ? here : (item.communities ?? []).map((community) => ({ community, url: item.url })),
+  );
+  return known.some((item) => item.url === base) ? ordered : [...here, ...ordered];
+}
+
 function rememberInstance(url: string, name: string): void {
   const list = knownInstances();
   const previous = list.find((known) => known.url === url);
-  const rest = list.filter((known) => known.url !== url);
-  const next: KnownInstance[] = [{ ...previous, url, name, last_seen: Date.now() }, ...rest].slice(0, 20);
-  localStorage.setItem(LIST_KEY, JSON.stringify(next));
+  localStorage.setItem(LIST_KEY, JSON.stringify(withKnown(list, { ...previous, url, name, last_seen: Date.now() })));
 }
 
 /** Guarda solo la ficha visual necesaria para pintar una barra unificada. */
@@ -423,7 +450,7 @@ export function rememberCommunities(url: string, communities: Community[]): void
     last_seen: Date.now(),
     communities: cached,
   };
-  localStorage.setItem(LIST_KEY, JSON.stringify([entry, ...list.filter((known) => known.url !== url)].slice(0, 20)));
+  localStorage.setItem(LIST_KEY, JSON.stringify(withKnown(list, entry)));
   syncDesktopAvailability();
 }
 
@@ -697,7 +724,7 @@ export async function trustInstanceIdentity(info: InstanceIdentityInfo, connecte
       identity_fingerprint: fingerprint, identity_public_key: proof.public_key, watch_url: watchUrl,
       ...(cadena ? { chain: cadena } : {}),
     };
-    localStorage.setItem(LIST_KEY, JSON.stringify([entry, ...list.filter((known) => known.url !== connectedUrl)].slice(0, 20)));
+    localStorage.setItem(LIST_KEY, JSON.stringify(withKnown(list, entry)));
     syncDesktopAvailability();
     return true;
   } catch { return false; }
