@@ -273,7 +273,11 @@ jobs:
           cd scripts
           sha256sum install-vps.sh > install-vps.sh.sha256
           sha256sum --check install-vps.sh.sha256
-      - name: Smoke real en Ubuntu limpio y persistencia tras reinicio
+      # Actualizar, no solo instalar: primero la release estable anterior con el
+      # servicio vivo, y encima la del tag. Así se probó el fallo de 0.1.10, que
+      # una instalación limpia no podía ver: el instalador reescribía la unidad
+      # pero dejaba corriendo el contenedor viejo y daba la versión por buena.
+      - name: Smoke real en Ubuntu limpio, actualización y persistencia tras reinicio
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # github.actor tampoco se interpola dentro del `run:`. No es un
@@ -282,7 +286,15 @@ jobs:
           REGISTRY_USER: ${{ github.actor }}
         run: |
           printf '%s' "$GH_TOKEN" | sudo docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          PREV=$(gh release list --exclude-drafts --exclude-pre-releases --limit 20 --json tagName --jq '.[].tagName' \
+            | grep -E '^v[0-9]' | grep -vx "$GITHUB_REF_NAME" | head -n 1 || true)
+          if [ -n "$PREV" ]; then
+            echo "Instalando primero $PREV para probar la actualización"
+            sudo bash scripts/install-vps.sh --version "${PREV#v}" --no-tailscale --name "Distop smoke"
+          fi
           sudo bash scripts/install-vps.sh --version "${GITHUB_REF_NAME#v}" --no-tailscale --name "Distop smoke"
+          # Lo que corre de verdad, no lo que dice el instalador.
+          curl --fail --silent http://127.0.0.1:5000/health | jq -e --arg v "${GITHUB_REF_NAME#v}" '.version == $v'
           BEFORE=$(curl --fail --silent http://127.0.0.1:5000/api/v1/info | jq -r .instance_id)
           test -n "$BEFORE" && test "$BEFORE" != null
           # Este reinicio es además la prueba del anclaje por digest: la unidad
