@@ -292,6 +292,10 @@
      lo que se salga aquí sería una barra del documento moviendo la interfaz
      completa, cabeceras incluidas, en vez de desplazar el chat. */
   overflow: hidden;
+  /* La muesca y la barra de gestos del iPhone no tapan la cabecera ni la caja
+     de escribir. En Android las aparta Capacitor (adjustMarginsForEdgeToEdge)
+     y aquí valen 0. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   /* El ancho que el usuario haya arrastrado entra como VALOR POR DEFECTO, no
      como estilo en línea sobre --w-members: en línea ganaba a todo y plegar el
      panel dejaba de encogerlo, así que el hueco seguía ahí vacío y el chat no
@@ -373,48 +377,38 @@
    `pointer: coarse` aparta esto de una ventana de PC angosta: sin dedo de por
    medio no es un móvil, es una ventana estrecha, y el sidebar se queda. */
 @media (max-width: 900px) and (pointer: coarse) {
+  /* Una tira de tres pantallas —navegación | chat | miembros—, cada una del
+     ancho de la rejilla, y App.tsx desliza hasta la que toca. Antes cada panel
+     aparecía de golpe con `display`; así entra animado, como en el escritorio.
+     Con `snap`, girar el teléfono vuelve a encajar la pantalla en su sitio. */
   .app-grid {
-    grid-template-columns: 1fr;
-    grid-template-areas: "main";
+    padding-inline: 0;
+    /* El panel de canales ocupa el teléfono entero, pero no pasa de 22rem: en
+       una tablet en vertical se estiraba a 700px. Lo que sobra deja asomar el
+       chat, como un cajón, y tocarlo vuelve a él (App.tsx). */
+    grid-template-columns: var(--w-rail) min(calc(100% - var(--w-rail)), 22rem) 100% 100%;
+    scroll-snap-type: x mandatory;
   }
-  .app-grid > [data-pane] {
-    display: none;
-  }
-  .app-grid > [data-pane="main"] {
-    display: flex;
-    grid-area: main;
-    width: 100%;
+  .app-grid > :is([data-pane="rail"], [data-pane="main"], [data-pane="members"]) {
+    scroll-snap-align: start;
   }
 
-  .app-grid[data-mobile="nav"] {
-    grid-template-columns: auto 1fr;
-    grid-template-areas:
-      "rail sidebar"
-      "user user";
+  /* Lo que queda fuera de la pantalla no se tabula ni lo lee un lector. Se
+     esconde al terminar de salir, no al empezar: si no, se apagaría a mitad
+     del deslizamiento. */
+  .app-grid:not([data-mobile="nav"]) > :is([data-pane="rail"], [data-pane="sidebar"], [data-pane="user"]),
+  .app-grid:not([data-mobile="main"]) > [data-pane="main"],
+  .app-grid:not([data-mobile="members"]) > [data-pane="members"] {
+    visibility: hidden;
+    transition: visibility 0s linear var(--dur-3);
   }
-  .app-grid[data-mobile="nav"] > [data-pane="user"] {
-    display: flex;
-  }
-  .app-grid[data-mobile="nav"] > [data-pane="rail"] {
-    display: flex;
-    grid-area: rail;
-  }
-  .app-grid[data-mobile="nav"] > [data-pane="sidebar"] {
-    display: flex;
-    grid-area: sidebar;
-    width: 100%;
-  }
+  /* El chat que asoma junto al cajón se ve atenuado y no recibe toques: el toque
+     cae en la rejilla, que lo entiende como "volver". */
   .app-grid[data-mobile="nav"] > [data-pane="main"] {
-    display: none;
-  }
-
-  .app-grid[data-mobile="members"] > [data-pane="members"] {
-    display: block;
-    grid-area: main;
-    width: 100%;
-  }
-  .app-grid[data-mobile="members"] > [data-pane="main"] {
-    display: none;
+    visibility: visible;
+    opacity: 0.4;
+    pointer-events: none;
+    transition: opacity var(--dur-3) var(--ease-soft);
   }
 }
 
@@ -689,7 +683,8 @@
      recuperarlo—. El <li> es la celda de la rejilla y no se mueve nunca. */
   .discord-card {
     position: relative;
-    width: 340px;
+    /* 340px, salvo en un teléfono estrecho: a 320px se salía por la derecha. */
+    width: min(340px, 100%);
     isolation: isolate;
     background-color: #2b2d31;
     border-radius: 16px;

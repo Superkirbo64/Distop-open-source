@@ -153,3 +153,33 @@ Consecuencia aceptada: el primer arranque compila desde el código en la VM
 disponibilidad depende de un proveedor que puede cambiar sus cuotas cuando
 quiera. Mitigación: la comunidad nunca queda cautiva — copia cifrada portable,
 identidad exportable y el PC de casa sigue siendo el modo por defecto.
+
+## 2026-09: Los servidores de juego salen del proyecto
+
+Decisión suya: hospedar o administrar servidores de Minecraft —u otros
+juegos— deja de formar parte de Distop. Se retiró la Fase 4 del MVP, la
+sección §13 de `claude.md`, el flujo de onboarding de §34, la skill
+`game-server-integration` y el permiso `MANAGE_GAME_SERVERS` del protocolo.
+
+Nada de esto estaba implementado: 144 rutas en `api.ts` y ni una de RCON,
+consola o estado de servidor. Se retira diseño, no código.
+
+Dos cosas se conservan a propósito, porque no son esta idea:
+
+- **La metáfora en los textos de usuario.** «Tu comunidad funciona mientras tu
+  PC esté encendido, igual que un servidor de Minecraft montado en casa»
+  (`apps/marketing/src/i18n/ui.ts`, en los tres idiomas). `MEMORY.md` ya
+  registra que esa frase se queda: explica el self-hosting en vocabulario de
+  casa, y no promete integración ninguna.
+- **La detección de juego para «Jugando a…»**
+  (`apps/desktop/src/games.ts`). Que el perfil diga que estás jugando a
+  Minecraft no tiene nada que ver con hospedar su servidor.
+
+La numeración de secciones y fases NO se tocó. El código cita §1–§37 en sus
+comentarios y `docs/bots-de-discord.md` cita «§27, Fase 5»: renumerar habría
+invalidado esas referencias en silencio. Por eso §13 y la Fase 4 quedan como
+lápidas de una línea en vez de desaparecer.
+
+Esto revierte a conciencia la nota de la entrada de Discord («se restauraron
+§12 y §13 … no volver a resumirlas»): §12 (bots y plugins) sigue en pie; §13
+se retira por decisión de producto, no por una pérdida de contexto.

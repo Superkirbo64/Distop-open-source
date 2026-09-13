@@ -42,13 +42,13 @@ Ejemplo de manifiesto:
 
 ```json
 {
-  "name": "Minecraft Status",
+  "name": "Estado del Servidor",
   "version": "1.0.0",
-  "description": "Muestra jugadores y estado del servidor",
+  "description": "Muestra el estado de la instancia en un canal",
   "permissions": [
     "read_channels",
     "send_messages",
-    "manage_game_server_widget"
+    "read_instance_health"
   ],
   "entry": "index.js"
 }

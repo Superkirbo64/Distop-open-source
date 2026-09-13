@@ -39,8 +39,8 @@ import { addNotice, loadNotices, saveNotices, type Notice, type NoticeKind } fro
 import { configureVoice, currentChannel, handleSignal, leaveVoice, rejectVoiceJoin, resumeVoice, setSoundError, setVideoMode, setVoiceMode, syncPeers } from "./lib/voice.ts";
 import { playClip } from "./lib/relay.ts";
 import { onRecordingUpdate } from "./lib/record.ts";
-import { forgetCommunity, instanceBase, peekPendingInvite, rememberCommunities, setDesktopAvailabilityStatus, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
-import { portableAuthPayload, syncPortableMedia } from "./lib/portable.ts";
+import { CENTRAL_DIRECTORY_URL, forgetCommunity, instanceBase, peekPendingInvite, peekPendingPublicJoin, phoneWithoutInstance, rememberCommunities, setDesktopAvailabilityStatus, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
+import { localUser, portableAuthPayload, syncPortableMedia } from "./lib/portable.ts";
 
 export type ThemeChoice = "light" | "dark" | "system";
 export type Density = "compact" | "cozy";
@@ -443,6 +443,13 @@ export const useStore = create<State>()((set, get) => ({
     // El idioma detectado puede necesitar su chunk; no se espera a la descarga.
     ensureLocale(get().prefs.locale);
 
+    /* El teléfono sin comunidad todavía no tiene servidor al que preguntar: el
+       usuario vive en el dispositivo y Explorar tira del directorio central. */
+    if (phoneWithoutInstance()) {
+      set({ user: localUser(), ready: true, directoryUrl: CENTRAL_DIRECTORY_URL });
+      return;
+    }
+
     // Se pregunta siempre, antes que nada: una instancia sin dueño enseña la
     // puesta en marcha, no un formulario de acceso a un sitio que es tuyo.
     try {
@@ -491,7 +498,7 @@ export const useStore = create<State>()((set, get) => ({
     /* Al saltar a la PC de otra persona no se abre un registro ni se inventa
        un invitado: la identidad secreta de la app recupera (o, con invitación,
        crea) la cuenta portable de esta instancia. */
-    const portable = portableAuthPayload(peekPendingInvite());
+    const portable = portableAuthPayload(peekPendingInvite(), peekPendingPublicJoin()?.communityId);
     if (portable) {
       try {
         const result = await api<Tokens & { user: SelfUser }>("POST", "/api/v1/auth/portable", portable);

@@ -120,6 +120,17 @@ test("quien hospeda sin contraseña puede volver a entrar desde su equipo", asyn
   assert.ok(nombres.includes("meda-goga"), "sin contraseña y con comunidad propia: recuperable");
   assert.ok(!nombres.includes("kirbo"), "con contraseña ya no aparece: para eso está el login");
 
+  const perfiles = json.local_accounts as Array<{ username: string; has_password: boolean; community?: string }>;
+  assert.deepEqual(
+    perfiles.map(({ username, has_password }) => ({ username, has_password })),
+    [
+      { username: "meda-goga", has_password: false },
+      { username: "kirbo", has_password: true },
+    ],
+    "el selector local incluye cuentas con y sin contraseña",
+  );
+  assert.ok(perfiles.every((perfil) => perfil.community === undefined), "los perfiles no filtran comunidades");
+
   const vuelta = await call("POST", "/api/v1/auth/recover", { body: { username: "meda-goga" } });
   assert.equal(vuelta.status, 200);
   assert.equal(

@@ -205,17 +205,12 @@ if (trustedProxyHops < 1) {
 }
 
 /**
- * Orígenes del cliente web, con el comodín cerrado en producción (§22).
+ * Orígenes concretos del cliente web; el comodín se descarta siempre (§22).
  *
- * "*" no significa "que cualquiera mire": http.ts refleja el Origin que llegue
- * y le acompaña `access-control-allow-credentials: true`, así que una página
- * cualquiera de internet podría leer respuestas de la instancia con lo que el
- * navegador adjunte por su cuenta. Aquí el daño real es pequeño —la sesión
- * viaja en `Authorization: Bearer`, que no se adjunta solo— pero el comentario
- * de esta misma opción llevaba tiempo prometiendo una guarda que no existía, e
- * `isProduction` estaba definido y sin usar en ningún sitio. Un comentario que
- * describe una protección inexistente es peor que no tenerla: alguien lo lee,
- * se lo cree y despliega con el comodín puesto.
+ * Una página abierta en el navegador también puede hablar con 127.0.0.1. Si
+ * reflejáramos "*", podría leer /info y llamar /auth/recover sin necesitar un
+ * Bearer previo: precisamente esos endpoints fabrican la sesión. El entorno no
+ * cambia ese hecho, así que desarrollo y producción obedecen la misma regla.
  *
  * Se descarta el comodín y se sigue arrancando, en vez de morir aquí: hay un
  * valor seguro al que caer —los orígenes concretos de la lista más los de las
@@ -225,16 +220,16 @@ if (trustedProxyHops < 1) {
  * fichero sí mata el arranque a propósito. El aviso sale por consola nombrando
  * la variable: el fallo se ve, no se traga en silencio (§26).
  */
-export function allowedCorsOrigins(configured: string[], production: boolean): string[] {
+export function allowedCorsOrigins(configured: string[]): string[] {
   const comodin = configured.includes("*");
-  if (comodin && production) {
+  if (comodin) {
     console.warn(
-      '[config] CORS_ORIGINS incluye "*" y NODE_ENV=production: el comodín se ignora. ' +
+      '[config] CORS_ORIGINS incluye "*": el comodín se ignora. ' +
         "Pon los orígenes concretos de tu cliente web separados por coma.",
     );
   }
   return [
-    ...(comodin && production ? configured.filter((origin) => origin !== "*") : configured),
+    ...configured.filter((origin) => origin !== "*"),
     /* Las apps empaquetadas no las sirve esta instancia: traen su propio origen
        fijo (el protocolo de la app de escritorio, el WebView de Android). Van
        siempre, no en la variable: toda instancia debe aceptar a sus clientes
@@ -397,11 +392,8 @@ export const config = {
     "application/octet-stream",
   ])),
 
-  /** Orígenes del cliente web. "*" solo se acepta fuera de producción (arriba). */
-  corsOrigins: allowedCorsOrigins(
-    list("CORS_ORIGINS", ["http://localhost:5173", "http://127.0.0.1:5173"]),
-    isProduction,
-  ),
+  /** Orígenes del cliente web. El comodín nunca es una política válida (arriba). */
+  corsOrigins: allowedCorsOrigins(list("CORS_ORIGINS", ["http://localhost:5173", "http://127.0.0.1:5173"])),
 
   /**
    * Servidores ICE para la voz (§9.4).

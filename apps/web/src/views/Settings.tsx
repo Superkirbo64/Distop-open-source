@@ -4,7 +4,7 @@
  * ni ningún aviso de "mejora tu plan".
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_PROFILE_STYLE, toProfileStyle, type SelfUser } from "@distop/protocol";
+import { DEFAULT_PROFILE_STYLE, MIN_PASSWORD_LENGTH, toProfileStyle, type SelfUser } from "@distop/protocol";
 import { ChevronDown } from "lucide-react";
 import { useStore, type BackdropChoice, type Density, type FontChoice, type ThemeChoice } from "../store.ts";
 import { api, setTokens, type Tokens } from "../lib/api.ts";
@@ -37,6 +37,7 @@ import {
   useT,
   useErrorText,
   useLocale,
+  PasswordInput,
 } from "../components/ui.tsx";
 import { WallpaperField, WallpaperPicker } from "../components/Wallpaper.tsx";
 import { Gallery } from "../components/Gallery.tsx";
@@ -1917,10 +1918,8 @@ function AccountTab({ onClose }: { onClose: () => void }) {
 
           <Field label={t("auth.password")} hint={t("auth.passwordHint")}>
             {(id) => (
-              <input
-                id={id}
-                type="password"
-                className="field"
+              <PasswordInput
+                id={id}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 maxLength={200}
@@ -1934,7 +1933,7 @@ function AccountTab({ onClose }: { onClose: () => void }) {
           <Button
             variant="primary"
             onClick={upgrade}
-            disabled={username.length < 3 || password.length < 10}
+            disabled={username.length < 3 || password.length < MIN_PASSWORD_LENGTH}
             className="self-start"
           >
             {t("settings.upgrade")}
@@ -2018,10 +2017,8 @@ function ChangePassword() {
 
       <Field label={t("settings.currentPassword")}>
         {(id) => (
-          <input
-            id={id}
-            type="password"
-            className="field"
+          <PasswordInput
+            id={id}
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
             maxLength={200}
@@ -2030,12 +2027,10 @@ function ChangePassword() {
         )}
       </Field>
 
-      <Field label={t("settings.newPassword")} hint={t("auth.passwordHint")}>
+      <Field label={t("settings.newPassword")} hint={t("auth.passwordMin", { n: MIN_PASSWORD_LENGTH })}>
         {(id) => (
-          <input
-            id={id}
-            type="password"
-            className="field"
+          <PasswordInput
+            id={id}
             value={next}
             onChange={(e) => setNext(e.target.value)}
             maxLength={200}
@@ -2050,7 +2045,7 @@ function ChangePassword() {
       <Button
         variant="primary"
         onClick={change}
-        disabled={state === "saving" || current.length === 0 || next.length < 10}
+        disabled={state === "saving" || current.length === 0 || next.length < MIN_PASSWORD_LENGTH}
         className="self-start"
       >
         {t("settings.changePassword")}

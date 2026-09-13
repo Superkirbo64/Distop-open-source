@@ -4,6 +4,10 @@ import type { DirectoryStorage } from "./storage.ts";
 const CHALLENGE_TTL = 5 * 60_000;
 export const LEASE_MIN = 6 * 60 * 60_000;
 export const LEASE_MAX = 30 * 60 * 60_000;
+/** Cuánto se guarda una ficha que dejó de renovarse. Oculta desde que vence la
+ * lease; pasado este plazo Deno KV la borra sola. Mientras dure, la identidad
+ * sigue protegida: otra clave no puede quedarse con el mismo linaje. */
+export const RETENTION = 90 * 24 * 60 * 60_000;
 
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -226,27 +230,38 @@ export class DirectoryService {
       expires_at: manifest.payload.expires_at,
     };
     const saved = await this.storage.setIfVersion(manifestKey, known.version, bundle, {
-      expireIn: Math.max(1, manifest.payload.expires_at - now),
+      expireIn: Math.max(1, manifest.payload.expires_at - now) + RETENTION,
     });
     if (!saved) throw new Error("CONCURRENT_RENEWAL");
     return { published: manifest.payload.communities.length, expires_at: manifest.payload.expires_at };
   }
 
   async explore(options: { language?: string; tag?: string; cursor?: string; limit?: number } = {}): Promise<{ communities: StoredListing[]; cursor: string }> {
-    const page = await this.storage.list<StoredManifest>(["manifest"], { cursor: options.cursor, limit: Math.min(options.limit ?? 50, 50) });
+    const limit = Math.min(options.limit ?? 50, 50);
     const now = this.now();
     const communities: StoredListing[] = [];
-    for (const bundle of page.values) {
-      if (bundle.expires_at <= now) continue;
-      for (const listing of bundle.communities) {
-        if (options.language && listing.language !== options.language) continue;
-        if (options.tag && !listing.tags.includes(options.tag)) continue;
-        const blocked = await this.storage.get<boolean>(["blocked", `${listing.lineage_id}:${listing.id}`]);
-        if (!blocked.value) communities.push(listing);
+    /* Las fichas vencidas siguen en KV hasta RETENTION y ocupan sitio en la
+       página: se sigue leyendo hasta juntar `limit` instancias vivas. */
+    let cursor = options.cursor;
+    let alive = 0;
+    // ponytail: tope de 10 páginas (1.000 fichas) por consulta; un índice aparte de vivas si el directorio crece más.
+    for (let pages = 0; pages < 10; pages++) {
+      const page = await this.storage.list<StoredManifest>(["manifest"], { cursor, limit: 100 });
+      for (const bundle of page.values) {
+        if (bundle.expires_at <= now) continue;
+        alive++;
+        for (const listing of bundle.communities) {
+          if (options.language && listing.language !== options.language) continue;
+          if (options.tag && !listing.tags.includes(options.tag)) continue;
+          const blocked = await this.storage.get<boolean>(["blocked", `${listing.lineage_id}:${listing.id}`]);
+          if (!blocked.value) communities.push(listing);
+        }
       }
+      cursor = page.cursor;
+      if (!cursor || alive >= limit) break;
     }
     communities.sort((a, b) => b.members - a.members || a.name.localeCompare(b.name));
-    return { communities, cursor: page.cursor };
+    return { communities, cursor: cursor ?? "" };
   }
 
   async report(input: Omit<DirectoryReport, "id" | "created_at">): Promise<DirectoryReport> {

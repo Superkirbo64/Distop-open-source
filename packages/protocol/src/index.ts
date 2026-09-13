@@ -5,6 +5,21 @@
 
 export const PROTOCOL_VERSION = "v1";
 
+/**
+ * Largo mínimo de contraseña. Vive en el contrato y no en cada extremo porque
+ * el número estaba escrito SIETE veces —cuatro en el servidor, tres en el
+ * cliente— y basta con que uno se quede atrás para que el navegador acepte lo
+ * que la instancia luego rechaza, sin que la persona entienda por qué.
+ *
+ * Seis y no diez: una contraseña larga impuesta se apunta en un papel o se
+ * reutiliza. Lo que sostiene la cuenta aquí no es el largo, es que el hash es
+ * Argon2id y que /auth/login está limitado a 20 intentos por cuarto de hora
+ * (MAX_LOGIN_ATTEMPTS_PER_15MIN). Contra fuerza bruta en línea, seis
+ * caracteres a ese ritmo son inalcanzables; contra un volcado de la base,
+ * quien lo tenga ya está dentro del ordenador de quien hospeda.
+ */
+export const MIN_PASSWORD_LENGTH = 6;
+
 export { RINGS, RING_IDS, type Ring } from "./rings.ts";
 import { RING_IDS } from "./rings.ts";
 
@@ -41,7 +56,6 @@ export const PERMISSIONS = {
   MANAGE_WEBHOOKS: 1n << 26n,
   MANAGE_BOTS: 1n << 27n,
   MANAGE_INTEGRATIONS: 1n << 28n,
-  MANAGE_GAME_SERVERS: 1n << 29n,
   VIEW_AUDIT_LOG: 1n << 30n,
   CREATE_INVITE: 1n << 31n,
   MANAGE_INVITES: 1n << 32n,

@@ -7,8 +7,8 @@
  *    basta con rotar la cabecera para estrenar contador en cada petición.
  * 2. Que la respuesta lleve las cabeceras que el navegador necesita para
  *    defenderse, y que la ÚNICA irreversible —HSTS— no salga por http plano.
- * 3. Que el comodín de CORS no sobreviva a un despliegue de producción, que es
- *    justo lo que el comentario de config.ts llevaba prometiendo sin hacerlo.
+ * 3. Que el comodín de CORS no sobreviva en ningún entorno: una web cualquiera
+ *    también puede atacar el servidor local de la aplicación de escritorio.
  *
  *   node --test "*.test.ts"
  */
@@ -23,6 +23,7 @@ process.env.PORT = "0";
 process.env.DATABASE_PATH = join(workdir, "test.db");
 process.env.DEFAULT_STORAGE_PATH = join(workdir, "uploads");
 process.env.AUTH_SECRET = "test-secret-no-usar-en-produccion";
+process.env.CORS_ORIGINS = "*";
 
 const { clientIp } = await import("./http.ts");
 const { allowedCorsOrigins, config } = await import("./config.ts");
@@ -143,17 +144,20 @@ test("HSTS NO sale por http plano: es la única cabecera irreversible", async ()
   assert.equal(res.headers.get("strict-transport-security"), null);
 });
 
-test('en producción el comodín de CORS se cae y quedan los orígenes concretos', () => {
-  const enPruebas = allowedCorsOrigins(["*"], false);
-  assert.ok(enPruebas.includes("*"), "en desarrollo el comodín sigue siendo cómodo y no hay nada que proteger");
-
-  const enProduccion = allowedCorsOrigins(["*", "https://mi.comunidad"], true);
-  assert.ok(!enProduccion.includes("*"), "reflejar cualquier Origin con credentials:true es lo que se quería evitar");
-  assert.ok(enProduccion.includes("https://mi.comunidad"), "lo que puso quien hospeda a propósito sí sigue valiendo");
+test('el comodín de CORS se cae siempre y quedan los orígenes concretos', () => {
+  const permitidos = allowedCorsOrigins(["*", "https://mi.comunidad"]);
+  assert.ok(!permitidos.includes("*"), "reflejar cualquier Origin abre los endpoints locales sin credenciales");
+  assert.ok(permitidos.includes("https://mi.comunidad"), "lo que puso quien hospeda a propósito sí sigue valiendo");
   assert.ok(
-    enProduccion.includes("app://distop") && enProduccion.includes("http://localhost"),
+    permitidos.includes("app://distop") && permitidos.includes("http://localhost"),
     "y los clientes empaquetados no dependen de la variable: nunca se quedan fuera",
   );
+});
+
+test('CORS_ORIGINS=* no deja que una web lea el servidor local', async () => {
+  const res = await fetch(`${base}/api/v1/info`, { headers: { origin: "https://sitio-ajeno.example" } });
+  assert.equal(res.headers.get("access-control-allow-origin"), null);
+  assert.equal(res.headers.get("access-control-allow-credentials"), null);
 });
 
 /* Leer X-Forwarded-For por el extremo bueno no basta si no se comprueba QUIÉN

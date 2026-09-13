@@ -41,14 +41,25 @@ export const en: Record<keyof typeof es, string> = {
   "welcome.create": "Create my community",
   "welcome.join": "I have an invite",
   "welcome.later": "Not now",
+  "welcome.phoneBody":
+    "You're not in any community yet. Find them in Explore, the compass in the community bar, or join with an invite link.",
+  "welcome.explore": "Explore communities",
+  "status.noCommunity": "No community yet",
+  "phone.createTitle": "Create your user",
+  "phone.createHint":
+    "Choose how others will see you. It's saved on this phone and goes with you to every community you join.",
+  "phone.createAction": "Enter",
   "auth.login": "Sign in",
   "auth.register": "Create account",
   "auth.guest": "Continue as guest",
   "auth.username": "Username",
   "auth.usernameHint": "Lowercase letters, numbers, dot, dash and underscore.",
   "auth.password": "Password",
+  "auth.showPassword": "Show password",
+  "auth.hidePassword": "Hide password",
   "auth.passwordHint":
-    "Optional. Without it you can only sign in from this device, or with the instance's code; add one later from Settings.",
+    "Optional, but without one this account can only be recovered from the machine that hosts it. Change browsers or clear their data and you will have to ask whoever hosts it.",
+  "auth.passwordMin": "At least {n} characters.",
   "auth.noPasswordWarning": "Without a password, this account only lives in this browser. Add one later from Settings.",
   "auth.displayName": "Display name",
   "auth.noAccount": "No account yet?",
@@ -56,11 +67,17 @@ export const en: Record<keyof typeof es, string> = {
   "auth.guestTitle": "No account",
   "auth.guestHint":
     "You can do exactly what an account does: create communities, channels, invite people and talk. Add a password whenever you want, losing nothing.",
-  "auth.guestEqual":
-    "Without a password you can do the same; you only need one to come back from another device.",
   "auth.recoverTitle": "Accounts on this device",
   "auth.recoverHint": "These accounts have no password. Since you're on this device, you can just walk right in.",
   "auth.registrationClosed": "Registration is closed on this server.",
+  "auth.chooseProfile": "Who's signing in?",
+  "auth.chooseProfileHint": "Choose one of the profiles saved on this device.",
+  "auth.addProfile": "Add profile",
+  "auth.otherAccount": "Use another account",
+  "auth.profilePasswordTitle": "Welcome back, {name}",
+  "auth.profilePasswordHint": "This profile is protected. Enter your password to continue.",
+  "auth.createProfileHint": "Create a profile for this person on this device.",
+  "auth.backToProfiles": "Back to profiles",
 
   "setup.title": "Create your user",
   "setup.subtitle":
@@ -68,7 +85,7 @@ export const en: Record<keyof typeof es, string> = {
   "setup.yourName": "Your name",
   "setup.password": "Password",
   "setup.passwordHint":
-    "Optional for now. Without it you only get in from this device; you can set it any time from Settings.",
+    "Optional for now. Without it you can only get back in from the machine that hosts the instance; you can set one any time from Settings.",
   "setup.code": "Setup code",
   "setup.codeHint":
     "It is printed in the terminal where you started the server. It is asked because you are claiming it from another machine.",
@@ -106,43 +123,23 @@ export const en: Record<keyof typeof es, string> = {
   "instance.offlineHelp":
     "The community lives on the host's machine. If that machine is off, there is no service until it returns.",
 
-  "connect.title": "Connect to a community",
+  "connect.title": "Your profiles on this device",
   "connect.hint":
-    "The app travels with you; each community lives on its own server. Paste the address of the community you want to join.",
-  "connect.action": "Connect",
-  "connect.checking": "Checking…",
+    "Distop will open this device's server and show only its registered profiles.",
+  "connect.localUnavailable": "The local server on this device could not be opened.",
   "connect.invalid": "That address is not valid. Only http or https addresses are accepted.",
   "connect.unreachable":
     "Nobody answers there. That community's server may be off, the tunnel may have closed, or the address has a typo.",
   "connect.notInstance": "Something answers at that address, but it is not a Distop server.",
-  "connect.known": "Recent communities",
-  "connect.forget": "Forget",
   "connect.hostHint":
     "Your community runs on this computer, inside the app: your data stays with you. It will be available while this machine is on, and speed depends on your connection.",
   "connect.hostEnter": "Enter my community",
-  "connect.androidHint":
-    "Choose which community to join: an invite link, your PC on this same Wi-Fi, or a server running on this very phone.",
   "connect.preparing": "Starting your server…",
   "connect.preparingHint":
     "The first run creates your database on this machine. Your community and your data live here, with you.",
   "connect.autoFailed": "Your server could not start on this machine.",
   "connect.hostMine": "Your server on this machine",
-  "connect.inviteOrUrl": "Invite link or address",
-  "connect.inviteHint": "An …/invite/abc link works, and so does a community address.",
-  "connect.scan": "Search my Wi-Fi network",
-  "connect.scanHint": "Finds servers running on your own network — your PC, for example. Nothing leaves your network.",
-  "connect.scanning": "Searching… {done}/{total}",
-  "connect.scanNone":
-    "None showed up. The server must be on, on this same Wi-Fi, with port 5000 open.",
   "connect.changeInstance": "Change community",
-  "connect.phoneHost": "Your community on this phone",
-  "connect.phoneFound": "This phone's server is already on: go in.",
-  "connect.phoneHostHint":
-    "The server runs inside this very app, nothing to install: your data lives on your phone. Your community is online while the app is open (a pinned notice keeps Android from putting it to sleep). Friends join from your same Wi-Fi with your invite link; to invite over the internet, host on a PC.",
-  "connect.phoneCreate": "Create my community here",
-  "connect.phoneStarting": "Turning on the phone's server…",
-  "connect.phoneStartingHint": "The first time takes a bit longer: the server is copied and your database is created.",
-  "connect.phoneError": "The phone's server did not start. Fully close the app, open it again and retry.",
 
   "game.playing": "Playing {name}",
   "game.for": "for {time}",

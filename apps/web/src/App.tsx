@@ -3,7 +3,7 @@
  * Tres rutas justifican treinta líneas de router propio, no una dependencia:
  * la aplicación entera vive detrás de una sesión y solo /invite es profunda.
  */
-import { Suspense, lazy, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { useStore } from "./store.ts";
 import { CreateCommunity, JoinCommunity, Rail } from "./components/Rail.tsx";
 import { NoticeToaster } from "./components/Notices.tsx";
@@ -15,7 +15,8 @@ import { Members } from "./components/Members.tsx";
 import { DirectChat, DirectSidebar } from "./components/Direct.tsx";
 import { Explore, ExploreSidebar } from "./components/Explore.tsx";
 import { Auth } from "./views/Auth.tsx";
-import { Connect } from "./views/Connect.tsx";
+import { Connect, CreateProfile } from "./views/Connect.tsx";
+import { Compass } from "./components/icons.tsx";
 import { Setup } from "./views/Setup.tsx";
 import { Invite } from "./views/Invite.tsx";
 import { GuestMeeting, Meet } from "./views/Meet.tsx";
@@ -41,11 +42,11 @@ import {
   normalizeInstanceUrl,
   peekPendingCommunity,
   peekPendingPublicJoin,
+  phoneWithoutInstance,
   setActiveInstance,
   takePendingInvite,
   type PendingCommunity,
 } from "./lib/instance.ts";
-import { phoneCanHost, startPhoneServer } from "./lib/phoneHost.ts";
 import { ensurePortableIdentity } from "./lib/portable.ts";
 import { onStaleBuild, watchBuild } from "./lib/version.ts";
 import type { Invite as InviteEntity } from "@distop/protocol";
@@ -158,7 +159,31 @@ export function App() {
   const [membersOpen, setMembersOpen] = usePanel("members", true);
   const [changedPublicUrl, setChangedPublicUrl] = useState("");
   const isMobile = useIsMobile();
-  const activeChannel = activeData?.channels.find((channel) => channel.id === activeChannelId);
+
+  /* En móvil los paneles son una tira que se desliza (styles.css). Se lleva al
+     que toca con scroll y no con transform: un transform en la rejilla haría de
+     marco a todo lo `position: fixed` de dentro y descolocaría avisos y menús. */
+  const gridRef = useRef<HTMLDivElement>(null);
+  const slid = useRef(false);
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || !isMobile) return;
+    /* A la posición real de cada panel, no a múltiplos del ancho: el cajón de
+       canales mide menos que la pantalla en una tablet. Miembros es la última
+       columna, y su panel puede no estar montado todavía: basta con ir al final. */
+    const main = grid.querySelector<HTMLElement>(':scope > [data-pane="main"]');
+    const left =
+      mobilePane === "nav"
+        ? 0
+        : mobilePane === "members" || !main
+          ? grid.scrollWidth - grid.clientWidth
+          : main.getBoundingClientRect().left - grid.getBoundingClientRect().left + grid.scrollLeft;
+    const still = !slid.current || matchMedia("(prefers-reduced-motion: reduce)").matches;
+    grid.scrollTo({ left, behavior: still ? "instant" : "smooth" });
+    slid.current = true;
+  }, [mobilePane, isMobile, user]);
+
+  const activeChannel =activeData?.channels.find((channel) => channel.id === activeChannelId);
   // Una reunión también tiene su chat: es un canal (§8.1), y sin esto el panel
   // lateral de mensajes solo existía para las salas de voz de siempre.
   const voiceChat = activeChannel?.kind === "voice" || activeChannel?.kind === "meeting";
@@ -201,16 +226,16 @@ export function App() {
 
   useEffect(() => {
     // Empaquetado y sin instancia elegida no hay a quién preguntar todavía.
-    if (isPackaged() && !instanceBase) return;
+    // (El teléfono sí arranca: boot sabe entrar sin servidor.)
+    if (window.distop && !instanceBase) return;
     void (async () => {
       /* Si la comunidad activa vive en ESTE aparato, su servidor se enciende
          antes de preguntar nada: abrir la app debe encender tu comunidad, no
          recibirte con un error por tu propio servidor apagado. En el
          escritorio lo arranca Electron; en el teléfono, el motor embebido.
          Ambos arranques son idempotentes: si ya corre, vuelven al instante. */
-      if (isPackaged() && isLocalInstance(instanceBase)) {
-        if (window.distop?.host) await window.distop.host.start().catch(() => {});
-        else if (phoneCanHost()) await startPhoneServer();
+      if (isPackaged() && isLocalInstance(instanceBase) && window.distop?.host) {
+        await window.distop.host.start().catch(() => {});
       }
       await boot();
     })();
@@ -324,9 +349,13 @@ export function App() {
     if (user && !pendingCommunity && !directOpen && !activeCommunityId && communities[0]) void openCommunity(communities[0].id);
   }, [user, pendingCommunity, directOpen, activeCommunityId, communities, openCommunity]);
 
-  // La app instalada no la sirvió ninguna instancia: sin una elegida, lo
-  // primero es elegirla. En la web esta rama no existe (§4).
-  if (isPackaged() && !instanceBase) return <Connect />;
+  // La app instalada no la sirvió ninguna instancia. El escritorio arranca la
+  // suya; el teléfono no hospeda: crea su usuario aquí y entra a la app vacía.
+  // En la web esta rama no existe (§4).
+  if (isPackaged() && !instanceBase) {
+    if (window.distop) return <Connect />;
+    if (ready && !user) return <CreateProfile />;
+  }
 
   if (ready && pendingCommunity && (!user || instance)) {
     const missing = !user || !communities.some((community) => community.id === pendingCommunity.id);
@@ -373,11 +402,19 @@ export function App() {
   // Con sesión abierta —de cuenta o de invitado— se entra directo: un invitado
   // puede crear su comunidad igual, y ponerle contraseña después reclama la
   // instancia sin repetir este paso.
-  if (setup?.required && !user) return <Setup requiresCode={setup.requiresCode} />;
+  // El teléfono solo participa: nunca pone en marcha una instancia ajena.
+  const phoneApp = isPackaged() && !window.distop;
+  if (setup?.required && !user && !phoneApp) return <Setup requiresCode={setup.requiresCode} />;
   if (!user) return <Auth />;
 
   return (
     <div
+      ref={gridRef}
+      // El chat que asoma junto al cajón no recibe toques (styles.css): el toque
+      // llega a la rejilla y cierra el cajón.
+      onClick={(event) => {
+        if (isMobile && mobilePane === "nav" && event.target === event.currentTarget) setMobilePane("main");
+      }}
       className="app-grid"
       data-mobile={mobilePane}
       data-members={!directOpen && !explore && membersOpen ? "on" : "off"}
@@ -415,6 +452,7 @@ export function App() {
           onOpenSidebar={() => setMobilePane("nav")}
           onCreateCommunity={() => setCreating(true)}
           onJoinCommunity={() => setJoining(true)}
+          onExplore={() => { setExplore(true); setMobilePane("main"); }}
         />
       )}
 
@@ -453,6 +491,7 @@ export function App() {
       <WelcomeCreate
         onCreate={() => setCreating(true)}
         onJoin={() => setJoining(true)}
+        onExplore={() => { setExplore(true); setMobilePane("main"); }}
         /* La frase de las copias se enseña una sola vez: la bienvenida, que
            vuelve siempre que no haya comunidad, espera en vez de taparla. */
         blocked={directOpen || explore || creating || joining || invite || Boolean(inviteCode) || Boolean(backupPassphrase)}
@@ -566,12 +605,24 @@ function BackupPassphraseNotice() {
   );
 }
 
-function WelcomeCreate({ onCreate, onJoin, blocked }: { onCreate: () => void; onJoin: () => void; blocked: boolean }) {
+function WelcomeCreate({
+  onCreate,
+  onJoin,
+  onExplore,
+  blocked,
+}: {
+  onCreate: () => void;
+  onJoin: () => void;
+  onExplore: () => void;
+  blocked: boolean;
+}) {
   const t = useT();
   const ready = useStore((s) => s.ready);
   const user = useStore((s) => s.user);
   const communities = useStore((s) => s.communities);
   const [dismissed, setDismissed] = useState(false);
+  // El teléfono no crea comunidades: su primer paso es encontrar dónde están.
+  const phone = phoneWithoutInstance();
 
   const open = ready && Boolean(user) && communities.length === 0 && !dismissed && !blocked;
   if (!open) return null;
@@ -586,16 +637,29 @@ function WelcomeCreate({ onCreate, onJoin, blocked }: { onCreate: () => void; on
       }
     >
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted">{t("welcome.body")}</p>
-        <Button
-          variant="primary"
-          onClick={() => {
-            setDismissed(true);
-            onCreate();
-          }}
-        >
-          {t("welcome.create")}
-        </Button>
+        <p className="text-sm text-muted">{t(phone ? "welcome.phoneBody" : "welcome.body")}</p>
+        {phone ? (
+          <Button
+            variant="primary"
+            onClick={() => {
+              setDismissed(true);
+              onExplore();
+            }}
+          >
+            <Compass size={18} />
+            {t("welcome.explore")}
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            onClick={() => {
+              setDismissed(true);
+              onCreate();
+            }}
+          >
+            {t("welcome.create")}
+          </Button>
+        )}
         <Button
           onClick={() => {
             setDismissed(true);

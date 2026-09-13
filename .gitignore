@@ -34,3 +34,6 @@ apps/desktop-tauri/src-tauri/target/
 # son las de verdad de esa instalación, y hasta ahora nada impedía subirlas:
 # *.keystore no cubre *.key, aunque lo parezca al leerlo por encima.
 *.key
+
+# Grafo local de graphify: se reconstruye solo con su hook de git, no se versiona.
+graphify-out/

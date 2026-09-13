@@ -39,7 +39,6 @@ Construir una plataforma gratuita, abierta, modular y completamente personalizab
 * Crear integraciones.
 * Instalar bots, aplicaciones y extensiones.
 * Hospedar por cuenta propia los servicios de su comunidad.
-* Conectar servidores externos como Minecraft.
 * Administrar una infraestructura comunitaria sin depender obligatoriamente de un servicio central pago.
 
 La plataforma no debe tener mecánicas como:
@@ -149,7 +148,6 @@ La instancia self-hosted será responsable de:
 * Logs.
 * Servicios de voz.
 * Servicios de video.
-* Conexiones con servidores de juegos.
 * Automatizaciones.
 * Base de datos local.
 * Almacenamiento de archivos.
@@ -377,7 +375,6 @@ instance_connected
 community_created
 invite_created
 desktop_app_downloaded
-minecraft_integration_started
 ```
 
 No enviar datos privados dentro de los eventos.
@@ -604,7 +601,6 @@ USE_CAMERA
 MANAGE_WEBHOOKS
 MANAGE_BOTS
 MANAGE_INTEGRATIONS
-MANAGE_GAME_SERVERS
 VIEW_AUDIT_LOG
 ```
 
@@ -629,10 +625,12 @@ Se carga sola al trabajar en bots, webhooks, plugins o integraciones.
 
 ---
 
-## 13. Servidores de Minecraft y servicios comunitarios
+## 13. (retirado) Servidores de juego
 
-Ver la skill `game-server-integration` (`.claude/skills/game-server-integration/`).
-Se carga sola al trabajar en Minecraft u otros servidores de juego.
+**Descartado el 2026-09-06.** Hospedar o administrar servidores de Minecraft
+—u otros juegos— deja de formar parte del proyecto: ni integración, ni RCON,
+ni consola, ni plantillas. La numeración de secciones se conserva porque el
+código cita §N en sus comentarios; renumerar rompería esas referencias.
 
 ---
 
@@ -761,7 +759,6 @@ No utilizar funciones serverless para cargas persistentes como:
 * WebSocket masivo sin validar compatibilidad.
 * Audio continuo.
 * Video continuo.
-* Servidores de juegos.
 * Procesos de larga duración.
 * Bases de datos embebidas persistentes.
 * Procesamiento pesado.
@@ -899,8 +896,6 @@ Bot
 Plugin
 VoiceRoom
 VoiceSession
-GameServer
-GameServerTemplate
 AuditLog
 Notification
 Theme
@@ -1208,21 +1203,10 @@ Construir:
 * Permisos.
 * Reconexión.
 
-### Fase 4 — Minecraft
+### Fase 4 — (retirada)
 
-Construir:
-
-* Integración con servidores existentes.
-* Estado.
-* Jugadores online.
-* Consola.
-* RCON seguro.
-* Plantilla Docker.
-* Instalación de Paper.
-* Inicio y detención.
-* Backups.
-* Logs.
-* Widget comunitario.
+Era la integración con Minecraft. Descartada el 2026-09-06. La Fase 5 conserva
+su número: `docs/bots-de-discord.md` la cita.
 
 ### Fase 5 — Ecosistema
 
@@ -1370,7 +1354,6 @@ Cuando una función no pueda ejecutarse en Cloudflare, Vercel o una capa gratuit
 No presentar serverless como solución para:
 
 * Procesos persistentes.
-* Servidores Minecraft.
 * Audio continuo.
 * Video continuo.
 * Contenedores arbitrarios.
@@ -1385,7 +1368,6 @@ No mezclar:
 * Cliente.
 * Nodo self-hosted.
 * Servicio de voz.
-* Servidor de juegos.
 * Analytics.
 * Plugins.
 
@@ -1567,18 +1549,6 @@ Para crear comunidad:
 8. Generar invitación.
 9. Compartir enlace.
 
-Para Minecraft:
-
-1. Usar servidor existente.
-2. Instalar nuevo servidor.
-3. Seleccionar edición.
-4. Seleccionar versión.
-5. Seleccionar memoria.
-6. Configurar acceso.
-7. Instalar.
-8. Vincular a un canal.
-9. Compartir dirección.
-
 ---
 
 ## 35. Modelo de negocio futuro sin pay-to-win
@@ -1652,7 +1622,6 @@ No comenzar por:
 * Federación completa.
 * Aplicación móvil.
 * Sistema avanzado de bots.
-* Múltiples juegos.
 * Personalización visual extrema.
 
 Primero demostrar que el modelo distribuido funciona.
@@ -1699,3 +1668,13 @@ Al recibir una tarea relacionada con este proyecto:
 15. Diseña cada módulo para poder evolucionar hacia federación.
 
 La prioridad absoluta es construir una plataforma comunitaria abierta, gratuita, sostenible, portable y controlada por sus propios usuarios.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

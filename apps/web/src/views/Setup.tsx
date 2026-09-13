@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { BRAND } from "../brand.ts";
 import { useStore } from "../store.ts";
-import { Button, ErrorNote, Field, useErrorText, useT } from "../components/ui.tsx";
+import { Button, ErrorNote, Field, PasswordInput, useErrorText, useT } from "../components/ui.tsx";
 
 export function Setup({ requiresCode }: { requiresCode: boolean }) {
   const t = useT();
@@ -42,13 +42,22 @@ export function Setup({ requiresCode }: { requiresCode: boolean }) {
   const ready = name.trim().length >= 2 && (!requiresCode || code.trim().length > 0);
 
   return (
-    <main className="grid min-h-dvh place-items-center bg-bg p-4 sm:p-8">
-      <div className="card w-full max-w-lg overflow-hidden">
-        <div className="h-2" style={{ background: BRAND.accent }} />
+    <main className="relative grid min-h-dvh place-items-center overflow-hidden bg-bg p-4 pt-24 sm:p-8 sm:pt-28">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 50% -20%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 48%)",
+        }}
+      />
+      <p className="display absolute top-6 left-6 text-2xl font-extrabold text-accent sm:top-8 sm:left-10 sm:text-3xl">
+        {BRAND.name}
+      </p>
+      <div className="relative w-full max-w-lg overflow-hidden rounded-card border border-line bg-surface/95 shadow-[var(--shadow)] backdrop-blur-sm">
 
         <form onSubmit={start} className="flex flex-col gap-5 p-7 sm:p-9">
           <header className="flex flex-col gap-2">
-            <p className="display text-sm font-bold text-muted">{BRAND.name}</p>
             <h1 className="display text-2xl font-bold">{t("setup.title")}</h1>
             <p className="text-sm text-muted">{t("setup.subtitle")}</p>
           </header>
@@ -71,10 +80,8 @@ export function Setup({ requiresCode }: { requiresCode: boolean }) {
 
           <Field label={`${t("setup.password")} (${t("common.optional")})`} hint={t("setup.passwordHint")}>
             {(id) => (
-              <input
-                id={id}
-                type="password"
-                className="field"
+              <PasswordInput
+                id={id}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 maxLength={200}

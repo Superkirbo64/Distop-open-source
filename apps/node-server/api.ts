@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, COMMUNITY_CATEGORIES, COMMUNITY_JOIN_POLICIES, COMMUNITY_VISIBILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, MEETING_ROLES, MEETING_STATES, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
+import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, COMMUNITY_CATEGORIES, COMMUNITY_JOIN_POLICIES, COMMUNITY_VISIBILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, MEETING_ROLES, MEETING_STATES, MIN_PASSWORD_LENGTH, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { MeetingRole, MeetingState, Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import { fixedPublicUrl, setFixedPublicUrl, setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
@@ -271,6 +271,11 @@ route("GET", "/api/v1/info", async (ctx) => ({
   /** Cuentas sin contraseña que tienen comunidad propia: solo desde el equipo
       anfitrión, para poder volver a entrar sin adivinar el nombre (§26). */
   recoverable: isLocalRequest(ctx) ? recoverableAccounts() : [],
+  /** Selector de perfiles del equipo. A diferencia de `recoverable`, incluye
+      también las cuentas con contraseña para poder pintar una entrada tipo
+      streaming: primero eliges quién eres y solo después, si hace falta, se
+      pide la contraseña. Nunca sale por el túnel ni incluye comunidades. */
+  local_accounts: isLocalRequest(ctx) ? localAccounts() : [],
 }));
 
 /* Solo PUT /public-url puede asociar temporalmente un nonce a un origen nuevo.
@@ -304,7 +309,7 @@ interface RecoverableAccount {
 }
 
 function recoverableAccounts(): RecoverableAccount[] {
-  return db
+  const rows = db
     .prepare(
       /* Las cuentas locales salen siempre, tengan comunidad o no: quien pone en
          marcha la instancia crea su cuenta antes que su primera comunidad, y
@@ -319,6 +324,47 @@ function recoverableAccounts(): RecoverableAccount[] {
         ORDER BY u.created_at LIMIT 20`,
     )
     .all() as RecoverableAccount[];
+
+  return rows.map((account) => ({ ...account, avatar_url: loginAvatar(account.avatar_url) }));
+}
+
+interface LocalAccount {
+  username: string;
+  display_name: string;
+  avatar_url: string | null;
+  has_password: boolean;
+}
+
+/** En el login no se carga una URL de terceros: además de filtrar por perfil,
+    evitamos que abrir Distop anuncie la IP del anfitrión a un avatar externo. */
+function loginAvatar(url: string | null): string | null {
+  return url && /^\/api\/v1\/files\/[A-Za-z0-9-]+$/.test(url) ? url : null;
+}
+
+function rememberDeviceProfile(userId: string): void {
+  db.prepare("INSERT OR IGNORE INTO device_profiles (user_id, created_at) VALUES (?, ?)").run(userId, Date.now());
+}
+
+/** Fichas mínimas para el selector del ordenador anfitrión. La pertenencia a
+    `device_profiles`, no `users.kind`, demuestra que se creó en este equipo. */
+function localAccounts(): LocalAccount[] {
+  const rows = db
+    .prepare(
+      `SELECT u.username, u.display_name, u.avatar_url,
+              (u.password_hash IS NOT NULL) AS has_password
+         FROM device_profiles p
+         JOIN users u ON u.id = p.user_id
+        WHERE u.kind = 'local'
+        ORDER BY p.created_at
+        LIMIT 20`,
+    )
+    .all() as Array<Omit<LocalAccount, "has_password"> & { has_password: 0 | 1 }>;
+
+  return rows.map((account) => ({
+    ...account,
+    avatar_url: loginAvatar(account.avatar_url),
+    has_password: Boolean(account.has_password),
+  }));
 }
 
 /**
@@ -342,6 +388,7 @@ route("POST", "/api/v1/auth/recover", async (ctx) => {
   const username = v.string(body, "username", { min: 1, max: 32 }).toLowerCase();
   const user = findUserByUsername(username);
   if (!user || user.password_hash) throw unauthorized("No hay ninguna cuenta sin contraseña con ese nombre.");
+  if (isLocalRequest(ctx)) rememberDeviceProfile(user.id);
   return issue(user.id);
 });
 
@@ -371,7 +418,8 @@ route("POST", "/api/v1/auth/bootstrap", async (ctx) => {
   if (!USERNAME.test(username)) throw badRequest("Ese nombre de usuario no es válido.");
 
   const password = v.optionalString(body, "password", { max: 200 });
-  if (password && password.length < 10) throw badRequest("La contraseña necesita al menos 10 caracteres.");
+  if (password && password.length < MIN_PASSWORD_LENGTH)
+    throw badRequest(`La contraseña necesita al menos ${MIN_PASSWORD_LENGTH} caracteres.`);
 
   const user = createUser({
     username,
@@ -379,6 +427,7 @@ route("POST", "/api/v1/auth/bootstrap", async (ctx) => {
     kind: "local",
     ...(password ? { password } : {}),
   });
+  rememberDeviceProfile(user.id);
 
   /* La frase de las copias sale por HTTP UNA sola vez: aquí. Donde hay
      planificador y la instancia está detrás de un proxy —la nube— ninguna
@@ -429,11 +478,13 @@ route("POST", "/api/v1/auth/register", async (ctx) => {
   // paso posterior, no un peaje para tener cuenta. Sin ella, se entra de vuelta
   // por /auth/recover — igual de restringido que el arranque de la instancia.
   const password = v.optionalString(body, "password", { max: 200 });
-  if (password && password.length < 10) throw badRequest("La contraseña necesita al menos 10 caracteres.");
+  if (password && password.length < MIN_PASSWORD_LENGTH)
+    throw badRequest(`La contraseña necesita al menos ${MIN_PASSWORD_LENGTH} caracteres.`);
   const displayName = v.optionalString(body, "display_name", { max: 48 }) || username;
 
   if (findUserByUsername(username)) throw conflict("Ese nombre de usuario ya existe.");
   const user = createUser({ username, displayName, ...(password ? { password } : {}) });
+  if (isLocalRequest(ctx)) rememberDeviceProfile(user.id);
   return issue(user.id);
 });
 
@@ -449,6 +500,10 @@ route("POST", "/api/v1/auth/login", async (ctx) => {
   if (!user?.password_hash || !verifyPassword(password, user.password_hash))
     throw unauthorized("Usuario o contraseña incorrectos.");
 
+  /* Una cuenta existente pasa a ser perfil de ESTE equipo solo después de una
+     entrada local válida. Así una actualización no pierde perfiles legítimos,
+     pero tampoco adivina que todos los miembros de la instancia son locales. */
+  if (isLocalRequest(ctx)) rememberDeviceProfile(user.id);
   return issue(user.id);
 });
 
@@ -643,7 +698,7 @@ route("POST", "/api/v1/users/me/upgrade", async (ctx) => {
 
   const body = await readJson(ctx);
   const username = v.string(body, "username", { min: 3, max: 32, pattern: USERNAME }).toLowerCase();
-  const password = v.string(body, "password", { min: 10, max: 200, trim: false });
+  const password = v.string(body, "password", { min: MIN_PASSWORD_LENGTH, max: 200, trim: false });
 
   const taken = findUserByUsername(username);
   if (taken && taken.id !== user.id) throw conflict("Ese nombre de usuario ya existe.");
@@ -653,6 +708,7 @@ route("POST", "/api/v1/users/me/upgrade", async (ctx) => {
     hashPassword(password),
     user.id,
   );
+  if (isLocalRequest(ctx)) rememberDeviceProfile(user.id);
   return toSelfUser(findUserById(user.id)!);
 });
 
@@ -672,7 +728,7 @@ route("POST", "/api/v1/users/me/password", async (ctx) => {
 
   const body = await readJson(ctx);
   const currentPassword = v.string(body, "current_password", { min: 1, max: 200, trim: false });
-  const password = v.string(body, "password", { min: 10, max: 200, trim: false });
+  const password = v.string(body, "password", { min: MIN_PASSWORD_LENGTH, max: 200, trim: false });
   if (!verifyPassword(currentPassword, current.password_hash)) throw unauthorized("La contraseña actual no es correcta.");
 
   db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), user.id);
@@ -3224,8 +3280,17 @@ route("POST", "/api/v1/auth/portable", async (ctx) => {
   }
 
   if (hasPortableIdentity(identityId)) throw unauthorized("La identidad del dispositivo no coincide.");
-  const inviteCode = v.string(body, "invite_code", { min: 3, max: 100, pattern: /^[A-Za-z0-9_-]+$/ });
-  liveInvite(inviteCode);
+  /* Una cuenta nueva necesita una puerta: una invitación, o una comunidad
+     pública que admita entrar sin ella — la que el teléfono elige en Explorar,
+     la misma que ya abre /public-communities/:id/join. */
+  const publicCommunityId = v.optionalString(body, "public_community_id", { max: 100 });
+  if (publicCommunityId) {
+    const community = getCommunity(publicCommunityId);
+    if (!community || community.visibility !== "public" || community.join_policy === "invite")
+      throw notFound("Comunidad pública no encontrada.");
+  } else {
+    liveInvite(v.string(body, "invite_code", { min: 3, max: 100, pattern: /^[A-Za-z0-9_-]+$/ }));
+  }
 
   const displayName = v.string(body, "display_name", { min: 2, max: 48 });
   const preferred = (v.optionalString(body, "username", { max: 32 }) || "").toLowerCase();

@@ -39,14 +39,25 @@ export const es = {
   "welcome.create": "Crear mi comunidad",
   "welcome.join": "Tengo una invitación",
   "welcome.later": "Ahora no",
+  "welcome.phoneBody":
+    "Todavía no estás en ninguna comunidad. Las encuentras en Explorar, la brújula de la barra de comunidades, o entra con un enlace de invitación.",
+  "welcome.explore": "Explorar comunidades",
+  "status.noCommunity": "Sin comunidad todavía",
+  "phone.createTitle": "Crea tu usuario",
+  "phone.createHint":
+    "Elige cómo te verán los demás. Se guarda en este teléfono y te acompaña a cada comunidad en la que entres.",
+  "phone.createAction": "Entrar",
   "auth.login": "Entrar",
   "auth.register": "Crear cuenta",
   "auth.guest": "Entrar como invitado",
   "auth.username": "Nombre de usuario",
   "auth.usernameHint": "Minúsculas, números, punto, guion y guion bajo.",
   "auth.password": "Contraseña",
+  "auth.showPassword": "Mostrar la contraseña",
+  "auth.hidePassword": "Ocultar la contraseña",
   "auth.passwordHint":
-    "Opcional. Sin ella entras solo desde este dispositivo, o con el código de la instancia; puedes añadirla luego desde Ajustes.",
+    "Opcional, pero sin ella esta cuenta solo se recupera desde el equipo que hospeda. Si cambias de navegador o borras sus datos, tendrás que pedírselo a quien hospeda.",
+  "auth.passwordMin": "Al menos {n} caracteres.",
   "auth.noPasswordWarning":
     "Sin contraseña, esta cuenta vive solo en este navegador. Puedes añadirla luego desde Ajustes.",
   "auth.displayName": "Nombre visible",
@@ -55,12 +66,18 @@ export const es = {
   "auth.guestTitle": "Sin cuenta",
   "auth.guestHint":
     "Puedes hacer exactamente lo mismo que con cuenta: crear comunidades, canales, invitar y hablar. Añade contraseña cuando quieras, sin perder nada.",
-  "auth.guestEqual":
-    "Sin contraseña puedes hacer lo mismo; solo la necesitas para volver desde otro dispositivo.",
   "auth.recoverTitle": "Cuentas de este equipo",
   "auth.recoverHint":
     "Estas cuentas no tienen contraseña. Como entras desde este equipo, puedes continuar sin escribir nada.",
   "auth.registrationClosed": "Este servidor tiene el registro cerrado.",
+  "auth.chooseProfile": "¿Quién va a entrar?",
+  "auth.chooseProfileHint": "Elige uno de los perfiles guardados en este equipo.",
+  "auth.addProfile": "Añadir perfil",
+  "auth.otherAccount": "Usar otra cuenta",
+  "auth.profilePasswordTitle": "Hola de nuevo, {name}",
+  "auth.profilePasswordHint": "Este perfil está protegido. Escribe tu contraseña para entrar.",
+  "auth.createProfileHint": "Crea un perfil para esta persona en este equipo.",
+  "auth.backToProfiles": "Volver a los perfiles",
 
   "setup.title": "Crea tu usuario",
   "setup.subtitle":
@@ -68,7 +85,7 @@ export const es = {
   "setup.yourName": "Tu nombre",
   "setup.password": "Contraseña",
   "setup.passwordHint":
-    "Opcional ahora. Sin ella entras solo desde este dispositivo; puedes ponerla cuando quieras desde Ajustes.",
+    "Opcional ahora. Sin ella solo se vuelve a entrar desde el equipo que hospeda; puedes ponerla cuando quieras desde Ajustes.",
   "setup.code": "Código de puesta en marcha",
   "setup.codeHint":
     "Está impreso en el terminal donde arrancaste el servidor. Se pide porque estás reclamándolo desde otro equipo.",
@@ -106,46 +123,23 @@ export const es = {
   "instance.offlineHelp":
     "La comunidad vive en el equipo de quien la hospeda. Si ese equipo está apagado, no hay servicio hasta que vuelva.",
 
-  "connect.title": "Conectar a una comunidad",
+  "connect.title": "Tus perfiles en este equipo",
   "connect.hint":
-    "La aplicación viaja contigo; las comunidades viven cada una en su servidor. Pega la dirección de la comunidad a la que quieres entrar.",
-  "connect.action": "Conectar",
-  "connect.checking": "Comprobando…",
+    "Distop abrirá el servidor de este dispositivo y mostrará únicamente sus perfiles registrados.",
+  "connect.localUnavailable": "No se pudo abrir el servidor local de este dispositivo.",
   "connect.invalid": "Esa dirección no es válida. Solo se admiten direcciones http o https.",
   "connect.unreachable":
     "Ahí no responde nadie. Puede que el servidor de esa comunidad esté apagado, que el túnel se haya cerrado o que la dirección tenga una errata.",
   "connect.notInstance": "En esa dirección responde algo, pero no es un servidor de Distop.",
-  "connect.known": "Comunidades recientes",
-  "connect.forget": "Olvidar",
   "connect.hostHint":
     "Tu comunidad corre en este ordenador, dentro de la aplicación: tus datos se quedan contigo. Estará disponible mientras este equipo esté encendido, y la velocidad depende de tu conexión.",
   "connect.hostEnter": "Entrar en mi comunidad",
-  "connect.androidHint":
-    "Elige a qué comunidad entrar: un enlace de invitación, tu PC en esta misma Wi-Fi, o un servidor corriendo en este mismo teléfono.",
   "connect.preparing": "Arrancando tu servidor…",
   "connect.preparingHint":
     "La primera vez se crea tu base de datos en este equipo. Tu comunidad y tus datos viven aquí, contigo.",
   "connect.autoFailed": "Tu servidor no pudo arrancar en este equipo.",
   "connect.hostMine": "Tu servidor en este equipo",
-  "connect.inviteOrUrl": "Enlace de invitación o dirección",
-  "connect.inviteHint": "Vale un enlace …/invite/abc o la dirección de una comunidad.",
-  "connect.scan": "Buscar en mi red Wi-Fi",
-  "connect.scanHint":
-    "Encuentra servidores encendidos en tu misma red — por ejemplo, tu PC. Nada sale de tu red.",
-  "connect.scanning": "Buscando… {done}/{total}",
-  "connect.scanNone":
-    "No apareció ninguno. El servidor debe estar encendido, en esta misma Wi-Fi y con el puerto 5000 abierto.",
   "connect.changeInstance": "Cambiar de comunidad",
-  "connect.phoneHost": "Tu comunidad en este teléfono",
-  "connect.phoneFound": "El servidor de este teléfono ya está encendido: entra.",
-  "connect.phoneHostHint":
-    "El servidor corre dentro de esta misma app, sin instalar nada: tus datos viven en tu teléfono. Tu comunidad está en línea mientras la app esté abierta (un aviso fijo evita que Android la duerma). Tus amigos entran desde tu misma Wi-Fi con tu enlace de invitación; para invitar por internet, hospeda en un PC.",
-  "connect.phoneCreate": "Crear mi comunidad aquí",
-  "connect.phoneStarting": "Encendiendo el servidor del teléfono…",
-  "connect.phoneStartingHint":
-    "La primera vez tarda un poco más: se copia el servidor y se crea tu base de datos.",
-  "connect.phoneError":
-    "El servidor del teléfono no arrancó. Cierra la app del todo, vuelve a abrirla y prueba otra vez.",
 
   "game.playing": "Jugando a {name}",
   "game.for": "desde hace {time}",

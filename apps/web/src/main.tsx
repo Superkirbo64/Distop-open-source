@@ -12,6 +12,17 @@ import "@fontsource/press-start-2p";
 import "@fontsource/silkscreen";
 import "./styles.css";
 
+/* Las WebView de Android anteriores a Chrome 103 no traen AbortSignal.timeout:
+   cada fetch con plazo (Explorar, entrar a una comunidad) fallaba antes de salir
+   y el teléfono decía "algo falló". Un único respaldo aquí cubre todas las llamadas. */
+if (typeof AbortSignal.timeout !== "function") {
+  AbortSignal.timeout = (ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("Tiempo de espera agotado", "TimeoutError")), ms);
+    return controller.signal;
+  };
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

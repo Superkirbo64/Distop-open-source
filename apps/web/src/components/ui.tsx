@@ -15,7 +15,7 @@ import {
   type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, ExternalLink, Image as ImageIcon, Pipette, Search } from "lucide-react";
+import { Check, ChevronDown, Eye, EyeOff, ExternalLink, Image as ImageIcon, Pipette, Search } from "lucide-react";
 import { RINGS, type ProfileStyle } from "@distop/protocol";
 import { translate, type MessageKey } from "../i18n.ts";
 import { useStore } from "../store.ts";
@@ -48,7 +48,11 @@ export function useErrorText() {
   const t = useT();
   return useCallback(
     (err: unknown): string => {
-      if (!(err instanceof RequestError)) return t("error.generic");
+      /* Lo que no es una respuesta de la instancia —un fetch que ni sale, un
+         directorio caído— lleva su detalle a la vista: sin él, "algo falló"
+         no se podía diagnosticar desde el teléfono. */
+      if (!(err instanceof RequestError))
+        return err instanceof Error && err.message ? `${t("error.generic")} (${err.name}: ${err.message})` : t("error.generic");
       if (err.code === "NETWORK") return t("error.network");
       if (err.code === "INSTANCE_UNREACHABLE")
         return t("error.unreachable", { status: err.status });
@@ -268,6 +272,41 @@ export function ImageField({
       />
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
+    </div>
+  );
+}
+
+/**
+ * Campo de contraseña con el ojo para revelarla.
+ *
+ * Escribir a ciegas es la primera causa de «no me deja entrar»: el fallo no
+ * está en la contraseña sino en no poder mirar lo que se tecleó, y en el móvil
+ * con teclado predictivo pasa constantemente. Nace oculto siempre —revelar es
+ * un acto deliberado, no un estado que se quede pegado entre pantallas.
+ *
+ * El botón es <button type="button"> a propósito: dentro de un <form>, un
+ * botón sin tipo envía el formulario, así que el ojo intentaría entrar con la
+ * contraseña a medio escribir.
+ */
+export function PasswordInput({ className, ...rest }: Omit<InputHTMLAttributes<HTMLInputElement>, "type">) {
+  const t = useT();
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        {...rest}
+        type={visible ? "text" : "password"}
+        className={`field pr-11 ${className ?? ""}`}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((antes) => !antes)}
+        aria-label={t(visible ? "auth.hidePassword" : "auth.showPassword")}
+        aria-pressed={visible}
+        className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-[var(--radius-field)] text-muted transition-colors hover:text-ink focus-visible:text-ink"
+      >
+        {visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+      </button>
     </div>
   );
 }

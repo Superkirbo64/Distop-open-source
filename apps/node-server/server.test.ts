@@ -5,6 +5,7 @@
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import { MIN_PASSWORD_LENGTH } from "@distop/protocol";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -542,6 +543,7 @@ test("publicar la instancia deja de tratar a nadie como local", async () => {
   const antes = await call("GET", "/api/v1/info");
   assert.equal(antes.json.setup_requires_code, false, "sin publicar, desde el propio equipo no se pide código");
   assert.ok(Array.isArray(antes.json.recoverable), "y se ven las cuentas recuperables");
+  assert.ok(Array.isArray(antes.json.local_accounts), "y se ven los perfiles locales del selector");
 
   // Se finge una dirección pública sin levantar cloudflared: es el mismo estado.
   const { config } = await import("./config.ts");
@@ -551,6 +553,7 @@ test("publicar la instancia deja de tratar a nadie como local", async () => {
     const durante = await call("GET", "/api/v1/info");
     assert.equal(durante.json.setup_requires_code, true, "publicada, la reclamación sí pide código");
     assert.deepEqual(durante.json.recoverable, [], "y no se filtra ningún nombre de cuenta");
+    assert.deepEqual(durante.json.local_accounts, [], "ni se filtra ningún perfil del equipo");
 
     const robo = await call("POST", "/api/v1/auth/recover", { body: { username: "ada" } });
     assert.ok(!robo.json.access_token, "ni se entrega una sesión sin el código de la instancia");
@@ -769,4 +772,61 @@ test("los ajustes del banner se guardan y sobreviven a volver a pedir el perfil"
   assert.equal(loaded.json.profile_style.banner_position_x, 23);
   assert.equal(loaded.json.profile_style.banner_blur, 6);
   assert.equal(loaded.json.profile_style.banner_saturation, 135);
+});
+
+/* El mínimo de contraseña es una frontera de seguridad y no tenía prueba: se
+   pudo bajar de 10 a 6 sin que nada chistara. Se comprueban los dos lados del
+   límite, que es lo único que distingue una regla de un número suelto. */
+test("la contraseña corta se rechaza y la del mínimo justo entra", async () => {
+  const corta = await call("POST", "/api/v1/auth/register", {
+    body: { username: "corta", password: "a".repeat(MIN_PASSWORD_LENGTH - 1) },
+  });
+  assert.equal(corta.status, 400, "un carácter por debajo del mínimo no entra");
+
+  const justa = await call("POST", "/api/v1/auth/register", {
+    body: { username: "justa", password: "a".repeat(MIN_PASSWORD_LENGTH) },
+  });
+  assert.equal(justa.status, 200, "el mínimo exacto sí entra");
+
+  /* Y sin contraseña se sigue pudiendo: es opcional a propósito (§7.2), el
+     mínimo solo manda sobre quien decide poner una. */
+  const sin = await call("POST", "/api/v1/auth/register", { body: { username: "sinclave" } });
+  assert.equal(sin.status, 200, "sin contraseña sigue siendo una cuenta válida");
+});
+/* El teléfono crea su usuario sin servidor y entra por Explorar: la cuenta
+   portable tiene que poder nacer con una comunidad pública abierta, no solo
+   con invitación. Y solo con esa: una privada no puede servir de puerta. */
+test("la identidad del teléfono entra por una comunidad pública sin invitación", async () => {
+  const duena = await call("POST", "/api/v1/auth/register", {
+    body: { username: "puerta-duena", password: "contrasena-puerta" },
+  });
+  const token = duena.json.access_token as string;
+  const privada = await call("POST", "/api/v1/communities", { token, body: { name: "Puerta Privada" } });
+  const abierta = await call("POST", "/api/v1/communities", { token, body: { name: "Puerta Abierta" } });
+  const publicar = await call("PATCH", `/api/v1/communities/${abierta.json.id}`, {
+    token,
+    body: { visibility: "public", join_policy: "open" },
+  });
+  assert.equal(publicar.status, 200);
+
+  const identidad = { identity_id: `telefono-${"x".repeat(24)}`, secret: "s".repeat(43), display_name: "Teléfono" };
+  const sinPuerta = await call("POST", "/api/v1/auth/portable", { body: identidad });
+  assert.equal(sinPuerta.status, 400, "sin invitación ni comunidad pública no nace ninguna cuenta");
+
+  const cerrada = await call("POST", "/api/v1/auth/portable", {
+    body: { ...identidad, public_community_id: privada.json.id },
+  });
+  assert.equal(cerrada.status, 404, "una comunidad privada no sirve de puerta");
+
+  const entra = await call("POST", "/api/v1/auth/portable", {
+    body: { ...identidad, public_community_id: abierta.json.id },
+  });
+  assert.equal(entra.status, 200);
+  const unida = await call("POST", `/api/v1/public-communities/${abierta.json.id}/join`, {
+    token: entra.json.access_token,
+  });
+  assert.equal(unida.status, 200, "con la cuenta recién nacida ya entra a la comunidad");
+
+  const vuelve = await call("POST", "/api/v1/auth/portable", { body: identidad });
+  assert.equal(vuelve.status, 200, "la segunda vez la identidad se reconoce sin puerta");
 });

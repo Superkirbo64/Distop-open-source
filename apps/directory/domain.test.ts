@@ -1,5 +1,5 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert@1";
-import { canonicalJson, DirectoryService, fingerprintOf } from "./domain.ts";
+import { canonicalJson, DirectoryService, fingerprintOf, RETENTION } from "./domain.ts";
 import { isPublicIp } from "./network.ts";
 import { MemoryStorage } from "./storage.ts";
 import type { SignedDirectoryManifest } from "./types.ts";
@@ -43,6 +43,26 @@ Deno.test("una ficha firmada ocupa una lease y aparece en Explorar", async () =>
   await manifest.service.register(manifest);
   const listing = await manifest.service.explore({ language: "es" });
   assertEquals(listing.communities.map((item) => item.name), ["La Plaza"]);
+});
+
+Deno.test("una ficha sin renovar se oculta y se guarda solo 90 días más", async () => {
+  const manifest = await signedManifest();
+  let clock = now;
+  const expiries: number[] = [];
+  const storage = new MemoryStorage();
+  const setIfVersion = storage.setIfVersion.bind(storage);
+  storage.setIfVersion = (key, version, value, options) => {
+    expiries.push(options?.expireIn ?? 0);
+    return setIfVersion(key, version, value, options);
+  };
+  // Mismo secreto de desarrollo: el desafío firmado por otro servicio vale aquí.
+  const service = new DirectoryService(storage, async () => {}, () => clock);
+  await service.register(manifest);
+  assertEquals(expiries, [24 * 60 * 60_000 + RETENTION]);
+
+  clock = now + 24 * 60 * 60_000;
+  assertEquals((await service.explore()).communities.length, 0);
+  assertEquals((await storage.get(["manifest", "lineage-a"])).value !== null, true);
 });
 
 Deno.test("la firma manipulada y una lease demasiado larga se rechazan", async () => {
