@@ -37,3 +37,6 @@ apps/desktop-tauri/src-tauri/target/
 
 # Grafo local de graphify: se reconstruye solo con su hook de git, no se versiona.
 graphify-out/
+
+# Copia del servidor que genera scripts/stage-server.mjs; no se versiona.
+apps/mobile/nodejs-staging/
