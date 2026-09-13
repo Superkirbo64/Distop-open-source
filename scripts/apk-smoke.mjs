@@ -79,7 +79,8 @@ await run(`(() => {
 await sleep(300);
 await run(`document.querySelector("form button[type=submit]").click()`);
 await sleep(2500);
-await run(`void [...document.querySelectorAll("dialog[open] button")].find((b) => b.textContent.includes("Explorar"))?.click()`);
+// Por el botón principal del aviso y no por su texto: el emulador no está en español.
+await run(`void document.querySelector("dialog[open] .btn-primary")?.click()`);
 await sleep(10000);
 
 const explore = await run(`(() => {
