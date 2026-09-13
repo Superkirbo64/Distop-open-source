@@ -17,8 +17,8 @@
     "electron-updater": "^6.6.2"
   },
   "devDependencies": {
-    "@types/node": "22.10.5",
-    "electron": "44.0.0",
+    "@types/node": "22.20.2",
+    "electron": "44.3.0",
     "electron-builder": "^26.0.12"
   }
 }
