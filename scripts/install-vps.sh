@@ -10,7 +10,10 @@
 # reinicia solo. Actualizar es volver a ejecutar este script con --version.
 set -Eeuo pipefail
 
-VERSION="0.1.7"
+# release.yml sustituye este valor por el tag que publica. Desde un checkout
+# local hay que indicar --version: así no queda aquí un número viejo que parezca
+# ser la release actual.
+VERSION=""
 IMAGE="ghcr.io/superkirbo64/distop"
 INSTANCE_NAME="Mi comunidad Distop"
 PUBLIC_URL=""
@@ -55,7 +58,11 @@ OS_ID=$(. /etc/os-release && printf '%s' "${ID:-}")
 OS_CODENAME=$(. /etc/os-release && printf '%s' "${VERSION_CODENAME:-}")
 case "$OS_ID" in ubuntu|debian) ;; *) echo "Solo se admiten Ubuntu y Debian." >&2; exit 1 ;; esac
 case "$(dpkg --print-architecture)" in amd64|arm64) ;; *) echo "Solo se admiten amd64 y arm64." >&2; exit 1 ;; esac
-case "$VERSION" in *[!A-Za-z0-9._-]*|'') echo "VERSION no válida." >&2; exit 2 ;; esac
+[ -n "$VERSION" ] || {
+  echo "Falta la versión: usa el instalador descargado de una release o indica --version X.Y.Z." >&2
+  exit 2
+}
+case "$VERSION" in *[!A-Za-z0-9._-]*) echo "VERSION no válida." >&2; exit 2 ;; esac
 case "$IMAGE" in *[!a-z0-9./:_-]*|'') echo "IMAGEN no válida." >&2; exit 2 ;; esac
 if [ -z "$INSTANCE_NAME" ] || [[ "$INSTANCE_NAME" == *$'\n'* ]] || [[ "$INSTANCE_NAME" == *=* ]]; then
   echo "NOMBRE no válido." >&2
@@ -66,7 +73,7 @@ if [ -n "$DIRECTORY_URL" ]; then case "$DIRECTORY_URL" in https://*) ;; *) echo 
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y ca-certificates curl openssl
+apt-get install -y ca-certificates curl openssl util-linux
 if ! command -v docker >/dev/null 2>&1; then apt-get install -y docker.io; fi
 systemctl enable --now docker
 
@@ -173,6 +180,7 @@ SETUP_CODE="$(get_env SETUP_CODE)"
 
 upsert_env AUTH_SECRET "$AUTH_SECRET"
 upsert_env SETUP_CODE "$SETUP_CODE"
+upsert_env DISTOP_IMAGE_DIGEST "$IMAGE_DIGEST"
 upsert_env PORT "5000"
 upsert_env INSTANCE_NAME "$INSTANCE_NAME"
 upsert_env DATABASE_PATH "/data/app.db"
@@ -230,15 +238,92 @@ echo "PUBLIC_URL guardada. Distop se reinició."
 EOF
 chmod 0755 /usr/local/sbin/distop-set-public-url
 
+cat > /usr/local/sbin/distop-import-community <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[ "${EUID:-$(id -u)}" -eq 0 ] || { echo "Ejecuta con sudo." >&2; exit 1; }
+if [ "$#" -ne 2 ]; then
+  echo "Uso: sudo distop-import-community BUNDLE CERTIFICADO_JSON" >&2
+  exit 2
+fi
+
+ENV_FILE=/etc/distop/distop.env
+BUNDLE="$(realpath -e "$1")"
+CERTIFICATE="$(realpath -e "$2")"
+IMAGE_DIGEST="$(sed -n 's/^DISTOP_IMAGE_DIGEST=//p' "$ENV_FILE" | tail -n 1)"
+[[ "$IMAGE_DIGEST" =~ ^[A-Za-z0-9._/:-]+@sha256:[0-9a-f]{64}$ ]] || {
+  echo "La instalación no guarda un digest de imagen válido; vuelve a ejecutar install-vps.sh." >&2
+  exit 1
+}
+
+for input in "$BUNDLE" "$CERTIFICATE"; do
+  if ! setpriv --reuid=1000 --regid=1000 --clear-groups test -r "$input"; then
+    echo "El usuario aislado de Distop (uid 1000) no puede leer: $input" >&2
+    echo "Corrige el dueño con: sudo chown 1000:1000 '$input'" >&2
+    echo "Si está dentro de /root u otra carpeta privada, muévelo también a una ruta legible; por ejemplo:" >&2
+    echo "  sudo install -m 0440 -o 1000 -g 1000 '$input' /var/tmp/" >&2
+    echo "No se detuvo el servicio ni se modificó ningún dato." >&2
+    exit 2
+  fi
+done
+
+if [ -z "${DISTOP_MIGRATION_PASSPHRASE:-}" ]; then
+  printf 'Frase del bundle (no se mostrará): ' >&2
+  IFS= read -r -s DISTOP_MIGRATION_PASSPHRASE </dev/tty
+  printf '\n' >&2
+fi
+[ "${#DISTOP_MIGRATION_PASSPHRASE}" -ge 12 ] || {
+  echo "La frase necesita al menos 12 caracteres." >&2
+  exit 2
+}
+export DISTOP_MIGRATION_PASSPHRASE
+
+was_active=false
+systemctl is-active --quiet distop && was_active=true
+cleanup() {
+  set +e
+  unset DISTOP_MIGRATION_PASSPHRASE
+  if $was_active; then systemctl start distop; fi
+}
+trap cleanup EXIT
+
+if $was_active; then systemctl stop distop; fi
+docker run --rm --network=none --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m \
+  --cap-drop=ALL --security-opt=no-new-privileges --user 1000:1000 \
+  --env DISTOP_MIGRATION_PASSPHRASE \
+  --volume=/var/lib/distop:/data \
+  --volume="${BUNDLE}:/transfer/community.distop-backup:ro" \
+  --volume="${CERTIFICATE}:/transfer/certificate.json:ro" \
+  "$IMAGE_DIGEST" node import-community.ts \
+    --bundle /transfer/community.distop-backup \
+    --certificate /transfer/certificate.json \
+    --target /data --confirm-stopped
+EOF
+chmod 0755 /usr/local/sbin/distop-import-community
+
 systemctl daemon-reload
-systemctl enable --now distop
+# `enable --now` solo arranca un servicio detenido. En una actualización deja
+# vivo el contenedor anterior aunque la unidad ya apunte al digest nuevo, y la
+# comprobación de salud de abajo acabaría validando precisamente esa versión
+# vieja. Habilitar y reiniciar son dos decisiones explícitas.
+systemctl enable distop
+systemctl restart distop
 
 healthy=false
+last_health=""
 for _attempt in $(seq 1 30); do
-  if curl --fail --silent http://127.0.0.1:5000/health >/dev/null; then healthy=true; break; fi
+  if last_health="$(curl --fail --silent http://127.0.0.1:5000/health)" && \
+    printf '%s' "$last_health" | grep --fixed-strings --quiet "\"version\":\"${VERSION}\""; then
+    healthy=true
+    break
+  fi
   sleep 1
 done
-$healthy || { journalctl -u distop --no-pager -n 80 >&2; exit 1; }
+$healthy || {
+  echo "Distop no arrancó con la versión esperada ${VERSION}. Última respuesta de /health: ${last_health:-sin respuesta}" >&2
+  journalctl -u distop --no-pager -n 80 >&2
+  exit 1
+}
 
 echo
 echo "Distop ${VERSION} está funcionando y sus datos viven en /var/lib/distop."

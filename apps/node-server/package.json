@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --env-file-if-exists=../../.env --watch server.ts",
     "start": "node --env-file-if-exists=../../.env server.ts",
+    "import-community": "node import-community.ts",
     "test": "node --env-file=.env.test --test \"*.test.ts\""
   },
   "dependencies": {
