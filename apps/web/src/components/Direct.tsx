@@ -525,7 +525,9 @@ function DirectAttachments({ attachments }: { attachments: Attachment[] }) {
     <div className="mt-2 flex max-w-xl flex-wrap gap-2">
       {attachments.map((attachment) =>
         attachment.content_type.startsWith("image/") ? (
-          <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-[10px] border border-line">
+          /* Sin borde: en una foto o un sticker con transparencia la línea se
+             veía como una silueta alrededor. El chat de canales tampoco lo pone. */
+          <a key={attachment.id} href={attachment.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-[10px]">
             <img src={attachment.url} alt={attachment.filename} className="max-h-80 max-w-full object-contain" loading="lazy" />
           </a>
         ) : attachment.content_type.startsWith("audio/") ? (

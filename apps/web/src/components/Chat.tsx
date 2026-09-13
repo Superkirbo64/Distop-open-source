@@ -1752,7 +1752,9 @@ function Composer({
 
       <div
         className={`flex items-end border border-line bg-surface/90 shadow-[var(--shadow)] backdrop-blur-md focus-within:border-accent ${
-          compact ? "gap-1 rounded-[18px] px-2 py-1" : "gap-2 rounded-full px-3 py-1.5"
+          /* Radio fijo y no rounded-full: con varias líneas la caja crece y una
+             píldora infinita se estiraba en vertical como un óvalo. */
+          compact ? "gap-1 rounded-[18px] px-2 py-1" : "gap-2 rounded-[23px] px-3 py-1.5"
         }`}
       >
         {canAttach ? (
