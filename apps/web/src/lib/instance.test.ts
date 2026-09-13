@@ -52,7 +52,7 @@ Object.defineProperty(globalThis, "window", {
   },
 });
 
-const { forgetInstance, knownInstances, rememberCommunities, watchAlert, clearWatchAlert } =
+const { forgetInstance, knownInstances, railCommunities, rememberCommunities, watchAlert, clearWatchAlert } =
   await import("./instance.ts");
 
 const CASA = "https://equipo.tailnet.ts.net";
@@ -123,6 +123,46 @@ test("salir de una comunidad de varias no borra la instancia", () => {
   assert.equal(guardada.communities?.length, 1);
   assert.equal(guardada.communities?.[0]?.id, "c2", "y la que ya no está deja de aparecer en la barra");
   assert.deepEqual(olvidadas, [], "sigues dentro: no hay nada que olvidar");
+});
+
+test("los iconos de la barra no cambian de sitio al cambiar de servidor", () => {
+  limpiar();
+  const VPS = "https://vps.tailnet.ts.net";
+  sembrar([{ id: "c1", name: "La Plaza" }]);
+  rememberCommunities(VPS, [comunidad("v1", "La VPS")]);
+  const orden = (base: string, vivas: Comunidad[]) =>
+    railCommunities(knownInstances(), base, vivas).map(({ community }) => community.id);
+
+  assert.deepEqual(orden(VPS, [comunidad("v1", "La VPS")]), ["c1", "v1"], "el servidor nuevo va al final");
+  rememberCommunities(CASA, [comunidad("c1", "La Plaza")]);
+  assert.deepEqual(orden(CASA, [comunidad("c1", "La Plaza")]), ["c1", "v1"], "volver a usar uno no lo adelanta");
+  rememberCommunities(VPS, [comunidad("v1", "La VPS")]);
+  assert.deepEqual(orden(VPS, [comunidad("v1", "La VPS")]), ["c1", "v1"]);
+  assert.deepEqual(
+    railCommunities(knownInstances(), "https://nueva.ts.net", [comunidad("n1", "Nueva")]).map(({ community }) => community.id),
+    ["n1", "c1", "v1"],
+    "solo va delante un servidor activo que la lista todavía no conoce",
+  );
+});
+
+test("con 20 servidores, el nuevo saca al menos usado y nadie más se mueve", () => {
+  limpiar();
+  const urls = Array.from({ length: 20 }, (_, i) => `https://s${i}.ts.net`);
+  almacen.set(
+    LIST_KEY,
+    JSON.stringify(urls.map((url, i) => ({ url, name: url, last_seen: i === 0 ? 9_000 : i === 7 ? 1 : 1_000 + i }))),
+  );
+
+  rememberCommunities("https://s12.ts.net", [comunidad("x", "X")]);
+  assert.deepEqual(knownInstances().map((known) => known.url), urls, "actualizar una existente conserva su índice");
+
+  rememberCommunities("https://nueva.ts.net", [comunidad("n", "N")]);
+  const despues = knownInstances().map((known) => known.url);
+  assert.equal(despues.length, 20);
+  assert.ok(!despues.includes("https://s7.ts.net"), "sale la intermedia menos usada");
+  assert.equal(despues[0], "https://s0.ts.net", "la primera, que era la más reciente, se queda");
+  assert.deepEqual(despues.slice(0, -1), urls.filter((url) => url !== "https://s7.ts.net"), "el resto conserva su orden");
+  assert.equal(despues.at(-1), "https://nueva.ts.net", "la nueva va al final");
 });
 
 test("olvidar una instancia a mano también la quita de la vigilancia", () => {
