@@ -45,7 +45,6 @@ import {
   takePendingInvite,
   type PendingCommunity,
 } from "./lib/instance.ts";
-import { phoneCanHost, startPhoneServer } from "./lib/phoneHost.ts";
 import { ensurePortableIdentity } from "./lib/portable.ts";
 import { onStaleBuild, watchBuild } from "./lib/version.ts";
 import type { Invite as InviteEntity } from "@distop/protocol";
@@ -208,9 +207,8 @@ export function App() {
          recibirte con un error por tu propio servidor apagado. En el
          escritorio lo arranca Electron; en el teléfono, el motor embebido.
          Ambos arranques son idempotentes: si ya corre, vuelven al instante. */
-      if (isPackaged() && isLocalInstance(instanceBase)) {
-        if (window.distop?.host) await window.distop.host.start().catch(() => {});
-        else if (phoneCanHost()) await startPhoneServer();
+      if (isPackaged() && isLocalInstance(instanceBase) && window.distop?.host) {
+        await window.distop.host.start().catch(() => {});
       }
       await boot();
     })();
@@ -373,7 +371,9 @@ export function App() {
   // Con sesión abierta —de cuenta o de invitado— se entra directo: un invitado
   // puede crear su comunidad igual, y ponerle contraseña después reclama la
   // instancia sin repetir este paso.
-  if (setup?.required && !user) return <Setup requiresCode={setup.requiresCode} />;
+  // El teléfono solo participa: nunca pone en marcha una instancia ajena.
+  const phoneApp = isPackaged() && !window.distop;
+  if (setup?.required && !user && !phoneApp) return <Setup requiresCode={setup.requiresCode} />;
   if (!user) return <Auth />;
 
   return (

@@ -5,6 +5,7 @@
  */
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
+import { MIN_PASSWORD_LENGTH } from "@distop/protocol";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -771,4 +772,24 @@ test("los ajustes del banner se guardan y sobreviven a volver a pedir el perfil"
   assert.equal(loaded.json.profile_style.banner_position_x, 23);
   assert.equal(loaded.json.profile_style.banner_blur, 6);
   assert.equal(loaded.json.profile_style.banner_saturation, 135);
+});
+
+/* El mínimo de contraseña es una frontera de seguridad y no tenía prueba: se
+   pudo bajar de 10 a 6 sin que nada chistara. Se comprueban los dos lados del
+   límite, que es lo único que distingue una regla de un número suelto. */
+test("la contraseña corta se rechaza y la del mínimo justo entra", async () => {
+  const corta = await call("POST", "/api/v1/auth/register", {
+    body: { username: "corta", password: "a".repeat(MIN_PASSWORD_LENGTH - 1) },
+  });
+  assert.equal(corta.status, 400, "un carácter por debajo del mínimo no entra");
+
+  const justa = await call("POST", "/api/v1/auth/register", {
+    body: { username: "justa", password: "a".repeat(MIN_PASSWORD_LENGTH) },
+  });
+  assert.equal(justa.status, 200, "el mínimo exacto sí entra");
+
+  /* Y sin contraseña se sigue pudiendo: es opcional a propósito (§7.2), el
+     mínimo solo manda sobre quien decide poner una. */
+  const sin = await call("POST", "/api/v1/auth/register", { body: { username: "sinclave" } });
+  assert.equal(sin.status, 200, "sin contraseña sigue siendo una cuenta válida");
 });

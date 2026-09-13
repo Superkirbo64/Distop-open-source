@@ -47,8 +47,11 @@ export const en: Record<keyof typeof es, string> = {
   "auth.username": "Username",
   "auth.usernameHint": "Lowercase letters, numbers, dot, dash and underscore.",
   "auth.password": "Password",
+  "auth.showPassword": "Show password",
+  "auth.hidePassword": "Hide password",
   "auth.passwordHint":
-    "Optional. Without it you can only sign in from this device, or with the instance's code; add one later from Settings.",
+    "Optional, but without one this account can only be recovered from the machine that hosts it. Change browsers or clear their data and you will have to ask whoever hosts it.",
+  "auth.passwordMin": "At least {n} characters.",
   "auth.noPasswordWarning": "Without a password, this account only lives in this browser. Add one later from Settings.",
   "auth.displayName": "Display name",
   "auth.noAccount": "No account yet?",
@@ -56,8 +59,6 @@ export const en: Record<keyof typeof es, string> = {
   "auth.guestTitle": "No account",
   "auth.guestHint":
     "You can do exactly what an account does: create communities, channels, invite people and talk. Add a password whenever you want, losing nothing.",
-  "auth.guestEqual":
-    "Without a password you can do the same; you only need one to come back from another device.",
   "auth.recoverTitle": "Accounts on this device",
   "auth.recoverHint": "These accounts have no password. Since you're on this device, you can just walk right in.",
   "auth.registrationClosed": "Registration is closed on this server.",
@@ -76,7 +77,7 @@ export const en: Record<keyof typeof es, string> = {
   "setup.yourName": "Your name",
   "setup.password": "Password",
   "setup.passwordHint":
-    "Optional for now. Without it you only get in from this device; you can set it any time from Settings.",
+    "Optional for now. Without it you can only get back in from the machine that hosts the instance; you can set one any time from Settings.",
   "setup.code": "Setup code",
   "setup.codeHint":
     "It is printed in the terminal where you started the server. It is asked because you are claiming it from another machine.",
@@ -129,8 +130,9 @@ export const en: Record<keyof typeof es, string> = {
   "connect.hostHint":
     "Your community runs on this computer, inside the app: your data stays with you. It will be available while this machine is on, and speed depends on your connection.",
   "connect.hostEnter": "Enter my community",
+  "connect.androidTitle": "Join a community",
   "connect.androidHint":
-    "Choose which community to join: an invite link, your PC on this same Wi-Fi, or a server running on this very phone.",
+    "Paste the invite link you were sent or find the hosting PC on your same Wi-Fi. Then sign in with your user or create one.",
   "connect.preparing": "Starting your server…",
   "connect.preparingHint":
     "The first run creates your database on this machine. Your community and your data live here, with you.",
@@ -144,14 +146,6 @@ export const en: Record<keyof typeof es, string> = {
   "connect.scanNone":
     "None showed up. The server must be on, on this same Wi-Fi, with port 5000 open.",
   "connect.changeInstance": "Change community",
-  "connect.phoneHost": "Your community on this phone",
-  "connect.phoneFound": "This phone's server is already on: go in.",
-  "connect.phoneHostHint":
-    "The server runs inside this very app, nothing to install: your data lives on your phone. Your community is online while the app is open (a pinned notice keeps Android from putting it to sleep). Friends join from your same Wi-Fi with your invite link; to invite over the internet, host on a PC.",
-  "connect.phoneCreate": "Create my community here",
-  "connect.phoneStarting": "Turning on the phone's server…",
-  "connect.phoneStartingHint": "The first time takes a bit longer: the server is copied and your database is created.",
-  "connect.phoneError": "The phone's server did not start. Fully close the app, open it again and retry.",
 
   "game.playing": "Playing {name}",
   "game.for": "for {time}",

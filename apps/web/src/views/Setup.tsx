@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { BRAND } from "../brand.ts";
 import { useStore } from "../store.ts";
-import { Button, ErrorNote, Field, useErrorText, useT } from "../components/ui.tsx";
+import { Button, ErrorNote, Field, PasswordInput, useErrorText, useT } from "../components/ui.tsx";
 
 export function Setup({ requiresCode }: { requiresCode: boolean }) {
   const t = useT();
@@ -80,10 +80,8 @@ export function Setup({ requiresCode }: { requiresCode: boolean }) {
 
           <Field label={`${t("setup.password")} (${t("common.optional")})`} hint={t("setup.passwordHint")}>
             {(id) => (
-              <input
-                id={id}
-                type="password"
-                className="field"
+              <PasswordInput
+                id={id}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 maxLength={200}

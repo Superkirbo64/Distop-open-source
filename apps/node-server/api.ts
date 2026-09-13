@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { isIP } from "node:net";
 import { join } from "node:path";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, COMMUNITY_CATEGORIES, COMMUNITY_JOIN_POLICIES, COMMUNITY_VISIBILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, MEETING_ROLES, MEETING_STATES, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
+import { PERMISSIONS, ALL_PERMISSIONS, CAPABILITIES, COMMUNITY_CATEGORIES, COMMUNITY_JOIN_POLICIES, COMMUNITY_VISIBILITIES, CUSTOM_EMOJI, EMOJI_KINDS, EMOJI_NAME, MEETING_ROLES, MEETING_STATES, MIN_PASSWORD_LENGTH, USER_STATUSES, has, toBits, toProfileStyle, uuidv7 } from "@distop/protocol";
 import type { MeetingRole, MeetingState, Snowflake } from "@distop/protocol";
 import { config, MAX_UPLOAD_BYTES } from "./config.ts";
 import { fixedPublicUrl, setFixedPublicUrl, setTunnelAutostart, tunnelAutostart, publicUrl, startTunnel, stopTunnel, tunnelState } from "./tunnel.ts";
@@ -418,7 +418,8 @@ route("POST", "/api/v1/auth/bootstrap", async (ctx) => {
   if (!USERNAME.test(username)) throw badRequest("Ese nombre de usuario no es válido.");
 
   const password = v.optionalString(body, "password", { max: 200 });
-  if (password && password.length < 10) throw badRequest("La contraseña necesita al menos 10 caracteres.");
+  if (password && password.length < MIN_PASSWORD_LENGTH)
+    throw badRequest(`La contraseña necesita al menos ${MIN_PASSWORD_LENGTH} caracteres.`);
 
   const user = createUser({
     username,
@@ -477,7 +478,8 @@ route("POST", "/api/v1/auth/register", async (ctx) => {
   // paso posterior, no un peaje para tener cuenta. Sin ella, se entra de vuelta
   // por /auth/recover — igual de restringido que el arranque de la instancia.
   const password = v.optionalString(body, "password", { max: 200 });
-  if (password && password.length < 10) throw badRequest("La contraseña necesita al menos 10 caracteres.");
+  if (password && password.length < MIN_PASSWORD_LENGTH)
+    throw badRequest(`La contraseña necesita al menos ${MIN_PASSWORD_LENGTH} caracteres.`);
   const displayName = v.optionalString(body, "display_name", { max: 48 }) || username;
 
   if (findUserByUsername(username)) throw conflict("Ese nombre de usuario ya existe.");
@@ -696,7 +698,7 @@ route("POST", "/api/v1/users/me/upgrade", async (ctx) => {
 
   const body = await readJson(ctx);
   const username = v.string(body, "username", { min: 3, max: 32, pattern: USERNAME }).toLowerCase();
-  const password = v.string(body, "password", { min: 10, max: 200, trim: false });
+  const password = v.string(body, "password", { min: MIN_PASSWORD_LENGTH, max: 200, trim: false });
 
   const taken = findUserByUsername(username);
   if (taken && taken.id !== user.id) throw conflict("Ese nombre de usuario ya existe.");
@@ -726,7 +728,7 @@ route("POST", "/api/v1/users/me/password", async (ctx) => {
 
   const body = await readJson(ctx);
   const currentPassword = v.string(body, "current_password", { min: 1, max: 200, trim: false });
-  const password = v.string(body, "password", { min: 10, max: 200, trim: false });
+  const password = v.string(body, "password", { min: MIN_PASSWORD_LENGTH, max: 200, trim: false });
   if (!verifyPassword(currentPassword, current.password_hash)) throw unauthorized("La contraseña actual no es correcta.");
 
   db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), user.id);

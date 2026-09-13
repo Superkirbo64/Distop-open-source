@@ -47,8 +47,11 @@ export const ptBR: Record<keyof typeof es, string> = {
   "auth.username": "Nome de usuário",
   "auth.usernameHint": "Minúsculas, números, ponto, hífen e sublinhado.",
   "auth.password": "Senha",
+  "auth.showPassword": "Mostrar a senha",
+  "auth.hidePassword": "Ocultar a senha",
   "auth.passwordHint":
-    "Opcional. Sem ela você só entra a partir deste dispositivo, ou com o código da instância; pode adicionar depois em Ajustes.",
+    "Opcional, mas sem ela esta conta só se recupera do computador que hospeda. Se trocar de navegador ou apagar os dados dele, vai ter que pedir a quem hospeda.",
+  "auth.passwordMin": "No mínimo {n} caracteres.",
   "auth.noPasswordWarning": "Sem senha, esta conta vive só neste navegador. Pode adicionar depois em Ajustes.",
   "auth.displayName": "Nome de exibição",
   "auth.noAccount": "Ainda sem conta?",
@@ -56,8 +59,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "auth.guestTitle": "Sem conta",
   "auth.guestHint":
     "Você faz exatamente o mesmo que com conta: criar comunidades, canais, convidar e falar. Coloque senha quando quiser, sem perder nada.",
-  "auth.guestEqual":
-    "Sem senha você faz o mesmo; ela só serve para voltar de outro dispositivo.",
   "auth.recoverTitle": "Contas deste equipamento",
   "auth.recoverHint":
     "Estas contas não têm senha. Como você está neste equipamento, pode continuar sem digitar nada.",
@@ -77,7 +78,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "setup.yourName": "Seu nome",
   "setup.password": "Senha",
   "setup.passwordHint":
-    "Opcional por ora. Sem ela você entra só neste dispositivo; dá para definir quando quiser em Configurações.",
+    "Opcional por ora. Sem ela só dá para voltar a entrar pelo computador que hospeda; dá para definir quando quiser em Configurações.",
   "setup.code": "Código de instalação",
   "setup.codeHint":
     "Está impresso no terminal onde você iniciou o servidor. É pedido porque você está reivindicando de outra máquina.",
@@ -130,8 +131,9 @@ export const ptBR: Record<keyof typeof es, string> = {
   "connect.hostHint":
     "Sua comunidade roda neste computador, dentro do aplicativo: seus dados ficam com você. Ela estará disponível enquanto esta máquina estiver ligada, e a velocidade depende da sua conexão.",
   "connect.hostEnter": "Entrar na minha comunidade",
+  "connect.androidTitle": "Entre em uma comunidade",
   "connect.androidHint":
-    "Escolha em qual comunidade entrar: um link de convite, seu PC nesta mesma Wi-Fi, ou um servidor rodando neste próprio celular.",
+    "Cole o link de convite que você recebeu ou encontre o PC que hospeda na sua mesma Wi-Fi. Depois entre com seu usuário ou crie um.",
   "connect.preparing": "Iniciando seu servidor…",
   "connect.preparingHint":
     "Na primeira vez, seu banco de dados é criado nesta máquina. Sua comunidade e seus dados vivem aqui, com você.",
@@ -146,14 +148,6 @@ export const ptBR: Record<keyof typeof es, string> = {
   "connect.scanNone":
     "Nenhum apareceu. O servidor precisa estar ligado, nesta mesma Wi-Fi e com a porta 5000 aberta.",
   "connect.changeInstance": "Trocar de comunidade",
-  "connect.phoneHost": "Sua comunidade neste celular",
-  "connect.phoneFound": "O servidor deste celular já está ligado: entre.",
-  "connect.phoneHostHint":
-    "O servidor roda dentro deste próprio app, sem instalar nada: seus dados vivem no seu celular. Sua comunidade fica no ar enquanto o app estiver aberto (um aviso fixo impede o Android de adormecê-lo). Seus amigos entram pela sua mesma Wi-Fi com o seu link de convite; para convidar pela internet, hospede em um PC.",
-  "connect.phoneCreate": "Criar minha comunidade aqui",
-  "connect.phoneStarting": "Ligando o servidor do celular…",
-  "connect.phoneStartingHint": "Na primeira vez demora um pouco mais: o servidor é copiado e seu banco de dados é criado.",
-  "connect.phoneError": "O servidor do celular não ligou. Feche o app por completo, abra de novo e tente outra vez.",
 
   "game.playing": "Jogando {name}",
   "game.for": "há {time}",

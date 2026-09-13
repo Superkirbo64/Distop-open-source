@@ -1,9 +1,10 @@
 /** Entrada por perfiles: primero quién eres; la contraseña, solo si hace falta. */
 import { useEffect, useState } from "react";
+import { MIN_PASSWORD_LENGTH } from "@distop/protocol";
 import { BRAND } from "../brand.ts";
 import { api } from "../lib/api.ts";
 import { useStore } from "../store.ts";
-import { Avatar, Button, ErrorNote, Field, Spinner, useErrorText, useT } from "../components/ui.tsx";
+import { Avatar, Button, ErrorNote, Field, PasswordInput, Spinner, useErrorText, useT } from "../components/ui.tsx";
 
 type Mode = "profiles" | "login" | "register";
 
@@ -252,14 +253,12 @@ export function Auth({ onDone }: { onDone?: () => void }) {
                 hint={mode === "register" ? t("auth.passwordHint") : undefined}
               >
                 {(id) => (
-                  <input
+                  <PasswordInput
                     id={id}
-                    type="password"
-                    className="field"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     required={mode === "login"}
-                    minLength={mode === "register" ? 10 : 1}
+                    minLength={mode === "register" ? MIN_PASSWORD_LENGTH : 1}
                     maxLength={200}
                     autoComplete={mode === "register" ? "new-password" : "current-password"}
                     autoFocus={selected !== null}

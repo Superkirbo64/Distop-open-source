@@ -45,8 +45,11 @@ export const es = {
   "auth.username": "Nombre de usuario",
   "auth.usernameHint": "Minúsculas, números, punto, guion y guion bajo.",
   "auth.password": "Contraseña",
+  "auth.showPassword": "Mostrar la contraseña",
+  "auth.hidePassword": "Ocultar la contraseña",
   "auth.passwordHint":
-    "Opcional. Sin ella entras solo desde este dispositivo, o con el código de la instancia; puedes añadirla luego desde Ajustes.",
+    "Opcional, pero sin ella esta cuenta solo se recupera desde el equipo que hospeda. Si cambias de navegador o borras sus datos, tendrás que pedírselo a quien hospeda.",
+  "auth.passwordMin": "Al menos {n} caracteres.",
   "auth.noPasswordWarning":
     "Sin contraseña, esta cuenta vive solo en este navegador. Puedes añadirla luego desde Ajustes.",
   "auth.displayName": "Nombre visible",
@@ -55,8 +58,6 @@ export const es = {
   "auth.guestTitle": "Sin cuenta",
   "auth.guestHint":
     "Puedes hacer exactamente lo mismo que con cuenta: crear comunidades, canales, invitar y hablar. Añade contraseña cuando quieras, sin perder nada.",
-  "auth.guestEqual":
-    "Sin contraseña puedes hacer lo mismo; solo la necesitas para volver desde otro dispositivo.",
   "auth.recoverTitle": "Cuentas de este equipo",
   "auth.recoverHint":
     "Estas cuentas no tienen contraseña. Como entras desde este equipo, puedes continuar sin escribir nada.",
@@ -76,7 +77,7 @@ export const es = {
   "setup.yourName": "Tu nombre",
   "setup.password": "Contraseña",
   "setup.passwordHint":
-    "Opcional ahora. Sin ella entras solo desde este dispositivo; puedes ponerla cuando quieras desde Ajustes.",
+    "Opcional ahora. Sin ella solo se vuelve a entrar desde el equipo que hospeda; puedes ponerla cuando quieras desde Ajustes.",
   "setup.code": "Código de puesta en marcha",
   "setup.codeHint":
     "Está impreso en el terminal donde arrancaste el servidor. Se pide porque estás reclamándolo desde otro equipo.",
@@ -129,8 +130,9 @@ export const es = {
   "connect.hostHint":
     "Tu comunidad corre en este ordenador, dentro de la aplicación: tus datos se quedan contigo. Estará disponible mientras este equipo esté encendido, y la velocidad depende de tu conexión.",
   "connect.hostEnter": "Entrar en mi comunidad",
+  "connect.androidTitle": "Entra a una comunidad",
   "connect.androidHint":
-    "Elige a qué comunidad entrar: un enlace de invitación, tu PC en esta misma Wi-Fi, o un servidor corriendo en este mismo teléfono.",
+    "Pega el enlace de invitación que te pasaron o busca el PC que hospeda en tu misma Wi-Fi. Después entras con tu usuario o te creas uno.",
   "connect.preparing": "Arrancando tu servidor…",
   "connect.preparingHint":
     "La primera vez se crea tu base de datos en este equipo. Tu comunidad y tus datos viven aquí, contigo.",
@@ -145,16 +147,6 @@ export const es = {
   "connect.scanNone":
     "No apareció ninguno. El servidor debe estar encendido, en esta misma Wi-Fi y con el puerto 5000 abierto.",
   "connect.changeInstance": "Cambiar de comunidad",
-  "connect.phoneHost": "Tu comunidad en este teléfono",
-  "connect.phoneFound": "El servidor de este teléfono ya está encendido: entra.",
-  "connect.phoneHostHint":
-    "El servidor corre dentro de esta misma app, sin instalar nada: tus datos viven en tu teléfono. Tu comunidad está en línea mientras la app esté abierta (un aviso fijo evita que Android la duerma). Tus amigos entran desde tu misma Wi-Fi con tu enlace de invitación; para invitar por internet, hospeda en un PC.",
-  "connect.phoneCreate": "Crear mi comunidad aquí",
-  "connect.phoneStarting": "Encendiendo el servidor del teléfono…",
-  "connect.phoneStartingHint":
-    "La primera vez tarda un poco más: se copia el servidor y se crea tu base de datos.",
-  "connect.phoneError":
-    "El servidor del teléfono no arrancó. Cierra la app del todo, vuelve a abrirla y prueba otra vez.",
 
   "game.playing": "Jugando a {name}",
   "game.for": "desde hace {time}",
