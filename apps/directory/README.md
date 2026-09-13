@@ -40,6 +40,8 @@ por IP viven en memoria, por lo que no gastan escrituras de KV. Esto deja el cas
 base por debajo de 500.000 escrituras y un millón de requests; reportes y tareas de
 moderación consumen el margen restante.
 
-Las fichas caducan solas. El origen se resuelve antes de consultarlo y se
+Explorar solo enseña instancias con la lease vigente: una que deja de renovar
+desaparece como mucho 24 h después. Su ficha sigue en KV 90 días más, oculta,
+y luego Deno KV la borra sola (`RETENTION` en `domain.ts`). El origen se resuelve antes de consultarlo y se
 rechazan loopback, RFC1918, link-local, CGNAT, rangos de documentación y
 multicast; además no se siguen redirecciones y la respuesta tiene límite.

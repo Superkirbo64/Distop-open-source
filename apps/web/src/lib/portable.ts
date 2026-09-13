@@ -6,9 +6,9 @@
  * fila de usuario, pero para la persona se ve y se comporta como un único
  * perfil que viaja con ella.
  */
-import type { SelfUser } from "@distop/protocol";
+import { toProfileStyle, type SelfUser } from "@distop/protocol";
 import { api, upload } from "./api.ts";
-import { clientOrigin } from "./instance.ts";
+import { clientOrigin, phoneWithoutInstance } from "./instance.ts";
 
 const KEY = "distop.portableIdentity";
 const MEDIA_DB = "distop-portable-profile";
@@ -120,6 +120,9 @@ export async function ensurePortableIdentity(user: SelfUser): Promise<PortableId
     ? { ...previous, profile: profileOf(user) }
     : { identity_id: crypto.randomUUID(), secret: randomSecret(), profile: profileOf(user) };
   localStorage.setItem(KEY, JSON.stringify(identity));
+  // El teléfono antes de su primera comunidad: la identidad ya es la cuenta y
+  // todavía no hay servidor al que presentarla.
+  if (phoneWithoutInstance()) return identity;
   await api("PUT", "/api/v1/users/me/portable", {
     identity_id: identity.identity_id,
     secret: identity.secret,
@@ -130,14 +133,57 @@ export async function ensurePortableIdentity(user: SelfUser): Promise<PortableId
   return identity;
 }
 
-export function portableAuthPayload(inviteCode?: string | null): Record<string, unknown> | null {
+/** El usuario del teléfono antes de entrar a ninguna comunidad: nace aquí, sin servidor. */
+export function createLocalIdentity(displayName: string): void {
+  const name = displayName.trim();
+  const identity: PortableIdentity = {
+    identity_id: crypto.randomUUID(),
+    secret: randomSecret(),
+    profile: {
+      // Orientativo: cada servidor lo valida y, si choca, se inventa uno libre.
+      username: name.toLowerCase().normalize("NFD").replace(/[^a-z0-9._-]+/g, "").slice(0, 32),
+      display_name: name,
+      avatar_url: null,
+      banner_url: null,
+      bio: null,
+      pronouns: null,
+      accent_color: null,
+      profile_style: toProfileStyle(null),
+    },
+  };
+  localStorage.setItem(KEY, JSON.stringify(identity));
+}
+
+/** El usuario guardado en el dispositivo, con la forma que espera la interfaz. */
+export function localUser(): SelfUser | null {
+  const identity = portableIdentity();
+  if (!identity) return null;
+  return {
+    ...identity.profile,
+    id: identity.identity_id,
+    kind: "local",
+    status: "online",
+    custom_status: null,
+    created_at: 0,
+    locale: navigator.language,
+    theme: "system",
+    settings: {},
+    has_password: false,
+  };
+}
+
+export function portableAuthPayload(inviteCode?: string | null, publicCommunityId?: string | null): Record<string, unknown> | null {
   const identity = portableIdentity();
   if (!identity) return null;
   return {
     identity_id: identity.identity_id,
     secret: identity.secret,
     ...identity.profile,
-    ...(inviteCode ? { invite_code: inviteCode } : {}),
+    ...(inviteCode
+      ? { invite_code: inviteCode }
+      : publicCommunityId
+        ? { public_community_id: publicCommunityId }
+        : {}),
   };
 }
 

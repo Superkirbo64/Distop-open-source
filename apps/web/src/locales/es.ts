@@ -39,6 +39,14 @@ export const es = {
   "welcome.create": "Crear mi comunidad",
   "welcome.join": "Tengo una invitación",
   "welcome.later": "Ahora no",
+  "welcome.phoneBody":
+    "Todavía no estás en ninguna comunidad. Las encuentras en Explorar, la brújula de la barra de comunidades, o entra con un enlace de invitación.",
+  "welcome.explore": "Explorar comunidades",
+  "status.noCommunity": "Sin comunidad todavía",
+  "phone.createTitle": "Crea tu usuario",
+  "phone.createHint":
+    "Elige cómo te verán los demás. Se guarda en este teléfono y te acompaña a cada comunidad en la que entres.",
+  "phone.createAction": "Entrar",
   "auth.login": "Entrar",
   "auth.register": "Crear cuenta",
   "auth.guest": "Entrar como invitado",
@@ -119,33 +127,18 @@ export const es = {
   "connect.hint":
     "Distop abrirá el servidor de este dispositivo y mostrará únicamente sus perfiles registrados.",
   "connect.localUnavailable": "No se pudo abrir el servidor local de este dispositivo.",
-  "connect.action": "Conectar",
-  "connect.checking": "Comprobando…",
   "connect.invalid": "Esa dirección no es válida. Solo se admiten direcciones http o https.",
   "connect.unreachable":
     "Ahí no responde nadie. Puede que el servidor de esa comunidad esté apagado, que el túnel se haya cerrado o que la dirección tenga una errata.",
   "connect.notInstance": "En esa dirección responde algo, pero no es un servidor de Distop.",
-  "connect.known": "Comunidades recientes",
-  "connect.forget": "Olvidar",
   "connect.hostHint":
     "Tu comunidad corre en este ordenador, dentro de la aplicación: tus datos se quedan contigo. Estará disponible mientras este equipo esté encendido, y la velocidad depende de tu conexión.",
   "connect.hostEnter": "Entrar en mi comunidad",
-  "connect.androidTitle": "Entra a una comunidad",
-  "connect.androidHint":
-    "Pega el enlace de invitación que te pasaron o busca el PC que hospeda en tu misma Wi-Fi. Después entras con tu usuario o te creas uno.",
   "connect.preparing": "Arrancando tu servidor…",
   "connect.preparingHint":
     "La primera vez se crea tu base de datos en este equipo. Tu comunidad y tus datos viven aquí, contigo.",
   "connect.autoFailed": "Tu servidor no pudo arrancar en este equipo.",
   "connect.hostMine": "Tu servidor en este equipo",
-  "connect.inviteOrUrl": "Enlace de invitación o dirección",
-  "connect.inviteHint": "Vale un enlace …/invite/abc o la dirección de una comunidad.",
-  "connect.scan": "Buscar en mi red Wi-Fi",
-  "connect.scanHint":
-    "Encuentra servidores encendidos en tu misma red — por ejemplo, tu PC. Nada sale de tu red.",
-  "connect.scanning": "Buscando… {done}/{total}",
-  "connect.scanNone":
-    "No apareció ninguno. El servidor debe estar encendido, en esta misma Wi-Fi y con el puerto 5000 abierto.",
   "connect.changeInstance": "Cambiar de comunidad",
 
   "game.playing": "Jugando a {name}",

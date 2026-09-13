@@ -23,6 +23,7 @@ import {
   knownInstances,
   normalizeInstanceUrl,
   parseInvite,
+  phoneWithoutInstance,
   rememberCommunities,
   setActiveInstance,
   storePendingCommunity,
@@ -75,6 +76,9 @@ export function Rail({
   const incomingFriendRequests = useStore((s) => s.social.incoming_friend_requests.length);
   const openDirectHome = useStore((s) => s.openDirectHome);
   const user = useStore((s) => s.user);
+  /* El teléfono antes de su primera comunidad: sin servidor no hay mensajes
+     directos, nada que crear ni estado que vigilar. Queda Explorar. */
+  const offline = phoneWithoutInstance();
   const unread = useCommunityUnread();
   const directUnread =
     incomingFriendRequests +
@@ -125,6 +129,7 @@ export function Rail({
       className="flex w-[4.5rem] flex-col items-center gap-2 border-r border-line bg-sunken pt-1 pb-3"
     >
       <ul className="flex w-full flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto">
+        {offline ? null : (
         <li className="group relative mb-1 flex w-full justify-center">
           <span
             aria-hidden="true"
@@ -153,6 +158,7 @@ export function Rail({
             ) : null}
           </button>
         </li>
+        )}
         {visibleCommunities.map(({ community, url }) => (
           <li key={`${url}:${community.id}`} className="group relative flex w-full justify-center">
             {/* Una sola pastilla para los tres estados en vez de un punto y un
@@ -207,9 +213,11 @@ export function Rail({
         ))}
       </ul>
 
-      <IconButton label={t("community.create")} onClick={onCreate} className="h-12 w-12 border border-dashed border-line">
-        <Cross size={20} />
-      </IconButton>
+      {offline ? null : (
+        <IconButton label={t("community.create")} onClick={onCreate} className="h-12 w-12 border border-dashed border-line">
+          <Cross size={20} />
+        </IconButton>
+      )}
 
 
       <IconButton label={t("explore.open")} onClick={onExplore} className="h-10 w-10">
@@ -226,10 +234,14 @@ export function Rail({
         {sinLeer > 0 ? <span className="sr-only">{t("notice.unread", { count: sinLeer })}</span> : null}
       </IconButton>
 
-      <IconButton label={t("instance.status")} onClick={() => setStatus(true)} className="h-10 w-10">
-        <ServerCog size={18} />
-      </IconButton>
-      <ConnectionDot />
+      {offline ? null : (
+        <>
+          <IconButton label={t("instance.status")} onClick={() => setStatus(true)} className="h-10 w-10">
+            <ServerCog size={18} />
+          </IconButton>
+          <ConnectionDot />
+        </>
+      )}
 
       <InstanceStatus open={status} onClose={() => setStatus(false)} />
       <Notices open={notices} onClose={() => setNotices(false)} />

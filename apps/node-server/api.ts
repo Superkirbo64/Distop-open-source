@@ -3280,8 +3280,17 @@ route("POST", "/api/v1/auth/portable", async (ctx) => {
   }
 
   if (hasPortableIdentity(identityId)) throw unauthorized("La identidad del dispositivo no coincide.");
-  const inviteCode = v.string(body, "invite_code", { min: 3, max: 100, pattern: /^[A-Za-z0-9_-]+$/ });
-  liveInvite(inviteCode);
+  /* Una cuenta nueva necesita una puerta: una invitación, o una comunidad
+     pública que admita entrar sin ella — la que el teléfono elige en Explorar,
+     la misma que ya abre /public-communities/:id/join. */
+  const publicCommunityId = v.optionalString(body, "public_community_id", { max: 100 });
+  if (publicCommunityId) {
+    const community = getCommunity(publicCommunityId);
+    if (!community || community.visibility !== "public" || community.join_policy === "invite")
+      throw notFound("Comunidad pública no encontrada.");
+  } else {
+    liveInvite(v.string(body, "invite_code", { min: 3, max: 100, pattern: /^[A-Za-z0-9_-]+$/ }));
+  }
 
   const displayName = v.string(body, "display_name", { min: 2, max: 48 });
   const preferred = (v.optionalString(body, "username", { max: 32 }) || "").toLowerCase();

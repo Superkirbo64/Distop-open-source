@@ -13,6 +13,13 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Las franjas de las barras del sistema, del color de la app y no
+             blancas: con los márgenes de adjustMarginsForEdgeToEdge se ve la
+             ventana por detrás. values-night pone la paleta oscura. -->
+        <item name="android:windowBackground">@color/distop_bars</item>
+        <item name="android:statusBarColor">@color/distop_bars</item>
+        <item name="android:navigationBarColor">@color/distop_bars</item>
+        <item name="android:windowLightStatusBar">@bool/distop_light_bars</item>
     </style>
 
 

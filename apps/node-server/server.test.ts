@@ -793,3 +793,40 @@ test("la contraseña corta se rechaza y la del mínimo justo entra", async () =>
   const sin = await call("POST", "/api/v1/auth/register", { body: { username: "sinclave" } });
   assert.equal(sin.status, 200, "sin contraseña sigue siendo una cuenta válida");
 });
+/* El teléfono crea su usuario sin servidor y entra por Explorar: la cuenta
+   portable tiene que poder nacer con una comunidad pública abierta, no solo
+   con invitación. Y solo con esa: una privada no puede servir de puerta. */
+test("la identidad del teléfono entra por una comunidad pública sin invitación", async () => {
+  const duena = await call("POST", "/api/v1/auth/register", {
+    body: { username: "puerta-duena", password: "contrasena-puerta" },
+  });
+  const token = duena.json.access_token as string;
+  const privada = await call("POST", "/api/v1/communities", { token, body: { name: "Puerta Privada" } });
+  const abierta = await call("POST", "/api/v1/communities", { token, body: { name: "Puerta Abierta" } });
+  const publicar = await call("PATCH", `/api/v1/communities/${abierta.json.id}`, {
+    token,
+    body: { visibility: "public", join_policy: "open" },
+  });
+  assert.equal(publicar.status, 200);
+
+  const identidad = { identity_id: `telefono-${"x".repeat(24)}`, secret: "s".repeat(43), display_name: "Teléfono" };
+  const sinPuerta = await call("POST", "/api/v1/auth/portable", { body: identidad });
+  assert.equal(sinPuerta.status, 400, "sin invitación ni comunidad pública no nace ninguna cuenta");
+
+  const cerrada = await call("POST", "/api/v1/auth/portable", {
+    body: { ...identidad, public_community_id: privada.json.id },
+  });
+  assert.equal(cerrada.status, 404, "una comunidad privada no sirve de puerta");
+
+  const entra = await call("POST", "/api/v1/auth/portable", {
+    body: { ...identidad, public_community_id: abierta.json.id },
+  });
+  assert.equal(entra.status, 200);
+  const unida = await call("POST", `/api/v1/public-communities/${abierta.json.id}/join`, {
+    token: entra.json.access_token,
+  });
+  assert.equal(unida.status, 200, "con la cuenta recién nacida ya entra a la comunidad");
+
+  const vuelve = await call("POST", "/api/v1/auth/portable", { body: identidad });
+  assert.equal(vuelve.status, 200, "la segunda vez la identidad se reconoce sin puerta");
+});

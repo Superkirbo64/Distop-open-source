@@ -41,6 +41,14 @@ export const en: Record<keyof typeof es, string> = {
   "welcome.create": "Create my community",
   "welcome.join": "I have an invite",
   "welcome.later": "Not now",
+  "welcome.phoneBody":
+    "You're not in any community yet. Find them in Explore, the compass in the community bar, or join with an invite link.",
+  "welcome.explore": "Explore communities",
+  "status.noCommunity": "No community yet",
+  "phone.createTitle": "Create your user",
+  "phone.createHint":
+    "Choose how others will see you. It's saved on this phone and goes with you to every community you join.",
+  "phone.createAction": "Enter",
   "auth.login": "Sign in",
   "auth.register": "Create account",
   "auth.guest": "Continue as guest",
@@ -119,32 +127,18 @@ export const en: Record<keyof typeof es, string> = {
   "connect.hint":
     "Distop will open this device's server and show only its registered profiles.",
   "connect.localUnavailable": "The local server on this device could not be opened.",
-  "connect.action": "Connect",
-  "connect.checking": "Checking…",
   "connect.invalid": "That address is not valid. Only http or https addresses are accepted.",
   "connect.unreachable":
     "Nobody answers there. That community's server may be off, the tunnel may have closed, or the address has a typo.",
   "connect.notInstance": "Something answers at that address, but it is not a Distop server.",
-  "connect.known": "Recent communities",
-  "connect.forget": "Forget",
   "connect.hostHint":
     "Your community runs on this computer, inside the app: your data stays with you. It will be available while this machine is on, and speed depends on your connection.",
   "connect.hostEnter": "Enter my community",
-  "connect.androidTitle": "Join a community",
-  "connect.androidHint":
-    "Paste the invite link you were sent or find the hosting PC on your same Wi-Fi. Then sign in with your user or create one.",
   "connect.preparing": "Starting your server…",
   "connect.preparingHint":
     "The first run creates your database on this machine. Your community and your data live here, with you.",
   "connect.autoFailed": "Your server could not start on this machine.",
   "connect.hostMine": "Your server on this machine",
-  "connect.inviteOrUrl": "Invite link or address",
-  "connect.inviteHint": "An …/invite/abc link works, and so does a community address.",
-  "connect.scan": "Search my Wi-Fi network",
-  "connect.scanHint": "Finds servers running on your own network — your PC, for example. Nothing leaves your network.",
-  "connect.scanning": "Searching… {done}/{total}",
-  "connect.scanNone":
-    "None showed up. The server must be on, on this same Wi-Fi, with port 5000 open.",
   "connect.changeInstance": "Change community",
 
   "game.playing": "Playing {name}",

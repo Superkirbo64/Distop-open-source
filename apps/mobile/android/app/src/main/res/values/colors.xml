@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- --bg de la paleta clara (apps/web/src/styles.css). -->
+    <color name="distop_bars">#f4f5f8</color>
+    <bool name="distop_light_bars">true</bool>
+</resources>

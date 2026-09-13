@@ -152,6 +152,14 @@ export function isPackaged(): boolean {
   return Boolean(window.distop) || Boolean(window.Capacitor?.isNativePlatform?.());
 }
 
+/** El teléfono antes de su primera comunidad: no hospeda ni tiene a quién preguntar. */
+export function phoneWithoutInstance(): boolean {
+  return isPackaged() && !window.distop && !instanceBase;
+}
+
+/** El directorio central por defecto, el mismo que usa el servidor (DIRECTORY_URL en config.ts). */
+export const CENTRAL_DIRECTORY_URL = "https://distop-open-source.superkirbo64.deno.net";
+
 /**
  * Acepta lo que la gente pega —con o sin esquema, con barra final, con ruta de
  * más— y devuelve solo el origen, o null si no es una dirección http(s) válida.

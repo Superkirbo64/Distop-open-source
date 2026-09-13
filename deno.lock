@@ -29,7 +29,7 @@
             "npm:@types/node@22.10.5",
             "npm:electron-builder@^26.0.12",
             "npm:electron-updater@^6.6.2",
-            "npm:electron@40.10.6"
+            "npm:electron@44.0.0"
           ]
         }
       },
@@ -76,7 +76,6 @@
             "npm:@fontsource-variable/inter@5.3.0",
             "npm:@fontsource/press-start-2p@5.3.0",
             "npm:@fontsource/silkscreen@5.3.0",
-            "npm:@mediapipe/tasks-vision@1.0.1",
             "npm:@tailwindcss/vite@4.3.3",
             "npm:@tsparticles/engine@^4.3.2",
             "npm:@tsparticles/plugin-interactivity@^4.3.2",
@@ -91,6 +90,7 @@
             "npm:lucide-react@0.469.0",
             "npm:react-dom@19.0.0",
             "npm:react@19.0.0",
+            "npm:sonner@^2.0.8",
             "npm:tailwindcss@4.3.3",
             "npm:vite@6.4.3",
             "npm:zustand@5.0.3"
