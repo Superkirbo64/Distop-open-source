@@ -247,9 +247,10 @@ route("GET", "/api/v1/info", async (ctx) => ({
   allowed_upload_types: config.allowedUploadTypes,
   /* Booleano y nunca la clave: el cliente solo necesita saber si enseñar la
      pestaña. La clave no sale de la instancia jamás (§13.3). */
-  gif_enabled: config.giphyApiKey !== "",
-  /** La galeria de stickers va por su cuenta: otra clave, otro servicio. */
-  sticker_gallery_enabled: config.klipyApiKey !== "",
+  gif_enabled: config.giphyApiKey !== "" || config.klipyApiKey !== "" || config.directoryUrl !== "",
+  /** La galeria de stickers va por su cuenta: otra clave, otro servicio. Sin
+      clave propia, la del directorio del proyecto. */
+  sticker_gallery_enabled: config.klipyApiKey !== "" || config.directoryUrl !== "",
   /** Dirección por la que llega la gente de fuera; vacía = solo local (§6).
       Si hay un túnel abierto desde la app, esa manda sobre la del .env. */
   public_url: publicUrl(),
@@ -2757,13 +2758,14 @@ route("GET", "/api/v1/gifs", async (ctx) => {
   const consulta = ctx.url.searchParams.get("q")?.trim() ?? "";
   const limite = String(Math.min(Number(ctx.url.searchParams.get("limit") ?? 24) || 24, 40));
 
+  const region = /-([A-Za-z]{2})$/.exec(user.locale)?.[1]?.toLowerCase();
   if (config.klipyApiKey) {
-    const region = /-([A-Za-z]{2})$/.exec(user.locale)?.[1]?.toLowerCase();
     const comun = { per_page: limite, ...(region ? { locale: region } : {}) };
     return consulta
       ? askKlipy("gifs", "search", { ...comun, q: consulta.slice(0, 100) })
       : askKlipy("gifs", "trending", comun);
   }
+  if (!config.giphyApiKey) return askDirectory("gifs", consulta, limite, region);
 
   // Sin texto se enseña lo que hay en portada, no una rejilla vacía.
   return consulta
@@ -2855,8 +2857,34 @@ route("GET", "/api/v1/stickers/gallery", async (ctx) => {
   const region = /-([A-Za-z]{2})$/.exec(user.locale)?.[1]?.toLowerCase();
   const comun = { per_page: porPagina, ...(region ? { locale: region } : {}) };
 
+  if (!config.klipyApiKey) return askDirectory("stickers", consulta, porPagina, region);
   return consulta ? askKlipy("stickers", "search", { ...comun, q: consulta.slice(0, 100) }) : askKlipy("stickers", "trending", comun);
 });
+
+/**
+ * Sin clave propia, las galerías del proyecto: el directorio (Deno) guarda las
+ * claves en su entorno y hace de proxy, así ninguna clave va en el repositorio
+ * ni en la app. La instancia sigue siendo quien pregunta: el directorio ve una
+ * máquina, no la IP de cada miembro (§13.3, §22).
+ */
+async function askDirectory(kind: "gifs" | "stickers", consulta: string, limite: string, region: string | undefined): Promise<Gif[]> {
+  if (!config.directoryUrl) throw notFound("Esta instancia no tiene galerías activadas.");
+  const url = new URL(`${config.directoryUrl}/v1/expressions`);
+  url.searchParams.set("kind", kind);
+  url.searchParams.set("limit", limite);
+  if (consulta) url.searchParams.set("q", consulta.slice(0, 100));
+  if (region) url.searchParams.set("locale", region);
+
+  const res = await fetch(url, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+  if (res?.status === 404) throw notFound("Las galerías del proyecto todavía no están activadas.");
+  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "La galería no respondió. Prueba otra vez en un momento.");
+  const json = (await res.json()) as { results?: unknown[] };
+  // Solo HTTPS: lo que se pinta y lo que se guarda después tiene que ser de un CDN real.
+  return (Array.isArray(json.results) ? json.results : []).filter((raw): raw is Gif => {
+    const gif = raw as Partial<Gif>;
+    return typeof gif.id === "string" && /^https:\/\//.test(gif.url ?? "") && /^https:\/\//.test(gif.preview ?? "");
+  });
+}
 
 /* ── buscador de fondos (§10.2) ────────────────────────────────────────
    Mismo trato que los GIF: proxy en la instancia. Aquí además es obligatorio,
@@ -3104,7 +3132,7 @@ route("POST", "/api/v1/gifs/save", async (ctx) => {
   rateLimit(`gifsave:${user.id}`, 20, 60_000);
   // Sin ninguna galeria configurada no hay de donde sacar una de estas URL, asi
   // que aceptarlas solo seria regalar ancho de banda del anfitrion.
-  if (!config.giphyApiKey && !config.klipyApiKey)
+  if (!config.giphyApiKey && !config.klipyApiKey && !config.directoryUrl)
     throw notFound("Esta instancia no tiene ninguna galeria activada.");
 
   const body = await readJson(ctx);
