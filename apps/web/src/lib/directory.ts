@@ -8,7 +8,7 @@
 import { api } from "./api.ts";
 import type { MessageKey } from "../i18n.ts";
 import type { CommunityCategory } from "@distop/protocol";
-import { clientOrigin, connectToInstance, isPackaged, normalizeInstanceUrl, storePendingPublicJoin } from "./instance.ts";
+import { clearPendingPublicJoin, clientOrigin, connectToInstance, isPackaged, normalizeInstanceUrl, peekPendingPublicJoin, storePendingPublicJoin } from "./instance.ts";
 
 /** Una ficha del directorio, tal como la devuelve el descubrimiento. */
 export interface DirectoryCommunity {
@@ -116,6 +116,25 @@ export async function enterDirectoryCommunity(community: DirectoryCommunity): Pr
   }
   location.assign(`${origin}/?join=${encodeURIComponent(community.id)}&policy=${policy}`);
   return "switching";
+}
+
+/**
+ * Termina, ya dentro del servidor, la entrada elegida en Explorar.
+ *
+ * El objetivo sale de `?join=` (web) o del pendiente guardado antes de cambiar
+ * de instancia (app). Solo se borra cuando el servidor confirma: un fallo de red
+ * o un rechazo lanzan y el objetivo sigue ahí para reintentar.
+ */
+export async function completePendingPublicJoin(search: string): Promise<{ community?: { id: string } } | null> {
+  const params = new URLSearchParams(search);
+  const pending = peekPendingPublicJoin();
+  const communityId = params.get("join") || pending?.communityId;
+  if (!communityId) return null;
+  const policy = params.get("join") ? (params.get("policy") === "request" ? "request" : "open") : (pending?.policy ?? "open");
+  const endpoint = `/api/v1/public-communities/${encodeURIComponent(communityId)}/${policy === "open" ? "join" : "requests"}`;
+  const result = await api<{ community?: { id: string } }>("POST", endpoint, {});
+  clearPendingPublicJoin();
+  return result;
 }
 
 /**

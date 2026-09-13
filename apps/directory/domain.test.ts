@@ -6,7 +6,10 @@ import type { SignedDirectoryManifest } from "./types.ts";
 
 const now = 1_800_000_000_000;
 
-async function signedManifest(origin = "https://community.example"): Promise<SignedDirectoryManifest> {
+async function signedManifest(
+  origin = "https://community.example",
+  { lineage = "lineage-a", instance = "instance-a", community = "community-a", name = "La Plaza", issuedAt = now } = {},
+): Promise<SignedDirectoryManifest> {
   const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
   const publicKey = await crypto.subtle.exportKey("jwk", pair.publicKey);
   const fingerprint = await fingerprintOf(publicKey);
@@ -14,19 +17,19 @@ async function signedManifest(origin = "https://community.example"): Promise<Sig
     t: "DISTOP_DIRECTORY_MANIFEST" as const,
     version: 1 as const,
     nonce: "",
-    instance_id: "instance-a",
-    lineage_id: "lineage-a",
+    instance_id: instance,
+    lineage_id: lineage,
     epoch: 1,
     fingerprint,
     origin,
     communities: [{
-      id: "community-a", name: "La Plaza", slug: "la-plaza", description: null,
+      id: community, name, slug: community, description: null,
       icon_url: null, banner_url: null, accent_color: "#4059e0", members: 4,
       visibility: "public" as const, join_policy: "invite" as const, tags: ["amigos"], language: "es",
     }],
     succession_chain: [],
-    issued_at: now,
-    expires_at: now + 24 * 60 * 60_000,
+    issued_at: issuedAt,
+    expires_at: issuedAt + 24 * 60 * 60_000,
   };
   const challengeStorage = new MemoryStorage();
   const service = new DirectoryService(challengeStorage, async () => {}, () => now);
@@ -167,4 +170,92 @@ Deno.test("un relevo firmado conserva la ficha y un salto sin cadena no", async 
     Error,
     "SUCCESSION_CHAIN_MISSING",
   );
+});
+
+Deno.test("un linaje nuevo en la misma dirección retira las fichas del anterior", async () => {
+  const storage = new MemoryStorage();
+  const service = new DirectoryService(storage, async () => {}, () => now);
+  const vieja = await signedManifest("https://casa.example", { lineage: "lineage-vieja", instance: "instance-vieja", community: "vieja", name: "La Vieja" });
+  const otra = await signedManifest("https://otra.example", { lineage: "lineage-otra", instance: "instance-otra", community: "otra", name: "La Otra" });
+  await service.register(vieja);
+  await service.register(otra);
+
+  const nueva = await signedManifest("https://casa.example", { lineage: "lineage-nueva", instance: "instance-nueva", community: "nueva", name: "La Nueva" });
+  await service.register(nueva);
+
+  const nombres = (await service.explore()).communities.map((item) => item.name).sort();
+  assertEquals(nombres, ["La Nueva", "La Otra"], "la vieja desaparece; otra dirección y la propia ficha nueva se quedan");
+  assertEquals((await storage.get(["manifest", "lineage-vieja"])).value, null);
+  assertEquals((await storage.get(["manifest", "lineage-nueva"])).value !== null, true);
+});
+
+Deno.test("dos registros en la misma dirección dejan exactamente una ficha, en cualquier orden", async () => {
+  for (const orden of ["nueva-primero", "vieja-primero", "a-la-vez"]) {
+    const storage = new MemoryStorage();
+    let reloj = now;
+    const service = new DirectoryService(storage, async () => {}, () => reloj);
+    const a = await signedManifest("https://casa.example", { lineage: "lineage-a2", instance: "instance-a2", community: "a2", name: "A" });
+    const b = await signedManifest("https://casa.example", { lineage: "lineage-b2", instance: "instance-b2", community: "b2", name: "B" });
+
+    if (orden === "nueva-primero") {
+      // B se registra más tarde según el directorio pero guarda antes; A llega
+      // después con un registered_at más viejo y se retira a sí misma.
+      reloj = now + 2; await service.register(b);
+      reloj = now + 1; await service.register(a);
+    } else if (orden === "vieja-primero") {
+      reloj = now + 1; await service.register(a);
+      reloj = now + 2; await service.register(b);
+    } else {
+      // Mismo reloj: desempata el lineage_id menor.
+      reloj = now + 1;
+      await Promise.all([service.register(a), service.register(b)]);
+    }
+
+    const nombres = (await service.explore()).communities.map((item) => item.name);
+    assertEquals(nombres, [orden === "a-la-vez" ? "A" : "B"], orden);
+  }
+});
+
+Deno.test("si falla la limpieza el registro vale igual, y el siguiente registro limpia", async () => {
+  const storage = new MemoryStorage();
+  let reloj = now;
+  const service = new DirectoryService(storage, async () => {}, () => reloj);
+  await service.register(await signedManifest("https://casa.example", { lineage: "lineage-v3", instance: "instance-v3", community: "v3", name: "Vieja" }));
+
+  const borrar = storage.deleteIfVersion.bind(storage);
+  let fallos = 1;
+  storage.deleteIfVersion = async (key, version) => {
+    if (fallos-- > 0) throw new Error("KV caído");
+    return await borrar(key, version);
+  };
+
+  reloj = now + 1;
+  const nueva = await signedManifest("https://casa.example", { lineage: "lineage-n3", instance: "instance-n3", community: "n3", name: "Nueva" });
+  assertEquals((await service.register(nueva)).published, 1, "el manifiesto guardado no se convierte en error");
+  assertEquals((await service.explore()).communities.map((item) => item.name).sort(), ["Nueva", "Vieja"]);
+
+  reloj = now + 2;
+  await service.register(await signedManifest("https://casa.example", { lineage: "lineage-z3", instance: "instance-z3", community: "z3", name: "Última" }));
+  assertEquals((await service.explore()).communities.map((item) => item.name), ["Última"]);
+});
+
+Deno.test("un linaje que se mudó no se toca, y una ficha antigua sin origin sí se retira", async () => {
+  const storage = new MemoryStorage();
+  const service = new DirectoryService(storage, async () => {}, () => now + 5);
+  const ficha = (lineage: string, name: string, origin: string) => ({
+    id: lineage, name, slug: lineage, description: null, icon_url: null, banner_url: null, accent_color: null,
+    members: 1, visibility: "public" as const, join_policy: "open" as const, tags: [], language: "es",
+    instance_id: `i-${lineage}`, lineage_id: lineage, epoch: 1, fingerprint: "f", origin, issued_at: now, expires_at: now + 24 * 60 * 60_000,
+  });
+  const guardada = (lineage: string, name: string, origin: string, extra: Record<string, unknown>) => ({
+    identity: { instance_id: `i-${lineage}`, lineage_id: lineage, epoch: 1, fingerprint: "f", public_key: {} },
+    communities: [ficha(lineage, name, origin)], issued_at: now, expires_at: now + 24 * 60 * 60_000, ...extra,
+  });
+  // Se mudó de casa.example a otra.example: su ficha actual dice otra.example.
+  await storage.set(["manifest", "lineage-mudada"], guardada("lineage-mudada", "Mudada", "https://otra.example", { origin: "https://otra.example", registered_at: now }));
+  // Ficha de antes de este cambio: sin origin ni registered_at en la raíz.
+  await storage.set(["manifest", "lineage-antigua"], guardada("lineage-antigua", "Antigua", "https://casa.example", {}));
+
+  await service.register(await signedManifest("https://casa.example", { lineage: "lineage-casa", instance: "instance-casa", community: "casa", name: "Casa" }));
+  assertEquals((await service.explore()).communities.map((item) => item.name).sort(), ["Casa", "Mudada"]);
 });

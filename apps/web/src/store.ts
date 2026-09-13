@@ -31,7 +31,7 @@ import type {
   VideoBudget,
   VoiceState,
 } from "@distop/protocol";
-import { api, getTokens, setTokens, type Tokens } from "./lib/api.ts";
+import { api, getTokens, RequestError, setTokens, type Tokens } from "./lib/api.ts";
 import { connect, disconnect, onEvent, onStatus, sendCommand, type ConnectionStatus } from "./lib/gateway.ts";
 import { detectLocale, loadLocale, translate, type Locale, type MessageKey } from "./i18n.ts";
 import { notify, setSoundsEnabled, type NotifyLevel } from "./lib/notify.ts";
@@ -499,6 +499,7 @@ export const useStore = create<State>()((set, get) => ({
        un invitado: la identidad secreta de la app recupera (o, con invitación,
        crea) la cuenta portable de esta instancia. */
     const portable = portableAuthPayload(peekPendingInvite(), peekPendingPublicJoin()?.communityId);
+    let portableError: unknown = null;
     if (portable) {
       try {
         const result = await api<Tokens & { user: SelfUser }>("POST", "/api/v1/auth/portable", portable);
@@ -508,10 +509,11 @@ export const useStore = create<State>()((set, get) => ({
         if (pendingIdentityInfo) void trustInstanceIdentity(pendingIdentityInfo);
         connect();
         return;
-      } catch {
+      } catch (error) {
         // Puede ser una instancia vieja, apagada o una identidad aún no
         // registrada sin invitación. La pantalla de recuperación decide qué
         // enseñar; aquí no se degrada silenciosamente a invitado.
+        portableError = error;
       }
     }
 
@@ -524,8 +526,12 @@ export const useStore = create<State>()((set, get) => ({
     const setup = get().setup;
     if (isPackaged() && identity) {
       if (!isLocalInstance(instanceBase)) {
-        takePendingInvite();
-        clearPendingPublicJoin();
+        /* Un corte de red no borra la invitación ni la comunidad elegida en
+           Explorar: se reintenta al volver. Un rechazo del servidor, sí. */
+        if (!(portableError instanceof RequestError && portableError.status === 0)) {
+          takePendingInvite();
+          clearPendingPublicJoin();
+        }
         setActiveInstance(null);
         return;
       }

@@ -30,9 +30,9 @@ const Settings = lazy(() => import("./views/Settings.tsx").then((m) => ({ defaul
 const Manage = lazy(() => import("./views/Manage.tsx").then((m) => ({ default: m.Manage })));
 import { Button, ErrorNote, Field, Modal, Spinner, Toggle, useErrorText, useT } from "./components/ui.tsx";
 import { api } from "./lib/api.ts";
+import { completePendingPublicJoin } from "./lib/directory.ts";
 import {
   clearPendingCommunity,
-  clearPendingPublicJoin,
   clientOrigin,
   connectToInstance,
   forgetKnownCommunity,
@@ -41,7 +41,6 @@ import {
   isPackaged,
   normalizeInstanceUrl,
   peekPendingCommunity,
-  peekPendingPublicJoin,
   appWithoutInstance,
   hostHere,
   setActiveInstance,
@@ -316,21 +315,14 @@ export function App() {
      recarga de la app instalada como al formulario de acceso de la web. */
   useEffect(() => {
     if (!ready || !user) return;
-    const query = new URLSearchParams(location.search).get("join");
-    const queryPolicy = new URLSearchParams(location.search).get("policy") === "request" ? "request" : "open";
-    const pending = peekPendingPublicJoin();
-    const communityId = query || pending?.communityId;
-    const policy = query ? queryPolicy : (pending?.policy ?? "open");
-    if (!communityId) return;
-    const endpoint = `/api/v1/public-communities/${encodeURIComponent(communityId)}/${policy === "open" ? "join" : "requests"}`;
-    void api<{ community?: { id: string } }>("POST", endpoint, {})
-      .then(async ({ community }) => {
-        clearPendingPublicJoin();
+    void completePendingPublicJoin(location.search)
+      .then(async (result) => {
+        if (!result) return;
         history.replaceState({}, "", "/");
         navigate("/");
-        if (!community) return;
+        if (!result.community) return;
         await reloadCommunities();
-        await openCommunity(community.id);
+        await openCommunity(result.community.id);
       })
       .catch(() => {
         /* Se conserva el objetivo: iniciar sesión puede completar la entrada

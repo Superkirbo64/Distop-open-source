@@ -205,3 +205,53 @@ test("con TRUSTED_PROXY_IPS manda la lista y nadie más", () => {
      escribe, es que sabe exactamente por dónde le entran las peticiones. */
   assert.equal(clientIp("1.2.3.4, 198.51.100.5", "127.0.0.1", soloEse), "127.0.0.1");
 });
+
+/* La tarjeta pública (/health, /api/v1/info) se abre a cualquier web SOLO para
+   la dirección pública de la instancia. Explorar la necesita para verificar a
+   dónde entra; una web maliciosa que apunte a localhost o a la LAN de quien
+   hospeda no debe leerla, aunque haya PUBLIC_URL o proxy. */
+test("la tarjeta pública solo se abre para la dirección pública de la instancia", async () => {
+  const { tarjetaPublicaAbierta } = await import("./http.ts");
+  const publica = "https://discord-vps.taile1a3f6.ts.net";
+  const comun = { forwardedHost: undefined, socket: "172.17.0.1", publicUrl: publica, trustProxy: false };
+
+  // (1) Host de la dirección pública: abierta.
+  assert.equal(tarjetaPublicaAbierta({ ...comun, host: "discord-vps.taile1a3f6.ts.net" }), true);
+
+  // (2) localhost, bucle local y LAN: cerrada, también con PUBLIC_URL y TRUST_PROXY.
+  for (const host of ["localhost:5000", "127.0.0.1:5000", "192.168.1.20:5000"]) {
+    assert.equal(tarjetaPublicaAbierta({ ...comun, host }), false, host);
+    assert.equal(tarjetaPublicaAbierta({ ...comun, host, trustProxy: true, socket: "127.0.0.1" }), false, `${host} con proxy`);
+  }
+  assert.equal(tarjetaPublicaAbierta({ ...comun, host: "discord-vps.taile1a3f6.ts.net", publicUrl: "" }), false, "sin dirección pública, cerrada");
+
+  // (3) X-Forwarded-Host público sin proxy de confianza: no abre.
+  const forjado = { ...comun, host: "localhost:5000", forwardedHost: "discord-vps.taile1a3f6.ts.net" };
+  assert.equal(tarjetaPublicaAbierta(forjado), false, "sin TRUST_PROXY la cabecera no cuenta");
+  assert.equal(tarjetaPublicaAbierta({ ...forjado, trustProxy: true, socket: "203.0.113.9" }), false, "un par público no es un proxy");
+  assert.equal(
+    tarjetaPublicaAbierta({ ...forjado, trustProxy: true, socket: "127.0.0.1", trustedProxies: ["10.0.0.5"] }),
+    false,
+    "con TRUSTED_PROXY_IPS manda esa lista",
+  );
+
+  // (4) Desde un proxy de confianza validado: abre.
+  assert.equal(tarjetaPublicaAbierta({ ...forjado, trustProxy: true, socket: "127.0.0.1" }), true);
+  assert.equal(tarjetaPublicaAbierta({ ...forjado, trustProxy: true, socket: "10.0.0.5", trustedProxies: ["10.0.0.5"] }), true);
+});
+
+/* La dirección que abre la tarjeta es la misma que Explorar puede anunciar
+   (stableOrigin): fija o PUBLIC_URL, HTTPS y nunca un túnel rápido. Un túnel
+   vivo sin fijar sale en /api/v1/info, pero no abre CORS. */
+test("un túnel rápido o una dirección sin HTTPS no abren la tarjeta", async () => {
+  const { tarjetaPublicaAbierta } = await import("./http.ts");
+  const { publishableOrigin } = await import("./tunnel.ts");
+  const comun = { forwardedHost: undefined, socket: "172.17.0.1", trustProxy: false };
+
+  assert.equal(publishableOrigin("https://discord-vps.taile1a3f6.ts.net/"), "https://discord-vps.taile1a3f6.ts.net");
+  for (const raw of ["https://raro-azul.trycloudflare.com", "http://discord-vps.taile1a3f6.ts.net", "no es una url", ""]) {
+    assert.equal(publishableOrigin(raw), "", raw);
+    const host = raw.startsWith("http") ? new URL(raw).host : "localhost:5000";
+    assert.equal(tarjetaPublicaAbierta({ ...comun, host, publicUrl: publishableOrigin(raw) }), false, `${raw} no abre`);
+  }
+});

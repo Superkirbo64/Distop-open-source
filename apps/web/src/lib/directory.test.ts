@@ -79,3 +79,68 @@ test("una fuente caída no tumba a las demás, pero queda dicha con nombre", asy
 test("sin fuentes no hay lista ni fallos, y no lanza", async () => {
   assert.deepEqual(await collectDirectory([]), { communities: [], failures: [] });
 });
+
+/* ── Explorar en la app instalada (Android/escritorio) ───────────────────
+   Lo que pidió la revisión: el objetivo elegido en Explorar se guarda ANTES de
+   cambiar de instancia, sobrevive a un fallo de conexión y solo se consume
+   cuando el servidor confirma la entrada. */
+
+const PENDIENTE = "distop.pendingPublicJoin";
+const respuesta = (cuerpo: unknown, status = 200) => new Response(JSON.stringify(cuerpo), { status });
+const destino = { ...ficha("c-remota", "La Remota"), origin: "https://otra.example", instance_id: "inst-1", join_policy: "open" as const };
+
+function empaquetada(fetchFalso: typeof fetch): { recargas: Array<string | null> } {
+  const estado = { recargas: [] as Array<string | null> };
+  Object.assign(globalThis.window as object, { Capacitor: { isNativePlatform: () => true } });
+  Object.defineProperty(globalThis, "location", {
+    configurable: true,
+    value: { origin: "capacitor://localhost", search: "", reload: () => estado.recargas.push(almacen.get(PENDIENTE) ?? null) },
+  });
+  globalThis.fetch = fetchFalso;
+  return estado;
+}
+
+test("empaquetada: guarda comunidad y política antes de cambiar de instancia", async () => {
+  almacen.clear();
+  const { enterDirectoryCommunity } = await import("./directory.ts");
+  const estado = empaquetada(async () => respuesta({ instance_id: "inst-1", name: "Otra", version: "0.1.11" }));
+  assert.equal(await enterDirectoryCommunity(destino), "switching");
+  assert.equal(estado.recargas.length, 1, "cambia de instancia con una recarga");
+  assert.deepEqual(JSON.parse(estado.recargas[0]!), { communityId: "c-remota", policy: "open" }, "el objetivo ya estaba guardado al recargar");
+});
+
+test("empaquetada: un fallo de conexión no pierde el objetivo", async () => {
+  almacen.clear();
+  const { enterDirectoryCommunity } = await import("./directory.ts");
+  let llamadas = 0;
+  const estado = empaquetada(async () => {
+    llamadas++;
+    if (llamadas === 1) return respuesta({ instance_id: "inst-1", name: "Otra", version: "0.1.11" });
+    throw new TypeError("Failed to fetch");
+  });
+  assert.equal(await enterDirectoryCommunity(destino), "unreachable");
+  assert.equal(estado.recargas.length, 0, "sin conexión no se cambia de instancia");
+  assert.deepEqual(JSON.parse(almacen.get(PENDIENTE)!), { communityId: "c-remota", policy: "open" });
+});
+
+test("el objetivo solo se consume cuando el servidor confirma la entrada", async () => {
+  almacen.clear();
+  almacen.set(PENDIENTE, JSON.stringify({ communityId: "c-remota", policy: "request" }));
+  const { completePendingPublicJoin } = await import("./directory.ts");
+  const pedidas: string[] = [];
+
+  empaquetada(async (url) => { pedidas.push(String(url)); throw new TypeError("Failed to fetch"); });
+  await assert.rejects(completePendingPublicJoin(""));
+  assert.ok(almacen.has(PENDIENTE), "un corte de red lo conserva");
+
+  empaquetada(async (url) => { pedidas.push(String(url)); return respuesta({ error: { code: "INTERNAL", message: "x", status: 500 } }, 500); });
+  await assert.rejects(completePendingPublicJoin(""));
+  assert.ok(almacen.has(PENDIENTE), "un rechazo del servidor también lo conserva");
+
+  empaquetada(async (url) => { pedidas.push(String(url)); return respuesta({}); });
+  assert.deepEqual(await completePendingPublicJoin(""), {});
+  assert.equal(almacen.has(PENDIENTE), false, "confirmado, se consume");
+  assert.ok(pedidas.every((url) => url.endsWith("/api/v1/public-communities/c-remota/requests")), "respeta la política guardada");
+
+  assert.equal(await completePendingPublicJoin(""), null, "sin objetivo no pide nada");
+});
