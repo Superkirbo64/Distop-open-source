@@ -183,28 +183,8 @@ export function App() {
   const [changedPublicUrl, setChangedPublicUrl] = useState("");
   const isMobile = useIsMobile();
 
-  /* En móvil los paneles son una tira que se desliza (styles.css). Se lleva al
-     que toca con scroll y no con transform: un transform en la rejilla haría de
-     marco a todo lo `position: fixed` de dentro y descolocaría avisos y menús. */
   const gridRef = useRef<HTMLDivElement>(null);
   const slid = useRef(false);
-  useEffect(() => {
-    const grid = gridRef.current;
-    if (!grid || !isMobile) return;
-    /* A la posición real de cada panel, no a múltiplos del ancho: el cajón de
-       canales mide menos que la pantalla en una tablet. Miembros es la última
-       columna, y su panel puede no estar montado todavía: basta con ir al final. */
-    const main = grid.querySelector<HTMLElement>(':scope > [data-pane="main"]');
-    const left =
-      mobilePane === "nav"
-        ? 0
-        : mobilePane === "members" || !main
-          ? grid.scrollWidth - grid.clientWidth
-          : main.getBoundingClientRect().left - grid.getBoundingClientRect().left + grid.scrollLeft;
-    const still = !slid.current || matchMedia("(prefers-reduced-motion: reduce)").matches;
-    grid.scrollTo({ left, behavior: still ? "instant" : "smooth" });
-    slid.current = true;
-  }, [mobilePane, isMobile, user]);
 
   const activeChannel =activeData?.channels.find((channel) => channel.id === activeChannelId);
   // Una reunión también tiene su chat: es un canal (§8.1), y sin esto el panel
@@ -237,6 +217,29 @@ export function App() {
     const timer = setTimeout(() => setMembersMounted(false), 450);
     return () => clearTimeout(timer);
   }, [membersVisible]);
+
+  /* En móvil los paneles son una tira que se desliza (styles.css). Se lleva al
+     que toca con scroll y no con transform: un transform en la rejilla haría de
+     marco a todo lo `position: fixed` de dentro y descolocaría avisos y menús. */
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || !isMobile) return;
+    /* A la posición real de cada panel, no a múltiplos del ancho: el cajón de
+       canales mide menos que la pantalla en una tablet. Miembros es la última
+       columna y se monta un render DESPUÉS de pedirlo: por eso `membersMounted`
+       está en las dependencias. Sin él, el primer "ir al final" no encontraba su
+       columna, se quedaba en el chat ya oculto y la pantalla se veía negra. */
+    const main = grid.querySelector<HTMLElement>(':scope > [data-pane="main"]');
+    const left =
+      mobilePane === "nav"
+        ? 0
+        : mobilePane === "members" || !main
+          ? grid.scrollWidth - grid.clientWidth
+          : main.getBoundingClientRect().left - grid.getBoundingClientRect().left + grid.scrollLeft;
+    const still = !slid.current || matchMedia("(prefers-reduced-motion: reduce)").matches;
+    grid.scrollTo({ left, behavior: still ? "instant" : "smooth" });
+    slid.current = true;
+  }, [mobilePane, isMobile, user, membersMounted]);
 
   // Al cambiar a una sala de voz, el lateral se convierte en su chat y se abre
   // una vez. Si la persona lo cierra después, se respeta hasta cambiar de canal.

@@ -1829,8 +1829,11 @@ function Composer({
           className={`${compact ? "max-h-[120px]" : "max-h-52"} min-h-9 flex-1 resize-none bg-transparent py-1.5 text-[0.94rem] outline-none`}
         />
 
+        {/* `floating`: se recoloca dentro de la pantalla. Colgado del botón se
+            salía por la derecha en un teléfono y solo asomaban 77 px del panel. */}
         <Menu
           flush
+          floating
           trigger={({ onClick }) => <PickerButton label={t("picker.open")} onClick={onClick} />}
         >
           {(close) => (
