@@ -3,7 +3,7 @@
  * Todo lo que sale hacia el cliente pasa por aquí, para que no haya dos formas
  * distintas del mismo objeto según la ruta que lo devuelva.
  */
-import type { Category, Channel, Community, CommunityCategory, CommunityJoinPolicy, CommunityVisibility, Member, Message, Reaction, Role, Unread } from "@distop/protocol";
+import type { Category, Channel, Community, CommunityCategory, CommunityJoinPolicy, CommunityVisibility, MediaMode, Member, Message, Reaction, Role, Unread } from "@distop/protocol";
 import { db } from "./db.ts";
 import { toPublicUser, type UserRow } from "./auth.ts";
 import { attachmentsFor } from "./storage.ts";
@@ -23,9 +23,9 @@ interface CommunityRow {
   join_policy: CommunityJoinPolicy;
   category: CommunityCategory;
   voice_messages: number;
-  media_images: number;
-  media_videos: number;
-  media_files: number;
+  media_images: MediaMode;
+  media_videos: MediaMode;
+  media_files: MediaMode;
   owner_id: string;
   created_at: number;
 }
@@ -35,9 +35,9 @@ export function toCommunity(row: CommunityRow): Community {
     ...row,
     is_public: row.visibility === "public",
     voice_messages: row.voice_messages === 1,
-    media_images: row.media_images === 1,
-    media_videos: row.media_videos === 1,
-    media_files: row.media_files === 1,
+    media_images: row.media_images,
+    media_videos: row.media_videos,
+    media_files: row.media_files,
   };
 }
 

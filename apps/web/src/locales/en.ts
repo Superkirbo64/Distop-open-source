@@ -1158,6 +1158,9 @@ export const en: Record<keyof typeof es, string> = {
   "community.mediaVideosHint": "Let people attach videos. They cost the most: on a VPS it is best to keep them off.",
   "community.mediaFiles": "Other files",
   "community.mediaFilesHint": "Let people attach documents and any other file that is not a photo, video or audio.",
+  "community.mediaModeServer": "Server — remains available when the sender disconnects",
+  "community.mediaModeP2p": "P2P — uses no instance storage",
+  "community.mediaModeOff": "Off",
   "community.voiceMessages": "Voice messages",
   "community.voiceMessagesHint":
     "Let people record audio and send it in channels. It takes up space on your server and needs moderating like any other file.",

@@ -72,7 +72,7 @@ const ARCHIVOS = {
   pdf: { type: "application/pdf", name: "doc.pdf", data: Buffer.concat([Buffer.from("%PDF-1.4\n"), Buffer.alloc(256, 0x20)]) },
 } as const;
 
-async function adjuntar(tipo: keyof typeof ARCHIVOS): Promise<number> {
+async function adjuntar(tipo: keyof typeof ARCHIVOS): Promise<{ status: number; attachmentId: string }> {
   const archivo = ARCHIVOS[tipo];
   const subida = await call("POST", "/api/v1/uploads", {
     raw: archivo.data,
@@ -80,31 +80,47 @@ async function adjuntar(tipo: keyof typeof ARCHIVOS): Promise<number> {
   });
   assert.equal(subida.status, 200, JSON.stringify(subida.json));
   const enviado = await call("POST", `/api/v1/channels/${canal}/messages`, { body: { content: "", attachment_ids: [subida.json.id] } });
-  return enviado.status;
+  return { status: enviado.status, attachmentId: subida.json.id as string };
 }
 
-test("de fábrica se admiten fotos, vídeos y archivos, y la comunidad lo anuncia", async () => {
+test("de fábrica fotos, vídeos y archivos se guardan en el servidor", async () => {
   const boot = await call("GET", `/api/v1/communities/${comunidad}/bootstrap`);
-  assert.equal(boot.json.community.media_images, true);
-  assert.equal(boot.json.community.media_videos, true);
-  assert.equal(boot.json.community.media_files, true);
-  for (const tipo of ["foto", "video", "pdf"] as const) assert.equal(await adjuntar(tipo), 200, tipo);
+  assert.equal(boot.json.community.media_images, "server");
+  assert.equal(boot.json.community.media_videos, "server");
+  assert.equal(boot.json.community.media_files, "server");
+  for (const tipo of ["foto", "video", "pdf"] as const) assert.equal((await adjuntar(tipo)).status, 200, tipo);
 });
 
-test("cada interruptor apaga solo su tipo, y lo rechaza el servidor", async () => {
-  const apagado = await call("PATCH", `/api/v1/communities/${comunidad}`, { body: { media_videos: false, media_files: false } });
+test("cada tipo admite servidor, P2P o apagado y nunca acepta un adjunto de servidor en los otros modos", async () => {
+  const apagado = await call("PATCH", `/api/v1/communities/${comunidad}`, { body: { media_videos: "off", media_files: "p2p" } });
   assert.equal(apagado.status, 200);
-  assert.equal(apagado.json.media_videos, false);
-  assert.equal(apagado.json.media_files, false);
-  assert.equal(apagado.json.media_images, true, "tocar dos no cambia el tercero");
+  assert.equal(apagado.json.media_videos, "off");
+  assert.equal(apagado.json.media_files, "p2p");
+  assert.equal(apagado.json.media_images, "server", "tocar dos no cambia el tercero");
 
-  assert.equal(await adjuntar("video"), 400, "vídeo rechazado");
-  assert.equal(await adjuntar("pdf"), 400, "archivo rechazado");
-  assert.equal(await adjuntar("foto"), 200, "la foto sigue pasando");
+  const video = await adjuntar("video");
+  assert.equal(video.status, 400, "vídeo rechazado");
+  assert.equal((await call("GET", `/api/v1/files/${video.attachmentId}`)).status, 404, "la subida rechazada no queda huérfana");
+  assert.equal((await adjuntar("pdf")).status, 400, "archivo rechazado");
+  assert.equal((await adjuntar("foto")).status, 200, "la foto sigue pasando");
 
-  await call("PATCH", `/api/v1/communities/${comunidad}`, { body: { media_images: false } });
-  assert.equal(await adjuntar("foto"), 400, "y ahora la foto tampoco");
+  await call("PATCH", `/api/v1/communities/${comunidad}`, { body: { media_images: "off" } });
+  assert.equal((await adjuntar("foto")).status, 400, "y ahora la foto tampoco");
 
   const texto = await call("POST", `/api/v1/channels/${canal}/messages`, { body: { content: "sin adjuntos siempre se puede" } });
   assert.equal(texto.status, 200);
+});
+
+test("un modo desconocido se rechaza en vez de quedar guardado como verdad implícita", async () => {
+  const response = await call("PATCH", `/api/v1/communities/${comunidad}`, { body: { media_images: "barato" } });
+  assert.equal(response.status, 400);
+});
+
+test("el cliente declara la comunidad antes de subir y el servidor corta antes de tocar disco", async () => {
+  const file = ARCHIVOS.foto;
+  const response = await call("POST", `/api/v1/uploads?community_id=${comunidad}`, {
+    raw: file.data,
+    headers: { "content-type": file.type, "x-filename": file.name },
+  });
+  assert.equal(response.status, 400);
 });

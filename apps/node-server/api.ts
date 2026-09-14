@@ -136,7 +136,7 @@ import {
   mintMigrationCert,
   type MigrationRow,
 } from "./community-migration.ts";
-import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, deleteDirectAttachmentsOf, linkAttachments, linkDirectAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
+import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, deleteDirectAttachmentsOf, deleteStoredAttachment, linkAttachments, linkDirectAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
 import { announceVoice, disconnectSession, disconnectUser, hasOpenSocket, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import {
   acceptDirectRequest,
@@ -937,8 +937,9 @@ route("PATCH", "/api/v1/communities/:id", async (ctx) => {
   }
   if (body.join_policy !== undefined) fields.push(["join_policy", v.oneOf(body, "join_policy", COMMUNITY_JOIN_POLICIES)]);
   if (body.category !== undefined) fields.push(["category", v.oneOf(body, "category", COMMUNITY_CATEGORIES)]);
-  for (const key of ["voice_messages", "media_images", "media_videos", "media_files"] as const) {
-    if (body[key] !== undefined) fields.push([key, v.bool(body, key, true) ? 1 : 0]);
+  if (body.voice_messages !== undefined) fields.push(["voice_messages", v.bool(body, "voice_messages", true) ? 1 : 0]);
+  for (const key of ["media_images", "media_videos", "media_files"] as const) {
+    if (body[key] !== undefined) fields.push([key, v.oneOf(body, key, ["server", "p2p", "off"] as const)]);
   }
   if (fields.length === 0) return getCommunity(communityId);
 
@@ -1853,15 +1854,23 @@ route("POST", "/api/v1/channels/:id/messages", async (ctx) => {
   if (attachmentIds.length > 0) {
     const comunidad = getCommunity(channel.community_id);
     const marcas = attachmentIds.map(() => "?").join(",");
-    const tipos = (db
-      .prepare(`SELECT content_type FROM attachments WHERE id IN (${marcas}) AND owner_id = ?`)
-      .all(...attachmentIds, user.id) as Array<{ content_type: string }>).map((row) => row.content_type);
+    const adjuntos = db
+      .prepare(`SELECT id, content_type, message_id, direct_message_id FROM attachments WHERE id IN (${marcas}) AND owner_id = ?`)
+      .all(...attachmentIds, user.id) as Array<{ id: string; content_type: string; message_id: string | null; direct_message_id: string | null }>;
+    const tipos = adjuntos.map((row) => row.content_type);
     const hay = (prefijo: string) => tipos.some((tipo) => tipo.startsWith(prefijo));
-    if (comunidad?.voice_messages === false && hay("audio/")) throw badRequest("Esta comunidad tiene los audios suspendidos.");
-    if (comunidad?.media_images === false && hay("image/")) throw badRequest("Esta comunidad no admite fotos.");
-    if (comunidad?.media_videos === false && hay("video/")) throw badRequest("Esta comunidad no admite vídeos.");
-    if (comunidad?.media_files === false && tipos.some((tipo) => !/^(audio|image|video)\//.test(tipo)))
-      throw badRequest("Esta comunidad no admite archivos.");
+    const reject = (message: string): never => {
+      /* Una subida rechazada no se queda cobrando disco. Solo se borran piezas
+         todavía sin enlazar: repetir el id de un mensaje viejo jamás puede
+         destruir su archivo. */
+      for (const item of adjuntos) if (!item.message_id && !item.direct_message_id) deleteStoredAttachment(item.id);
+      throw badRequest(message);
+    };
+    if (comunidad?.voice_messages === false && hay("audio/")) reject("Esta comunidad tiene los audios suspendidos.");
+    if (comunidad?.media_images !== "server" && hay("image/")) reject(comunidad?.media_images === "p2p" ? "Esta comunidad envía las fotos directamente entre sus miembros." : "Esta comunidad no admite fotos.");
+    if (comunidad?.media_videos !== "server" && hay("video/")) reject(comunidad?.media_videos === "p2p" ? "Esta comunidad envía los vídeos directamente entre sus miembros." : "Esta comunidad no admite vídeos.");
+    if (comunidad?.media_files !== "server" && tipos.some((tipo) => !/^(audio|image|video)\//.test(tipo)))
+      reject(comunidad?.media_files === "p2p" ? "Esta comunidad envía los archivos directamente entre sus miembros." : "Esta comunidad no admite archivos.");
   }
   if (replyTo && !db.prepare("SELECT 1 FROM messages WHERE id = ? AND channel_id = ?").get(replyTo, channel.id))
     throw badRequest("El mensaje al que respondes no está en este canal.");
@@ -3750,6 +3759,19 @@ route("POST", "/api/v1/uploads", async (ctx) => {
   const contentType = (ctx.req.headers["content-type"] ?? "").split(";")[0]!.trim();
   const filename = decodeURIComponent(String(ctx.req.headers["x-filename"] ?? "archivo"));
   if (!contentType) throw badRequest("Falta la cabecera content-type.");
+
+  const communityId = ctx.url.searchParams.get("community_id");
+  if (communityId) {
+    requireMembership(communityId, user.id);
+    const community = getCommunity(communityId)!;
+    const mode = contentType.startsWith("image/") ? community.media_images
+      : contentType.startsWith("video/") ? community.media_videos
+      : contentType.startsWith("audio/") ? (community.voice_messages ? "server" : "off")
+      : community.media_files;
+    if (mode !== "server") throw badRequest(mode === "p2p"
+      ? "Este tipo se comparte directamente y no se sube a la instancia."
+      : "Este tipo de archivo está apagado en la comunidad.");
+  }
 
   // Directo a disco según llega (§28.3): bufferizar hasta 500 MB en RAM era un
   // pico letal en el anfitrión modesto. Los errores (413, vacío, firma) no cambian.

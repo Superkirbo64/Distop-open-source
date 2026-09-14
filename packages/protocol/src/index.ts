@@ -351,6 +351,8 @@ export const COMMUNITY_CATEGORIES = [
   "other",
 ] as const;
 export type CommunityCategory = (typeof COMMUNITY_CATEGORIES)[number];
+export const MEDIA_MODES = ["server", "p2p", "off"] as const;
+export type MediaMode = (typeof MEDIA_MODES)[number];
 
 export interface Community {
   id: Snowflake;
@@ -376,9 +378,9 @@ export interface Community {
   /** Si se pueden adjuntar fotos, vídeos y otros archivos. Igual que los audios:
       apagarlo rechaza el adjunto en el servidor. Pensado para una VPS, donde es
       lo que gasta disco y tráfico. */
-  media_images: boolean;
-  media_videos: boolean;
-  media_files: boolean;
+  media_images: MediaMode;
+  media_videos: MediaMode;
+  media_files: MediaMode;
   owner_id: Snowflake;
   created_at: number;
 }

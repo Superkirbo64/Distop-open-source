@@ -1172,6 +1172,9 @@ export const es = {
   "community.mediaVideosHint": "Deja adjuntar vídeos. Son lo que más gasta: en una VPS conviene tenerlos apagados.",
   "community.mediaFiles": "Otros archivos",
   "community.mediaFilesHint": "Deja adjuntar documentos y cualquier otro archivo que no sea foto, vídeo ni audio.",
+  "community.mediaModeServer": "Servidor — queda disponible aunque quien lo envió se desconecte",
+  "community.mediaModeP2p": "P2P — no ocupa disco de la instancia",
+  "community.mediaModeOff": "Apagado",
   "community.voiceMessages": "Mensajes de voz",
   "community.voiceMessagesHint":
     "Deja que la gente grabe audio y lo mande en los canales. Ocupa sitio en tu servidor y hay que moderarlo como cualquier otro archivo.",

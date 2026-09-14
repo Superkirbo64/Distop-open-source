@@ -174,9 +174,9 @@ function Overview({ community }: { community: Community }) {
     rules: community.rules ?? "",
     category: community.category ?? "other",
     voice_messages: community.voice_messages !== false,
-    media_images: community.media_images !== false,
-    media_videos: community.media_videos !== false,
-    media_files: community.media_files !== false,
+    media_images: community.media_images,
+    media_videos: community.media_videos,
+    media_files: community.media_files,
   });
   const [state, setState] = useState<"idle" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -275,25 +275,27 @@ function Overview({ community }: { community: Community }) {
         label={t("community.voiceMessages")}
         hint={t("community.voiceMessagesHint")}
       />
-      {/* Lo mismo para lo que más gasta en una VPS: fotos, vídeos y archivos. */}
-      <Toggle
-        checked={form.media_images}
-        onChange={(media_images) => setForm({ ...form, media_images })}
-        label={t("community.mediaImages")}
-        hint={t("community.mediaImagesHint")}
-      />
-      <Toggle
-        checked={form.media_videos}
-        onChange={(media_videos) => setForm({ ...form, media_videos })}
-        label={t("community.mediaVideos")}
-        hint={t("community.mediaVideosHint")}
-      />
-      <Toggle
-        checked={form.media_files}
-        onChange={(media_files) => setForm({ ...form, media_files })}
-        label={t("community.mediaFiles")}
-        hint={t("community.mediaFilesHint")}
-      />
+      {/* La elección no mezcla dos decisiones distintas: permitir un tipo y
+          decidir si su coste cae en la instancia o en quienes lo comparten. */}
+      {(["images", "videos", "files"] as const).map((kind) => {
+        const key = `media_${kind}` as const;
+        return (
+          <Field key={key} label={t(`community.media${kind[0]!.toUpperCase()}${kind.slice(1)}` as MessageKey)} hint={t(`community.media${kind[0]!.toUpperCase()}${kind.slice(1)}Hint` as MessageKey)}>
+            {(id) => (
+              <Select
+                id={id}
+                value={form[key]}
+                onChange={(value) => setForm({ ...form, [key]: value as typeof form[typeof key] })}
+                options={[
+                  { value: "server", label: t("community.mediaModeServer") },
+                  { value: "p2p", label: t("community.mediaModeP2p") },
+                  { value: "off", label: t("community.mediaModeOff") },
+                ]}
+              />
+            )}
+          </Field>
+        );
+      })}
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}
 

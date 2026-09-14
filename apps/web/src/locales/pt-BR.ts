@@ -1167,6 +1167,9 @@ export const ptBR: Record<keyof typeof es, string> = {
   "community.mediaVideosHint": "Deixa anexar vídeos. São o que mais gasta: numa VPS é melhor deixá-los desligados.",
   "community.mediaFiles": "Outros arquivos",
   "community.mediaFilesHint": "Deixa anexar documentos e qualquer outro arquivo que não seja foto, vídeo ou áudio.",
+  "community.mediaModeServer": "Servidor — continua disponível quando quem enviou desconecta",
+  "community.mediaModeP2p": "P2P — não ocupa o disco da instância",
+  "community.mediaModeOff": "Desligado",
   "community.voiceMessages": "Mensagens de voz",
   "community.voiceMessagesHint":
     "Deixa as pessoas gravarem áudio e mandarem nos canais. Ocupa espaço no seu servidor e precisa de moderação como qualquer outro arquivo.",
