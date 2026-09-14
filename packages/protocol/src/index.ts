@@ -451,6 +451,8 @@ export interface Attachment {
   content_type: string;
   size: number;
   url: string;
+  delivery: "server" | "p2p";
+  content_hash: string | null;
 }
 
 export interface Reaction {
@@ -1261,6 +1263,8 @@ export const GATEWAY_EVENTS = [
   "VOICE_SIGNAL",
   "VOICE_SOUND",
   "VOICE_SOUND_ERROR",
+  "P2P_FILE_REQUEST",
+  "P2P_FILE_SIGNAL",
   "ROLE_UPDATE",
   "ROLE_DELETE",
   "READ_UPDATE",
@@ -1331,6 +1335,8 @@ export type ServerEvent =
       t: "VOICE_SOUND_ERROR";
       d: { channel_id: Snowflake; sound_id: Snowflake; reason: VoiceSoundRejectReason };
     }
+  | { t: "P2P_FILE_REQUEST"; d: { attachment_id: Snowflake; channel_id: Snowflake; requester_id: Snowflake } }
+  | { t: "P2P_FILE_SIGNAL"; d: { attachment_id: Snowflake; channel_id: Snowflake; from_user_id: Snowflake; payload: unknown } }
   /* La sala de la carrera entera y no el cambio: son cinco campos y así no hay
      dos maneras de tenerla desincronizada. `lobby` en null es "aquí ya no hay
      carrera", que es lo que ve quien llega cuando el anfitrión la cerró. */
@@ -1414,6 +1420,9 @@ export type ClientCommand =
   | { t: "VOICE_SIGNAL"; d: { channel_id: Snowflake; to_user_id: Snowflake; payload: unknown } }
   | { t: "VOICE_MODERATE"; d: { channel_id: Snowflake; user_id: Snowflake; action: VoiceAction } }
   | { t: "VOICE_SOUND"; d: { channel_id: Snowflake; sound_id: Snowflake } }
+  | { t: "P2P_FILE_ANNOUNCE"; d: { attachment_id: Snowflake; channel_id: Snowflake } }
+  | { t: "P2P_FILE_REQUEST"; d: { attachment_id: Snowflake; channel_id: Snowflake } }
+  | { t: "P2P_FILE_SIGNAL"; d: { attachment_id: Snowflake; channel_id: Snowflake; to_user_id: Snowflake; payload: unknown } }
   /* Abrir es también apuntarse: quien pulsa el botón cuando ya hay una sala
      abierta se une a esa, no crea una segunda. */
   | { t: "RACE_OPEN"; d: { channel_id: Snowflake } }

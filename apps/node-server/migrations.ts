@@ -748,6 +748,8 @@ export const MIGRATIONS: string[] = [
     media_images = CASE media_images_enabled WHEN 1 THEN 'server' ELSE 'off' END,
     media_videos = CASE media_videos_enabled WHEN 1 THEN 'server' ELSE 'off' END,
     media_files = CASE media_files_enabled WHEN 1 THEN 'server' ELSE 'off' END;
+  ALTER TABLE attachments ADD COLUMN delivery TEXT NOT NULL DEFAULT 'server'
+    CHECK (delivery IN ('server','p2p'));
   `,
 ];
 

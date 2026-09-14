@@ -104,6 +104,19 @@ test("cada tipo admite servidor, P2P o apagado y nunca acepta un adjunto de serv
   assert.equal((await adjuntar("pdf")).status, 400, "archivo rechazado");
   assert.equal((await adjuntar("foto")).status, 200, "la foto sigue pasando");
 
+  const manifiesto = await call("POST", `/api/v1/channels/${canal}/p2p-files`, { body: {
+    filename: "manual.pdf",
+    content_type: "application/pdf",
+    size: 1234,
+    content_hash: `sha256:${"a".repeat(64)}`,
+  } });
+  assert.equal(manifiesto.status, 200);
+  assert.equal(manifiesto.json.delivery, "p2p");
+  assert.equal(manifiesto.json.url, "", "la ficha no finge una descarga desde la VPS");
+  const mensajeP2p = await call("POST", `/api/v1/channels/${canal}/messages`, { body: { content: "", attachment_ids: [manifiesto.json.id] } });
+  assert.equal(mensajeP2p.status, 200, "la ficha P2P sí puede adjuntarse sin subir el cuerpo");
+  assert.equal((await call("GET", `/api/v1/files/${manifiesto.json.id}`)).status, 409, "el servidor nunca sirve un cuerpo P2P inexistente");
+
   await call("PATCH", `/api/v1/communities/${comunidad}`, { body: { media_images: "off" } });
   assert.equal((await adjuntar("foto")).status, 400, "y ahora la foto tampoco");
 

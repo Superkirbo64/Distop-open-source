@@ -136,7 +136,7 @@ import {
   mintMigrationCert,
   type MigrationRow,
 } from "./community-migration.ts";
-import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, deleteDirectAttachmentsOf, deleteStoredAttachment, linkAttachments, linkDirectAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
+import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, deleteDirectAttachmentsOf, deleteStoredAttachment, linkAttachments, linkDirectAttachments, purgeChatFiles, saveP2PAttachment, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
 import { announceVoice, disconnectSession, disconnectUser, hasOpenSocket, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import {
   acceptDirectRequest,
@@ -1855,10 +1855,14 @@ route("POST", "/api/v1/channels/:id/messages", async (ctx) => {
     const comunidad = getCommunity(channel.community_id);
     const marcas = attachmentIds.map(() => "?").join(",");
     const adjuntos = db
-      .prepare(`SELECT id, content_type, message_id, direct_message_id FROM attachments WHERE id IN (${marcas}) AND owner_id = ?`)
-      .all(...attachmentIds, user.id) as Array<{ id: string; content_type: string; message_id: string | null; direct_message_id: string | null }>;
+      .prepare(`SELECT id, content_type, delivery, message_id, direct_message_id FROM attachments WHERE id IN (${marcas}) AND owner_id = ?`)
+      .all(...attachmentIds, user.id) as Array<{ id: string; content_type: string; delivery: "server" | "p2p"; message_id: string | null; direct_message_id: string | null }>;
     const tipos = adjuntos.map((row) => row.content_type);
     const hay = (prefijo: string) => tipos.some((tipo) => tipo.startsWith(prefijo));
+    const incompatible = (prefijo: string, mode: "server" | "p2p" | "off") =>
+      adjuntos.some((item) => item.content_type.startsWith(prefijo) && (mode === "off" || item.delivery !== mode));
+    const archivoIncompatible = (mode: "server" | "p2p" | "off") =>
+      adjuntos.some((item) => !/^(audio|image|video)\//.test(item.content_type) && (mode === "off" || item.delivery !== mode));
     const reject = (message: string): never => {
       /* Una subida rechazada no se queda cobrando disco. Solo se borran piezas
          todavía sin enlazar: repetir el id de un mensaje viejo jamás puede
@@ -1867,9 +1871,9 @@ route("POST", "/api/v1/channels/:id/messages", async (ctx) => {
       throw badRequest(message);
     };
     if (comunidad?.voice_messages === false && hay("audio/")) reject("Esta comunidad tiene los audios suspendidos.");
-    if (comunidad?.media_images !== "server" && hay("image/")) reject(comunidad?.media_images === "p2p" ? "Esta comunidad envía las fotos directamente entre sus miembros." : "Esta comunidad no admite fotos.");
-    if (comunidad?.media_videos !== "server" && hay("video/")) reject(comunidad?.media_videos === "p2p" ? "Esta comunidad envía los vídeos directamente entre sus miembros." : "Esta comunidad no admite vídeos.");
-    if (comunidad?.media_files !== "server" && tipos.some((tipo) => !/^(audio|image|video)\//.test(tipo)))
+    if (comunidad && incompatible("image/", comunidad.media_images)) reject(comunidad.media_images === "p2p" ? "Esta comunidad envía las fotos directamente entre sus miembros." : "Esta comunidad no admite fotos.");
+    if (comunidad && incompatible("video/", comunidad.media_videos)) reject(comunidad.media_videos === "p2p" ? "Esta comunidad envía los vídeos directamente entre sus miembros." : "Esta comunidad no admite vídeos.");
+    if (comunidad && archivoIncompatible(comunidad.media_files))
       reject(comunidad?.media_files === "p2p" ? "Esta comunidad envía los archivos directamente entre sus miembros." : "Esta comunidad no admite archivos.");
   }
   if (replyTo && !db.prepare("SELECT 1 FROM messages WHERE id = ? AND channel_id = ?").get(replyTo, channel.id))
@@ -3751,6 +3755,31 @@ route("POST", "/api/v1/instance/purge", (ctx) => {
 });
 
 /* ── adjuntos (§28.3) ──────────────────────────────────────────────── */
+
+route("POST", "/api/v1/channels/:id/p2p-files", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const channel = getChannel(ctx.params.id!);
+  if (!channel) throw notFound("Canal no encontrado.");
+  requireChannelPerm(channel.id, user.id, PERMISSIONS.SEND_MESSAGES, "escribir aquí");
+  requireChannelPerm(channel.id, user.id, PERMISSIONS.ATTACH_FILES, "adjuntar archivos");
+  rateLimit(`p2pmanifest:${user.id}`, 30, 60_000);
+
+  const body = await readJson(ctx);
+  const filename = v.string(body, "filename", { max: 200 });
+  const contentType = v.string(body, "content_type", { max: 120 });
+  const size = v.int(body, "size", { min: 1, max: MAX_UPLOAD_BYTES });
+  const contentHash = v.string(body, "content_hash", { max: 71 });
+  const community = getCommunity(channel.community_id)!;
+  const mode = contentType.startsWith("image/") ? community.media_images
+    : contentType.startsWith("video/") ? community.media_videos
+    : contentType.startsWith("audio/") ? "off"
+    : community.media_files;
+  if (mode !== "p2p") throw badRequest(mode === "off"
+    ? "Este tipo de archivo está apagado en la comunidad."
+    : "Este tipo se guarda en el servidor de la comunidad.");
+
+  return saveP2PAttachment({ ownerId: user.id, filename, contentType, size, contentHash });
+});
 
 route("POST", "/api/v1/uploads", async (ctx) => {
   const { user } = requireAuth(ctx);
