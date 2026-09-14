@@ -52,11 +52,17 @@ Object.defineProperty(globalThis, "window", {
   },
 });
 
-const { forgetInstance, knownInstances, railCommunities, rememberCommunities, watchAlert, clearWatchAlert } =
+const { canCreateCommunity, forgetInstance, knownInstances, railCommunities, rememberCommunities, watchAlert, clearWatchAlert } =
   await import("./instance.ts");
 
 const CASA = "https://equipo.tailnet.ts.net";
 const LIST_KEY = "distop.instances";
+
+test("en el PC siempre se ofrece Crear: va a su propio servidor, no al conectado", () => {
+  // Aquí `window.distop` existe (es el PC). Aunque el servidor conectado diga que no.
+  assert.equal(canCreateCommunity({ can_create_communities: false }), true);
+  assert.equal(canCreateCommunity(null), true);
+});
 
 type Comunidad = Parameters<typeof rememberCommunities>[1][number];
 const comunidad = (id: string, name: string): Comunidad =>

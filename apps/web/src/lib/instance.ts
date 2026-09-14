@@ -158,12 +158,15 @@ export function appWithoutInstance(): boolean {
 }
 
 /**
- * ¿Se ofrece "Crear comunidad"? Sin servidor, solo en el PC (enciende el suyo;
- * el teléfono no hospeda). Con servidor, lo decide él: solo quien lo hospeda.
- * Un servidor viejo no manda la bandera y se sigue ofreciendo; su 403 manda.
+ * ¿Se ofrece "Crear comunidad"? En el PC siempre: crea en SU propio servidor,
+ * aunque esté conectado a otro (App enciende el suyo). El teléfono no hospeda:
+ * sin servidor no hay dónde crear. Conectado a un servidor ajeno desde la web o
+ * el teléfono, lo decide ese servidor: solo quien lo hospeda. Un servidor viejo
+ * no manda la bandera y se sigue ofreciendo; su 403 manda.
  */
 export function canCreateCommunity(user: { can_create_communities?: boolean } | null): boolean {
-  if (appWithoutInstance()) return Boolean(window.distop);
+  if (window.distop) return true;
+  if (appWithoutInstance()) return false;
   return user?.can_create_communities !== false;
 }
 

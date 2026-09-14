@@ -22,6 +22,8 @@ import { videoMode } from "./ice.ts";
 import * as race from "./race.ts";
 import { getEmoji } from "./expressions.ts";
 import { freezeReason, writesAccepted } from "./lifecycle.ts";
+import { db } from "./db.ts";
+import { recordTraffic } from "./usage.ts";
 
 interface Client {
   ws: WebSocket;
@@ -56,6 +58,8 @@ interface VideoClient {
 const VOICE_ACTIONS: readonly VoiceAction[] = ["mute", "unmute", "deafen", "undeafen", "disconnect"];
 
 const clients = new Set<Client>();
+const p2pSources = new Map<Snowflake, Set<Client>>();
+const p2pRequests = new Map<string, number>();
 /** Sockets de vídeo separados para que sus keyframes no bloqueen voz ni mandos. */
 const videoClients = new Set<VideoClient>();
 /* 64 KB bastaban para mandos y audio, pero un fotograma clave de pantalla
@@ -562,6 +566,56 @@ function handleCommand(client: Client, raw: string): void {
       return;
     }
 
+    case "P2P_FILE_ANNOUNCE": {
+      const { attachment_id: attachmentId, channel_id: channelId } = cmd.d ?? {};
+      if (typeof attachmentId !== "string" || typeof channelId !== "string") return;
+      if (!dentroDeLimite(client, "p2p-announce", 30)) return;
+      /* También sin enlazar todavía: quien envía se anuncia al adjuntar, porque
+         quien recibe pide el archivo en cuanto le llega el mensaje. Pedirlo sí
+         exige el mensaje en ese canal (P2P_FILE_REQUEST). */
+      const owned = db.prepare(
+        `SELECT 1 FROM attachments a
+         LEFT JOIN messages m ON m.id = a.message_id
+         WHERE a.id = ? AND a.owner_id = ? AND a.delivery = 'p2p'
+           AND a.direct_message_id IS NULL AND (a.message_id IS NULL OR m.channel_id = ?)`,
+      ).get(attachmentId, client.userId, channelId);
+      if (!owned || !has(channelPermissions(channelId, client.userId), PERMISSIONS.VIEW_CHANNEL)) return;
+      const sources = p2pSources.get(attachmentId) ?? new Set<Client>();
+      sources.add(client);
+      p2pSources.set(attachmentId, sources);
+      return;
+    }
+
+    case "P2P_FILE_REQUEST": {
+      const { attachment_id: attachmentId, channel_id: channelId } = cmd.d ?? {};
+      if (typeof attachmentId !== "string" || typeof channelId !== "string") return;
+      if (!dentroDeLimite(client, "p2p-request", 12)) return;
+      const visible = db.prepare(
+        `SELECT 1 FROM attachments a JOIN messages m ON m.id = a.message_id
+         WHERE a.id = ? AND a.delivery = 'p2p' AND m.channel_id = ?`,
+      ).get(attachmentId, channelId);
+      if (!visible || !has(channelPermissions(channelId, client.userId), PERMISSIONS.VIEW_CHANNEL)) return;
+      const source = [...(p2pSources.get(attachmentId) ?? [])].find((candidate) =>
+        candidate !== client && candidate.ws.readyState === candidate.ws.OPEN);
+      if (!source) return;
+      p2pRequests.set(`${attachmentId}:${source.userId}:${client.userId}`, Date.now() + 60_000);
+      send(source, { t: "P2P_FILE_REQUEST", d: { attachment_id: attachmentId, channel_id: channelId, requester_id: client.userId } });
+      return;
+    }
+
+    case "P2P_FILE_SIGNAL": {
+      const { attachment_id: attachmentId, channel_id: channelId, to_user_id: to, payload } = cmd.d ?? {};
+      if (typeof attachmentId !== "string" || typeof channelId !== "string" || typeof to !== "string") return;
+      if (!dentroDeLimite(client, "p2p-signal", 60)) return;
+      const forward = p2pRequests.get(`${attachmentId}:${client.userId}:${to}`);
+      const reverse = p2pRequests.get(`${attachmentId}:${to}:${client.userId}`);
+      if (Math.max(forward ?? 0, reverse ?? 0) < Date.now()) return;
+      if (!has(channelPermissions(channelId, client.userId), PERMISSIONS.VIEW_CHANNEL) ||
+          !has(channelPermissions(channelId, to), PERMISSIONS.VIEW_CHANNEL)) return;
+      publishToUser(to, { t: "P2P_FILE_SIGNAL", d: { attachment_id: attachmentId, channel_id: channelId, from_user_id: client.userId, payload } });
+      return;
+    }
+
     case "PING":
       send(client, { t: "PONG", d: { at: Date.now() } });
       return;
@@ -653,6 +707,7 @@ function relayMedia(client: Client | VideoClient, packet: Buffer): void {
     for (const other of targets) {
       if (other.ws.bufferedAmount > limit.buffered) continue;
       other.ws.send(out, { binary: true });
+      recordTraffic("relay", out.length);
     }
   }
 }
@@ -918,6 +973,10 @@ export function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer
     ws.on("error", () => ws.close());
     ws.on("close", () => {
       clients.delete(client);
+      for (const [attachmentId, sources] of p2pSources) {
+        sources.delete(client);
+        if (sources.size === 0) p2pSources.delete(attachmentId);
+      }
       // Si era su última pestaña, sale de la llamada; con otra abierta sigue dentro.
       const stillHere = [...clients].some((other) => other.userId === client.userId);
       if (!stillHere) {

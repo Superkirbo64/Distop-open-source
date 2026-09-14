@@ -5,7 +5,6 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { KLIPY_API_KEY } from "./klipy-key.ts";
 
 function str(key: string, fallback: string): string {
   const v = process.env[key];
@@ -441,11 +440,11 @@ export const config = {
    * Giphy — la peticion la hace la INSTANCIA, nunca el navegador, asi que Klipy
    * ve una maquina y no la IP de cada miembro (§13.3, §22).
    *
-   * La clave se pide en klipy.com/developers. La de prueba admite 100 llamadas
-   * por hora; sin clave, la galeria no aparece y los stickers propios de la
-   * comunidad siguen funcionando igual.
+   * La clave se pide en klipy.com/developers y va en el entorno, nunca en el
+   * código: el repositorio es público. Sin clave propia, las galerías salen del
+   * directorio del proyecto (Deno), que guarda sus claves y hace de proxy.
    */
-  klipyApiKey: KLIPY_API_KEY,
+  klipyApiKey: str("KLIPY_API_KEY", ""),
 
   /**
    * Buscador de fondos de pantalla (§10.2), contra la API de Wallhaven.

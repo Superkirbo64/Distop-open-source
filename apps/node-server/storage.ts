@@ -13,7 +13,8 @@ import { uuidv7 } from "@distop/protocol";
 import type { Attachment } from "@distop/protocol";
 import { config } from "./config.ts";
 import { db } from "./db.ts";
-import { HttpError, badRequest, notFound, rateLimit, type Ctx, HANDLED } from "./http.ts";
+import { HttpError, badRequest, corsHeaders, notFound, rateLimit, type Ctx, HANDLED } from "./http.ts";
+import { recordTraffic } from "./usage.ts";
 
 export const ROOT = resolve(config.storagePath);
 mkdirSync(ROOT, { recursive: true });
@@ -105,6 +106,8 @@ function insertarAdjunto(opts: {
     content_type: opts.contentType,
     size: opts.size,
     url: `/api/v1/files/${opts.id}`,
+    delivery: "server",
+    content_hash: opts.contentHash,
   };
 }
 
@@ -405,7 +408,33 @@ export function saveRemoteAttachment(opts: {
     content_type: opts.contentType,
     size: opts.size,
     url: `/api/v1/files/${id}`,
+    delivery: "server",
+    content_hash: null,
   };
+}
+
+/** Solo manifiesto: el fichero nunca entra al proceso ni al disco de la
+    instancia. El hash permite que quien lo reciba de otro par lo verifique. */
+export function saveP2PAttachment(opts: {
+  ownerId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  contentHash: string;
+}): Attachment {
+  if (!config.allowedUploadTypes.includes(opts.contentType))
+    throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", `Tipo de archivo no permitido: ${opts.contentType}.`);
+  if (!Number.isSafeInteger(opts.size) || opts.size <= 0 || opts.size > config.maxUploadMb * 1024 * 1024)
+    throw new HttpError(413, "PAYLOAD_TOO_LARGE", `El archivo pasa del límite de ${config.maxUploadMb} MB de esta instancia.`);
+  if (!/^sha256:[0-9a-f]{64}$/.test(opts.contentHash)) throw badRequest("La huella del archivo no es un SHA-256 válido.");
+
+  const id = uuidv7();
+  const filename = sanitizeName(opts.filename);
+  db.prepare(
+    `INSERT INTO attachments (id, message_id, owner_id, filename, content_type, size, path, source_url, content_hash, delivery, created_at)
+     VALUES (?, NULL, ?, ?, ?, ?, '', NULL, ?, 'p2p', ?)`,
+  ).run(id, opts.ownerId, filename, opts.contentType, opts.size, opts.contentHash, Date.now());
+  return { id, message_id: null, filename, content_type: opts.contentType, size: opts.size, url: "", delivery: "p2p", content_hash: opts.contentHash };
 }
 
 /** Solo para mostrar y descargar: sin barras, sin caracteres de control. */
@@ -419,10 +448,10 @@ export function attachmentsFor(messageIds: string[]): Map<string, Attachment[]> 
 
   const rows = db
     .prepare(
-      `SELECT id, message_id, filename, content_type, size FROM attachments
+      `SELECT id, message_id, filename, content_type, size, delivery, content_hash FROM attachments
        WHERE message_id IN (${messageIds.map(() => "?").join(",")})`,
     )
-    .all(...messageIds) as { id: string; message_id: string; filename: string; content_type: string; size: number }[];
+    .all(...messageIds) as Array<{ id: string; message_id: string; filename: string; content_type: string; size: number; delivery: "server" | "p2p"; content_hash: string | null }>;
 
   for (const row of rows) {
     const list = out.get(row.message_id) ?? [];
@@ -432,7 +461,9 @@ export function attachmentsFor(messageIds: string[]): Map<string, Attachment[]> 
       filename: row.filename,
       content_type: row.content_type,
       size: row.size,
-      url: `/api/v1/files/${row.id}`,
+      url: row.delivery === "server" ? `/api/v1/files/${row.id}` : "",
+      delivery: row.delivery,
+      content_hash: row.content_hash,
     });
     out.set(row.message_id, list);
   }
@@ -444,7 +475,7 @@ export function attachmentsForDirect(messageIds: string[]): Map<string, Attachme
   if (messageIds.length === 0) return out;
   const rows = db
     .prepare(
-      `SELECT id, direct_message_id, filename, content_type, size FROM attachments
+      `SELECT id, direct_message_id, filename, content_type, size, delivery, content_hash FROM attachments
        WHERE direct_message_id IN (${messageIds.map(() => "?").join(",")})`,
     )
     .all(...messageIds) as Array<{
@@ -453,6 +484,8 @@ export function attachmentsForDirect(messageIds: string[]): Map<string, Attachme
       filename: string;
       content_type: string;
       size: number;
+      delivery: "server" | "p2p";
+      content_hash: string | null;
     }>;
   for (const row of rows) {
     const list = out.get(row.direct_message_id) ?? [];
@@ -462,7 +495,9 @@ export function attachmentsForDirect(messageIds: string[]): Map<string, Attachme
       filename: row.filename,
       content_type: row.content_type,
       size: row.size,
-      url: `/api/v1/files/${row.id}`,
+      url: row.delivery === "server" ? `/api/v1/files/${row.id}` : "",
+      delivery: row.delivery,
+      content_hash: row.content_hash,
     });
     out.set(row.direct_message_id, list);
   }
@@ -495,13 +530,35 @@ export function linkDirectAttachments(messageId: string, ids: string[], ownerId:
  */
 export const CDN_REENVIABLE = /^(media[0-9]?\.giphy\.com|i\.giphy\.com|static[0-9]?\.klipy\.com)$/;
 
+async function readRemoteFile(res: Response): Promise<Buffer> {
+  const limit = config.maxUploadMb * 1024 * 1024;
+  const announced = Number(res.headers.get("content-length")) || 0;
+  if (announced > limit)
+    throw new HttpError(413, "PAYLOAD_TOO_LARGE", `El archivo pasa del límite de ${config.maxUploadMb} MB de esta instancia.`);
+  if (!res.body) throw new HttpError(502, "UPSTREAM_ERROR", "El archivo no se pudo traer.");
+
+  const chunks: Buffer[] = [];
+  let received = 0;
+  for await (const chunk of res.body) {
+    const part = Buffer.from(chunk);
+    received += part.length;
+    if (received > limit) {
+      await res.body.cancel().catch(() => undefined);
+      throw new HttpError(413, "PAYLOAD_TOO_LARGE", `El archivo pasa del límite de ${config.maxUploadMb} MB de esta instancia.`);
+    }
+    chunks.push(part);
+  }
+  return Buffer.concat(chunks, received);
+}
+
 export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
   const row = db
-    .prepare("SELECT filename, content_type, size, path, source_url FROM attachments WHERE id = ?")
+    .prepare("SELECT filename, content_type, size, path, source_url, delivery FROM attachments WHERE id = ?")
     .get(id) as
-    | { filename: string; content_type: string; size: number; path: string; source_url: string | null }
+    | { filename: string; content_type: string; size: number; path: string; source_url: string | null; delivery: "server" | "p2p" }
     | undefined;
   if (!row) throw notFound("Archivo no encontrado.");
+  if (row.delivery === "p2p") throw new HttpError(409, "P2P_FILE_OFFLINE", "El archivo se entrega directamente cuando alguien que lo tiene está conectado.");
 
   if (row.source_url) {
     /* Sin sesión, igual que /avatars/image: un <img src> no manda Authorization,
@@ -516,16 +573,22 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
     }
     if (origen.protocol !== "https:" || !CDN_REENVIABLE.test(origen.hostname)) throw notFound("Archivo no encontrado.");
 
-    const res = await fetch(origen, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+    /* No seguir redirecciones: una URL permitida no puede usarse como trampolín
+       hacia otro host. El cuerpo se corta aunque el CDN omita o falsee
+       Content-Length, evitando reservar memoria sin límite. */
+    const res = await fetch(origen, { redirect: "error", signal: AbortSignal.timeout(8000) }).catch(() => null);
     if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "El archivo no se pudo traer.");
+    const data = await readRemoteFile(res);
 
     ctx.res.writeHead(200, {
+      ...corsHeaders(ctx.req.headers.origin),
       "content-type": row.content_type,
       "cache-control": "public, max-age=31536000, immutable",
       "x-content-type-options": "nosniff",
       "content-security-policy": "default-src 'none'; sandbox",
     });
-    ctx.res.end(Buffer.from(await res.arrayBuffer()));
+    recordTraffic("file", data.length);
+    ctx.res.end(data);
     return HANDLED;
   }
 
@@ -539,7 +602,12 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
     (row.content_type.startsWith("image/") && row.content_type !== "image/svg+xml") ||
     row.content_type.startsWith("audio/");
 
+  /* CORS como el resto de la API: un <img> no lo necesita, pero la app de PC
+     (app://distop) y la de Android (http://localhost) descargan los sonidos de
+     la sala y los audios con fetch, y sin estas cabeceras el navegador los
+     bloqueaba ("no se pudo descargar el sonido desde el servidor"). */
   ctx.res.writeHead(200, {
+    ...corsHeaders(ctx.req.headers.origin),
     "content-type": row.content_type,
     "content-length": String(row.size),
     "content-disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(row.filename)}`,
@@ -547,6 +615,7 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
     "x-content-type-options": "nosniff",
     "content-security-policy": "default-src 'none'; sandbox",
   });
+  recordTraffic("file", row.size);
   createReadStream(full).pipe(ctx.res);
   return HANDLED;
 }

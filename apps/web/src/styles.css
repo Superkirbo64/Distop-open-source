@@ -693,7 +693,9 @@
     cursor: pointer;
     display: flex;
     flex-direction: column;
-    min-height: 21rem;
+    /* Alto fijo y no mínimo: todas las tarjetas miden lo mismo aunque una no
+       tenga botón o su fila no la estire (la descripción ya va a 2 líneas). */
+    height: 26rem;
     transform: translateZ(0);
     backface-visibility: hidden;
     transition:

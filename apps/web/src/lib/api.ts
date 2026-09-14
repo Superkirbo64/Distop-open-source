@@ -143,8 +143,9 @@ export async function api<T>(method: string, path: string, body?: unknown, retry
   return parse<T>(res);
 }
 
-export async function upload(file: File): Promise<{ id: string; url: string; filename: string; size: number; content_type: string }> {
-  const res = await fetch(apiUrl("/api/v1/uploads"), {
+export async function upload(file: File, communityId?: string): Promise<{ id: string; url: string; filename: string; size: number; content_type: string }> {
+  const target = communityId ? `/api/v1/uploads?community_id=${encodeURIComponent(communityId)}` : "/api/v1/uploads";
+  const res = await fetch(apiUrl(target), {
     method: "POST",
     headers: {
       "content-type": file.type || "application/octet-stream",

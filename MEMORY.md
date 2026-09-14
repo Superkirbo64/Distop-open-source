@@ -447,9 +447,12 @@ Tanda de verificación y optimización sobre el repo recién clonado.
   `local` sin contraseña y no veía NINGUNA forma de ponerla desde Ajustes. Ahora
   "convertir en cuenta permanente" sale para cualquier cuenta sin contraseña (con el
   usuario prellenado) y "cambiar la contraseña" para las que ya la tienen.
-- La clave de Klipy en `klipy-key.ts` es pública **a propósito** (confirmado por quien
-  lidera); solo se le añadió la anotación `: string` porque el tipo literal rompía el
-  `!== ""` de `api.ts` en typecheck.
+- ~~La clave de Klipy en `klipy-key.ts` es pública **a propósito**~~ **Revertido el
+  2026-09-13** a petición de Kirbo ("mis APIs privadas alojadas en Deno, que la API no
+  sea pública dentro de la app"): `klipy-key.ts` ya no existe, `config.ts` lee
+  `KLIPY_API_KEY` del entorno y, sin clave propia, las galerías salen del directorio de
+  Deno (`/v1/expressions`), que guarda las claves en sus variables de entorno. La clave
+  vieja sigue en el historial de git: hay que regenerarla.
 
 ### Bundle
 
@@ -858,7 +861,7 @@ hoy solo evita que siga creciendo, no lo borra de lo ya publicado.
 | Hallazgo | Gravedad | Qué se hizo |
 |---|---|---|
 | **`.claude/settings.local.json` estaba rastreado** y contenía el usuario de Windows y la ruta absoluta del proyecto | Baja: dato personal, no credencial | Sacado del índice y añadido al `.gitignore`. Sigue en el disco y **sigue en el historial ya publicado** |
-| **`KLIPY_API_KEY` escrita a fuego** en `apps/node-server/klipy-key.ts` y en la copia del móvil, y es de **servidor** (la usa `api.ts` contra `api.klipy.com`) | Decisión del proyecto | **Se deja como está**, por decisión explícita de su dueño |
+| **`KLIPY_API_KEY` escrita a fuego** en `apps/node-server/klipy-key.ts` y en la copia del móvil, y es de **servidor** (la usa `api.ts` contra `api.klipy.com`) | Decisión del proyecto | Se dejó por decisión de su dueño; **revertido el 2026-09-13**: fuera del código, en el entorno y en el proxy de Deno. Pendiente regenerarla |
 | El correo del autor (`%ae`) va en los 13 commits, y hay una segunda identidad `melvingarcia-lab` sin correo | Informativo | Sin tocar. GitHub ofrece un correo `noreply` si algún día molesta |
 
 ### Incoherencia encontrada de paso
@@ -866,7 +869,8 @@ hoy solo evita que siga creciendo, no lo borra de lo ya publicado.
 `.env.example` declara `KLIPY_API_KEY=`, pero `config.ts` importa la constante de
 `klipy-key.ts` y **nunca lee esa variable de entorno**. La variable aparenta
 funcionar y no hace nada. No es un problema de seguridad, pero engaña a quien
-intente configurarlo por el camino documentado.
+intente configurarlo por el camino documentado. *(Resuelto el 2026-09-13: `config.ts`
+ya lee `KLIPY_API_KEY`.)*
 
 ### El pie, repuesto
 

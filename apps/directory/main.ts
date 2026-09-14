@@ -1,4 +1,5 @@
 import { DirectoryService } from "./domain.ts";
+import { available, searchExpressions } from "./expressions.ts";
 import { fetchInstanceInfo, normalizePublicOrigin } from "./network.ts";
 import { DenoKvStorage } from "./storage.ts";
 import type { DirectoryManifestPayload, SignedDirectoryManifest } from "./types.ts";
@@ -14,6 +15,12 @@ const service = new DirectoryService(storage, async (payload: DirectoryManifestP
   if (info.epoch !== payload.epoch || info.identity?.fingerprint !== payload.fingerprint) throw new Error("ORIGIN_IDENTITY_MISMATCH");
   if (info.role !== "PRIMARY") throw new Error("INSTANCE_NOT_PRIMARY");
 }, Date.now, challengeSecret);
+
+/* Claves de las galerías: solo en el entorno de Deno Deploy. Vacías = pestañas apagadas. */
+const expressionKeys = {
+  klipy: Deno.env.get("KLIPY_API_KEY") ?? "",
+  giphy: Deno.env.get("GIPHY_API_KEY") ?? "",
+};
 
 const cors = {
   "access-control-allow-origin": "*",
@@ -94,10 +101,23 @@ async function handler(request: Request, clientIp: string): Promise<Response> {
         String(input.reason ?? ""),
       ));
     }
+    if (request.method === "GET" && url.pathname === "/v1/expressions/status") return json(available(expressionKeys));
+    if (request.method === "GET" && url.pathname === "/v1/expressions") {
+      // ponytail: por IP, y las instancias piden en nombre de toda su gente; un token por instancia si una sola lo agota.
+      rateLimit("expressions", clientIp, 120, 60_000);
+      const kind = url.searchParams.get("kind") === "stickers" ? "stickers" : "gifs";
+      const locale = url.searchParams.get("locale") ?? "";
+      return json({
+        results: await searchExpressions(kind, url.searchParams.get("q") ?? "", {
+          limit: Number(url.searchParams.get("limit") ?? "24"),
+          region: /^[a-z]{2}$/.test(locale) ? locale : undefined,
+        }, expressionKeys),
+      });
+    }
     return json({ error: "NOT_FOUND" }, 404);
   } catch (error) {
     const code = error instanceof Error ? error.message : "BAD_REQUEST";
-    const status = code === "RATE_LIMITED" ? 429 : code.includes("UNREACHABLE") ? 422 : code === "PAYLOAD_TOO_LARGE" ? 413 : 400;
+    const status = code === "RATE_LIMITED" ? 429 : code === "EXPRESSIONS_DISABLED" ? 404 : code === "EXPRESSIONS_UPSTREAM" ? 502 : code.includes("UNREACHABLE") ? 422 : code === "PAYLOAD_TOO_LARGE" ? 413 : 400;
     return json({ error: code }, status);
   }
 }

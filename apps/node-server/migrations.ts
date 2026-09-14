@@ -720,6 +720,42 @@ export const MIGRATIONS: string[] = [
     FROM host_authority
    WHERE id = 1 AND user_id IS NOT NULL;
   `,
+
+  /* Qué se puede adjuntar en el chat, por tipo, como los audios. En una VPS lo
+     que gasta disco y tráfico son las fotos, los vídeos y los archivos: quien
+     hospeda puede apagarlos sin tocar permisos de nadie. Encendidos de fábrica:
+     actualizar Distop no quita nada que ya se usaba. */
+  `
+  ALTER TABLE communities ADD COLUMN media_images INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE communities ADD COLUMN media_videos INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE communities ADD COLUMN media_files INTEGER NOT NULL DEFAULT 1;
+  `,
+
+  /* Los interruptores iniciales pasan a expresar dónde viaja cada tipo. La
+     migración conserva encendido como 'server' y apagado como 'off'; 'p2p' se
+     elige explícitamente cuando los clientes compatibles estén conectados. */
+  `
+  ALTER TABLE communities RENAME COLUMN media_images TO media_images_enabled;
+  ALTER TABLE communities RENAME COLUMN media_videos TO media_videos_enabled;
+  ALTER TABLE communities RENAME COLUMN media_files TO media_files_enabled;
+  ALTER TABLE communities ADD COLUMN media_images TEXT NOT NULL DEFAULT 'server'
+    CHECK (media_images IN ('server','p2p','off'));
+  ALTER TABLE communities ADD COLUMN media_videos TEXT NOT NULL DEFAULT 'server'
+    CHECK (media_videos IN ('server','p2p','off'));
+  ALTER TABLE communities ADD COLUMN media_files TEXT NOT NULL DEFAULT 'server'
+    CHECK (media_files IN ('server','p2p','off'));
+  UPDATE communities SET
+    media_images = CASE media_images_enabled WHEN 1 THEN 'server' ELSE 'off' END,
+    media_videos = CASE media_videos_enabled WHEN 1 THEN 'server' ELSE 'off' END,
+    media_files = CASE media_files_enabled WHEN 1 THEN 'server' ELSE 'off' END;
+  ALTER TABLE attachments ADD COLUMN delivery TEXT NOT NULL DEFAULT 'server'
+    CHECK (delivery IN ('server','p2p'));
+  CREATE TABLE instance_daily_usage (
+    day TEXT PRIMARY KEY,
+    file_bytes INTEGER NOT NULL DEFAULT 0,
+    relay_bytes INTEGER NOT NULL DEFAULT 0
+  );
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

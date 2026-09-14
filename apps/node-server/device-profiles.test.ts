@@ -11,9 +11,11 @@ const workdir = mkdtempSync(join(tmpdir(), "distop-device-profiles-"));
 const databasePath = join(workdir, "test.db");
 
 /* Base detenida justo antes de device_profiles: reproduce una actualización,
-   no una instalación nueva que todavía no tiene usuarios. */
+   no una instalación nueva que todavía no tiene usuarios. Se busca por su
+   contenido y no como "la última": detrás pueden venir migraciones nuevas. */
+const hastaPerfiles = MIGRATIONS.findIndex((migration) => migration.includes("CREATE TABLE device_profiles"));
 const antigua = new DatabaseSync(databasePath);
-for (const migration of MIGRATIONS.slice(0, -1)) antigua.exec(migration);
+for (const migration of MIGRATIONS.slice(0, hastaPerfiles)) antigua.exec(migration);
 antigua.prepare(
   "INSERT INTO users (id, username, display_name, kind, created_at) VALUES (?, ?, ?, 'local', ?)",
 ).run("host-anterior", "anfitrion", "Anfitrión", 1);
@@ -23,7 +25,7 @@ antigua.prepare(
 antigua.prepare(
   "INSERT INTO host_authority (id, user_id, since, granted_by, reason) VALUES (1, ?, ?, NULL, 'test')",
 ).run("host-anterior", 1);
-antigua.exec(`PRAGMA user_version = ${SCHEMA_VERSION - 1}`);
+antigua.exec(`PRAGMA user_version = ${hastaPerfiles}`);
 antigua.close();
 
 process.env.PORT = "0";
