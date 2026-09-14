@@ -1151,6 +1151,7 @@ function Composer({
   const errorText = useErrorText();
   const locale = useLocale();
   const send = useStore((s) => s.send);
+  const communityId = useStore((s) => s.activeCommunityId);
   const notifyTyping = useStore((s) => s.notifyTyping);
   const maxUploadMb = useStore((s) => s.instance?.max_upload_mb ?? 25);
 
@@ -1391,7 +1392,7 @@ function Composer({
         continue;
       }
       try {
-        const uploaded = await upload(file);
+        const uploaded = await upload(file, communityId ?? undefined);
         setPending((prev) => [...prev, { id: uploaded.id, filename: uploaded.filename, size: uploaded.size, url: uploaded.url, content_type: uploaded.content_type }]);
       } catch (err) {
         setError(errorText(err));
@@ -1558,7 +1559,7 @@ function Composer({
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const file = new File([blob], `audio-${stamp}.${audioExtension(mime)}`, { type: mime });
     try {
-      const uploaded = await upload(file);
+      const uploaded = await upload(file, communityId ?? undefined);
       if (voiceSession.current !== session) return;
       /* Se manda solo, sin pasar por la lista de adjuntos. El segundo toque en
          el micrófono ES el envío: dejarlo esperando en la bandeja obligaría a

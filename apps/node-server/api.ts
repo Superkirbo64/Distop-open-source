@@ -88,6 +88,7 @@ import { inspectBackup } from "./restore.ts";
 import { successionRecord } from "./succession.ts";
 import { normalizeProofOrigin } from "./identity.ts";
 import { buildIcs } from "./ics.ts";
+import { deploymentProfile, serverUsage, setDeploymentProfile } from "./usage.ts";
 import {
   PushError,
   dropSubscription,
@@ -136,7 +137,7 @@ import {
   mintMigrationCert,
   type MigrationRow,
 } from "./community-migration.ts";
-import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, deleteDirectAttachmentsOf, linkAttachments, linkDirectAttachments, purgeChatFiles, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
+import { CDN_REENVIABLE, deleteAttachmentsOf, deleteAttachmentsOwnedBy, deleteDirectAttachmentsOf, deleteStoredAttachment, linkAttachments, linkDirectAttachments, purgeChatFiles, saveP2PAttachment, saveRemoteAttachment, saveUpload, saveUploadStream, serveFile } from "./storage.ts";
 import { announceVoice, disconnectSession, disconnectUser, hasOpenSocket, onlineCount, onlineIn, publish, publishToChannel, publishToUser } from "./gateway.ts";
 import {
   acceptDirectRequest,
@@ -939,6 +940,9 @@ route("PATCH", "/api/v1/communities/:id", async (ctx) => {
   if (body.join_policy !== undefined) fields.push(["join_policy", v.oneOf(body, "join_policy", COMMUNITY_JOIN_POLICIES)]);
   if (body.category !== undefined) fields.push(["category", v.oneOf(body, "category", COMMUNITY_CATEGORIES)]);
   if (body.voice_messages !== undefined) fields.push(["voice_messages", v.bool(body, "voice_messages", true) ? 1 : 0]);
+  for (const key of ["media_images", "media_videos", "media_files"] as const) {
+    if (body[key] !== undefined) fields.push([key, v.oneOf(body, key, ["server", "p2p", "off"] as const)]);
+  }
   if (fields.length === 0) return getCommunity(communityId);
 
   db.prepare(`UPDATE communities SET ${fields.map(([k]) => `${k} = ?`).join(", ")} WHERE id = ?`).run(
@@ -1846,14 +1850,33 @@ route("POST", "/api/v1/channels/:id/messages", async (ctx) => {
   const replyTo = v.optionalString(body, "reply_to_id", { max: 64 }) ?? null;
 
   if (attachmentIds.length > 0) requireChannelPerm(channel.id, user.id, PERMISSIONS.ATTACH_FILES, "adjuntar archivos");
-  /* Audios suspendidos: se comprueba aquí y no solo en la interfaz, porque
-     esconder el botón no impide subir el fichero y adjuntarlo a mano. */
-  if (attachmentIds.length > 0 && getCommunity(channel.community_id)?.voice_messages === false) {
+  /* Tipos suspendidos (audios, fotos, vídeos, archivos): se comprueba aquí y no
+     solo en la interfaz, porque esconder el botón no impide subir el fichero y
+     adjuntarlo a mano. */
+  if (attachmentIds.length > 0) {
+    const comunidad = getCommunity(channel.community_id);
     const marcas = attachmentIds.map(() => "?").join(",");
-    const audio = db
-      .prepare(`SELECT 1 FROM attachments WHERE id IN (${marcas}) AND owner_id = ? AND content_type LIKE 'audio/%' LIMIT 1`)
-      .get(...attachmentIds, user.id);
-    if (audio) throw badRequest("Esta comunidad tiene los audios suspendidos.");
+    const adjuntos = db
+      .prepare(`SELECT id, content_type, delivery, message_id, direct_message_id FROM attachments WHERE id IN (${marcas}) AND owner_id = ?`)
+      .all(...attachmentIds, user.id) as Array<{ id: string; content_type: string; delivery: "server" | "p2p"; message_id: string | null; direct_message_id: string | null }>;
+    const tipos = adjuntos.map((row) => row.content_type);
+    const hay = (prefijo: string) => tipos.some((tipo) => tipo.startsWith(prefijo));
+    const incompatible = (prefijo: string, mode: "server" | "p2p" | "off") =>
+      adjuntos.some((item) => item.content_type.startsWith(prefijo) && (mode === "off" || item.delivery !== mode));
+    const archivoIncompatible = (mode: "server" | "p2p" | "off") =>
+      adjuntos.some((item) => !/^(audio|image|video)\//.test(item.content_type) && (mode === "off" || item.delivery !== mode));
+    const reject = (message: string): never => {
+      /* Una subida rechazada no se queda cobrando disco. Solo se borran piezas
+         todavía sin enlazar: repetir el id de un mensaje viejo jamás puede
+         destruir su archivo. */
+      for (const item of adjuntos) if (!item.message_id && !item.direct_message_id) deleteStoredAttachment(item.id);
+      throw badRequest(message);
+    };
+    if (comunidad?.voice_messages === false && hay("audio/")) reject("Esta comunidad tiene los audios suspendidos.");
+    if (comunidad && incompatible("image/", comunidad.media_images)) reject(comunidad.media_images === "p2p" ? "Esta comunidad envía las fotos directamente entre sus miembros." : "Esta comunidad no admite fotos.");
+    if (comunidad && incompatible("video/", comunidad.media_videos)) reject(comunidad.media_videos === "p2p" ? "Esta comunidad envía los vídeos directamente entre sus miembros." : "Esta comunidad no admite vídeos.");
+    if (comunidad && archivoIncompatible(comunidad.media_files))
+      reject(comunidad?.media_files === "p2p" ? "Esta comunidad envía los archivos directamente entre sus miembros." : "Esta comunidad no admite archivos.");
   }
   if (replyTo && !db.prepare("SELECT 1 FROM messages WHERE id = ? AND channel_id = ?").get(replyTo, channel.id))
     throw badRequest("El mensaje al que respondes no está en este canal.");
@@ -3778,6 +3801,53 @@ route("POST", "/api/v1/instance/purge", (ctx) => {
 
 /* ── adjuntos (§28.3) ──────────────────────────────────────────────── */
 
+route("POST", "/api/v1/channels/:id/p2p-files", async (ctx) => {
+  const { user } = requireAuth(ctx);
+  const channel = getChannel(ctx.params.id!);
+  if (!channel) throw notFound("Canal no encontrado.");
+  requireChannelPerm(channel.id, user.id, PERMISSIONS.SEND_MESSAGES, "escribir aquí");
+  requireChannelPerm(channel.id, user.id, PERMISSIONS.ATTACH_FILES, "adjuntar archivos");
+  rateLimit(`p2pmanifest:${user.id}`, 30, 60_000);
+
+  const body = await readJson(ctx);
+  const filename = v.string(body, "filename", { max: 200 });
+  const contentType = v.string(body, "content_type", { max: 120 });
+  const size = v.int(body, "size", { min: 1, max: MAX_UPLOAD_BYTES });
+  const contentHash = v.string(body, "content_hash", { max: 71 });
+  const community = getCommunity(channel.community_id)!;
+  const mode = contentType.startsWith("image/") ? community.media_images
+    : contentType.startsWith("video/") ? community.media_videos
+    : contentType.startsWith("audio/") ? "off"
+    : community.media_files;
+  if (mode !== "p2p") throw badRequest(mode === "off"
+    ? "Este tipo de archivo está apagado en la comunidad."
+    : "Este tipo se guarda en el servidor de la comunidad.");
+
+  return saveP2PAttachment({ ownerId: user.id, filename, contentType, size, contentHash });
+});
+
+route("GET", "/api/v1/instance/server", (ctx) => {
+  requireHost(ctx);
+  return {
+    health: instanceHealth(onlineCount()),
+    deployment_profile: deploymentProfile(),
+    runtime: { node: process.version, platform: process.platform, arch: process.arch },
+    public_url: publicUrl(),
+    tunnel: tunnelState(),
+    backups: backupSchedule(),
+    usage: serverUsage(),
+  };
+});
+
+route("PATCH", "/api/v1/instance/server", async (ctx) => {
+  const auth = requireHost(ctx);
+  rateLimit(`server-settings:${auth.user.id}`, 10, 60_000);
+  const body = await readJson(ctx);
+  const profile = v.oneOf(body, "deployment_profile", ["personal_pc", "vps_cloud"] as const);
+  setDeploymentProfile(profile);
+  return { deployment_profile: deploymentProfile() };
+});
+
 route("POST", "/api/v1/uploads", async (ctx) => {
   const { user } = requireAuth(ctx);
   rateLimit(`upload:${user.id}`, 30, 60_000);
@@ -3785,6 +3855,19 @@ route("POST", "/api/v1/uploads", async (ctx) => {
   const contentType = (ctx.req.headers["content-type"] ?? "").split(";")[0]!.trim();
   const filename = decodeURIComponent(String(ctx.req.headers["x-filename"] ?? "archivo"));
   if (!contentType) throw badRequest("Falta la cabecera content-type.");
+
+  const communityId = ctx.url.searchParams.get("community_id");
+  if (communityId) {
+    requireMembership(communityId, user.id);
+    const community = getCommunity(communityId)!;
+    const mode = contentType.startsWith("image/") ? community.media_images
+      : contentType.startsWith("video/") ? community.media_videos
+      : contentType.startsWith("audio/") ? (community.voice_messages ? "server" : "off")
+      : community.media_files;
+    if (mode !== "server") throw badRequest(mode === "p2p"
+      ? "Este tipo se comparte directamente y no se sube a la instancia."
+      : "Este tipo de archivo está apagado en la comunidad.");
+  }
 
   // Directo a disco según llega (§28.3): bufferizar hasta 500 MB en RAM era un
   // pico letal en el anfitrión modesto. Los errores (413, vacío, firma) no cambian.

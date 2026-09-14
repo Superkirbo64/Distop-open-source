@@ -351,6 +351,8 @@ export const COMMUNITY_CATEGORIES = [
   "other",
 ] as const;
 export type CommunityCategory = (typeof COMMUNITY_CATEGORIES)[number];
+export const MEDIA_MODES = ["server", "p2p", "off"] as const;
+export type MediaMode = (typeof MEDIA_MODES)[number];
 
 export interface Community {
   id: Snowflake;
@@ -373,6 +375,12 @@ export interface Community {
   /** Si se pueden mandar audios aquí. Apagarlo rechaza el adjunto en el
       servidor, no solo esconde el botón. */
   voice_messages: boolean;
+  /** Si se pueden adjuntar fotos, vídeos y otros archivos. Igual que los audios:
+      apagarlo rechaza el adjunto en el servidor. Pensado para una VPS, donde es
+      lo que gasta disco y tráfico. */
+  media_images: MediaMode;
+  media_videos: MediaMode;
+  media_files: MediaMode;
   owner_id: Snowflake;
   created_at: number;
 }
@@ -443,6 +451,8 @@ export interface Attachment {
   content_type: string;
   size: number;
   url: string;
+  delivery: "server" | "p2p";
+  content_hash: string | null;
 }
 
 export interface Reaction {
@@ -1253,6 +1263,8 @@ export const GATEWAY_EVENTS = [
   "VOICE_SIGNAL",
   "VOICE_SOUND",
   "VOICE_SOUND_ERROR",
+  "P2P_FILE_REQUEST",
+  "P2P_FILE_SIGNAL",
   "ROLE_UPDATE",
   "ROLE_DELETE",
   "READ_UPDATE",
@@ -1323,6 +1335,8 @@ export type ServerEvent =
       t: "VOICE_SOUND_ERROR";
       d: { channel_id: Snowflake; sound_id: Snowflake; reason: VoiceSoundRejectReason };
     }
+  | { t: "P2P_FILE_REQUEST"; d: { attachment_id: Snowflake; channel_id: Snowflake; requester_id: Snowflake } }
+  | { t: "P2P_FILE_SIGNAL"; d: { attachment_id: Snowflake; channel_id: Snowflake; from_user_id: Snowflake; payload: unknown } }
   /* La sala de la carrera entera y no el cambio: son cinco campos y así no hay
      dos maneras de tenerla desincronizada. `lobby` en null es "aquí ya no hay
      carrera", que es lo que ve quien llega cuando el anfitrión la cerró. */
@@ -1406,6 +1420,9 @@ export type ClientCommand =
   | { t: "VOICE_SIGNAL"; d: { channel_id: Snowflake; to_user_id: Snowflake; payload: unknown } }
   | { t: "VOICE_MODERATE"; d: { channel_id: Snowflake; user_id: Snowflake; action: VoiceAction } }
   | { t: "VOICE_SOUND"; d: { channel_id: Snowflake; sound_id: Snowflake } }
+  | { t: "P2P_FILE_ANNOUNCE"; d: { attachment_id: Snowflake; channel_id: Snowflake } }
+  | { t: "P2P_FILE_REQUEST"; d: { attachment_id: Snowflake; channel_id: Snowflake } }
+  | { t: "P2P_FILE_SIGNAL"; d: { attachment_id: Snowflake; channel_id: Snowflake; to_user_id: Snowflake; payload: unknown } }
   /* Abrir es también apuntarse: quien pulsa el botón cuando ya hay una sala
      abierta se une a esa, no crea una segunda. */
   | { t: "RACE_OPEN"; d: { channel_id: Snowflake } }
