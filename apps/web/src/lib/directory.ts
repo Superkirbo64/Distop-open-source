@@ -176,7 +176,10 @@ export const EXPLORE_PAGE_SIZE = 20;
  */
 async function respondsHealth(origin: string): Promise<boolean> {
   try {
-    await fetch(`${origin}/health`, { mode: "no-cors", signal: AbortSignal.timeout(4_000) });
+    /* Sin cookies ni Referer: el servidor sondeado no sabe quién mira Explorar.
+       (`redirect: "error"` no se admite con no-cors; un 4xx/5xx opaco cuenta
+       como "llega", que es lo único que se pregunta.) */
+    await fetch(`${origin}/health`, { mode: "no-cors", credentials: "omit", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(4_000) });
     return true;
   } catch {
     return false;

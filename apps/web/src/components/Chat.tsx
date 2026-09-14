@@ -6,9 +6,11 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { CalendarClock, ChevronDown, CornerUpLeft, Hash, Megaphone, MessageSquareText, MonitorUp, MoreVertical, Paperclip, PhoneOff, Pin, Search, Smile, VideoOff, Volume2, X } from "lucide-react";
 import { Microphone, People, Send, Upload } from "./icons.tsx";
-import { PERMISSIONS, has, isJumbo, toBits, type Attachment, type Channel, type Member, type Message } from "@distop/protocol";
+import { PERMISSIONS, has, isJumbo, toBits, type Attachment, type Channel, type MediaMode, type Member, type Message } from "@distop/protocol";
 import { useStore } from "../store.ts";
 import { api, upload } from "../lib/api.ts";
+import { rememberSent, sha256 } from "../lib/p2pFiles.ts";
+import { P2PAttachment } from "./P2PAttachment.tsx";
 import { Picker } from "./Picker.tsx";
 import { renderContent, type RenderContext } from "../lib/markdown.tsx";
 import { VoiceFunMenu, VoiceSoundboard, VoiceSoundError, VoiceStage, useVoiceLocal } from "./Voice.tsx";
@@ -869,7 +871,11 @@ const MessageRow = memo(function MessageRow({
         {message.attachments.length > 0 ? (
           <ul className="mt-1.5 flex flex-wrap gap-2">
             {message.attachments.map((file) =>
-              file.content_type.startsWith("image/") && file.content_type !== "image/svg+xml" ? (
+              file.delivery === "p2p" ? (
+                <li key={file.id} className="min-w-0 max-w-full">
+                  <P2PAttachment file={file} channelId={message.channel_id} onViewImage={onViewImage} />
+                </li>
+              ) : file.content_type.startsWith("image/") && file.content_type !== "image/svg+xml" ? (
                 <li key={file.id}>
                   {/* Abre en un diálogo, no en otra pestaña: mirar una foto no
                       debería sacarte de la conversación ni de la llamada. */}
@@ -1152,11 +1158,14 @@ function Composer({
   const locale = useLocale();
   const send = useStore((s) => s.send);
   const communityId = useStore((s) => s.activeCommunityId);
+  const community = useStore((s) => s.communities.find((item) => item.id === communityId));
   const notifyTyping = useStore((s) => s.notifyTyping);
   const maxUploadMb = useStore((s) => s.instance?.max_upload_mb ?? 25);
 
   const [text, setText] = useState("");
-  const [pending, setPending] = useState<Array<{ id: string; filename: string; size: number; url?: string; content_type?: string }>>([]);
+  /* `file` solo en los P2P: el cuerpo se queda en este dispositivo y se sirve
+     desde aquí cuando el mensaje ya existe. */
+  const [pending, setPending] = useState<Array<{ id: string; filename: string; size: number; url?: string; content_type?: string; file?: File }>>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -1352,6 +1361,7 @@ function Composer({
     setError(null);
     try {
       await send(channelId, content, pending.map((file) => file.id), replyTo?.id ?? null);
+      for (const item of pending) if (item.file) void rememberSent(item.id, channelId, item.file);
       setText("");
       setPending([]);
       setToken(null);
@@ -1383,6 +1393,13 @@ function Composer({
     }
   }
 
+  /** Dónde viaja cada tipo según el admin. Los audios siguen su propio interruptor. */
+  function mediaMode(type: string): MediaMode {
+    if (!community || type.startsWith("audio/")) return "server";
+    const mode = type.startsWith("image/") ? community.media_images : type.startsWith("video/") ? community.media_videos : community.media_files;
+    return mode ?? "server"; // instancia vieja sin modos
+  }
+
   async function attach(files: FileList | File[] | null) {
     if (!files?.length) return;
     setError(null);
@@ -1391,7 +1408,23 @@ function Composer({
         setError(t("message.tooLarge", { mb: maxUploadMb }));
         continue;
       }
+      const mode = mediaMode(file.type);
+      if (mode === "off") {
+        setError(t("message.mediaOff"));
+        continue;
+      }
       try {
+        if (mode === "p2p") {
+          // A la instancia solo va la ficha; el archivo sale de aquí por WebRTC.
+          const ficha = await api<Attachment>("POST", `/api/v1/channels/${channelId}/p2p-files`, {
+            filename: file.name,
+            content_type: file.type || "application/octet-stream",
+            size: file.size,
+            content_hash: await sha256(file),
+          });
+          setPending((prev) => [...prev, { id: ficha.id, filename: ficha.filename, size: ficha.size, url: URL.createObjectURL(file), content_type: ficha.content_type, file }]);
+          continue;
+        }
         const uploaded = await upload(file, communityId ?? undefined);
         setPending((prev) => [...prev, { id: uploaded.id, filename: uploaded.filename, size: uploaded.size, url: uploaded.url, content_type: uploaded.content_type }]);
       } catch (err) {

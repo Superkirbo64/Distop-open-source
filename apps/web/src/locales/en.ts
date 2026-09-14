@@ -443,6 +443,13 @@ export const en: Record<keyof typeof es, string> = {
   "message.noPermission": "You cannot post in this channel.",
   "message.timedOut": "You are timed out right now.",
   "message.tooLarge": "That file is over the server's limit ({mb} MB).",
+  "message.mediaOff": "The community admin turned this file type off.",
+  "message.p2pSearching": "Looking for someone who has it…",
+  "message.p2pProgress": "Receiving {pct}%",
+  "message.p2pOffline": "Not available now: whoever has it is offline.",
+  "message.p2pCorrupt": "It arrived damaged and was discarded.",
+  "message.p2pRetry": "Retry",
+  "message.p2pLoad": "Receive directly",
 
   "voice.inChannel": "In a voice channel",
   "voice.invite": "Invite to the call",

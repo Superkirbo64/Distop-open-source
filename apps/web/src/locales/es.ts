@@ -445,6 +445,13 @@ export const es = {
   "message.noPermission": "No puedes escribir en este canal.",
   "message.timedOut": "Estás silenciado temporalmente.",
   "message.tooLarge": "El archivo supera el límite del servidor ({mb} MB).",
+  "message.mediaOff": "Quien administra la comunidad apagó este tipo de archivo.",
+  "message.p2pSearching": "Buscando a quien lo tiene…",
+  "message.p2pProgress": "Recibiendo {pct} %",
+  "message.p2pOffline": "No disponible ahora: quien lo tiene no está conectado.",
+  "message.p2pCorrupt": "Llegó dañado y se descartó.",
+  "message.p2pRetry": "Reintentar",
+  "message.p2pLoad": "Recibir directo",
 
   "voice.inChannel": "En canal de voz",
   "voice.invite": "Invitar a la llamada",

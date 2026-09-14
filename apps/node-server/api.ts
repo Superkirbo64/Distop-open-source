@@ -222,7 +222,24 @@ function movedTo(): { origin: string | null; certificate_chain: unknown[] } | nu
   return registro ? { origin: registro.origin, certificate_chain: [registro.certificate] } : null;
 }
 
-route("GET", "/api/v1/info", async (ctx) => ({
+/* Qué galerías tiene de verdad el directorio (que haya DIRECTORY_URL no dice si
+   Deno tiene las claves). Se pregunta en segundo plano cada 5 min y /info
+   responde con lo último sabido: un fallo temporal no apaga la pestaña. */
+const directoryGalleries = { gifs: true, stickers: true, checkedAt: 0 };
+function refreshDirectoryGalleries(): void {
+  if (!config.directoryUrl || Date.now() - directoryGalleries.checkedAt < 5 * 60_000) return;
+  directoryGalleries.checkedAt = Date.now();
+  void fetch(`${config.directoryUrl}/v1/expressions/status`, { signal: AbortSignal.timeout(5000) })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((status: { gifs?: unknown; stickers?: unknown } | null) => {
+      if (!status) return;
+      directoryGalleries.gifs = status.gifs === true;
+      directoryGalleries.stickers = status.stickers === true;
+    })
+    .catch(() => undefined);
+}
+
+route("GET", "/api/v1/info", async (ctx) => (refreshDirectoryGalleries(), {
   instance_id: INSTANCE_ID,
   lineage_id: LINEAGE_ID,
   epoch: instanceEpoch(),
@@ -248,10 +265,10 @@ route("GET", "/api/v1/info", async (ctx) => ({
   allowed_upload_types: config.allowedUploadTypes,
   /* Booleano y nunca la clave: el cliente solo necesita saber si enseñar la
      pestaña. La clave no sale de la instancia jamás (§13.3). */
-  gif_enabled: config.giphyApiKey !== "" || config.klipyApiKey !== "" || config.directoryUrl !== "",
+  gif_enabled: config.giphyApiKey !== "" || config.klipyApiKey !== "" || (config.directoryUrl !== "" && directoryGalleries.gifs),
   /** La galeria de stickers va por su cuenta: otra clave, otro servicio. Sin
       clave propia, la del directorio del proyecto. */
-  sticker_gallery_enabled: config.klipyApiKey !== "" || config.directoryUrl !== "",
+  sticker_gallery_enabled: config.klipyApiKey !== "" || (config.directoryUrl !== "" && directoryGalleries.stickers),
   /** Dirección por la que llega la gente de fuera; vacía = solo local (§6).
       Si hay un túnel abierto desde la app, esa manda sobre la del .env. */
   public_url: publicUrl(),

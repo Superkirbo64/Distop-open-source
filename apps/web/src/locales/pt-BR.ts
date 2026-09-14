@@ -448,6 +448,13 @@ export const ptBR: Record<keyof typeof es, string> = {
   "message.noPermission": "Você não pode escrever neste canal.",
   "message.timedOut": "Você está silenciado no momento.",
   "message.tooLarge": "O arquivo passa do limite do servidor ({mb} MB).",
+  "message.mediaOff": "Quem administra a comunidade desligou este tipo de arquivo.",
+  "message.p2pSearching": "Procurando quem tem o arquivo…",
+  "message.p2pProgress": "Recebendo {pct}%",
+  "message.p2pOffline": "Indisponível agora: quem tem o arquivo está offline.",
+  "message.p2pCorrupt": "Chegou danificado e foi descartado.",
+  "message.p2pRetry": "Tentar de novo",
+  "message.p2pLoad": "Receber direto",
 
   "voice.inChannel": "Em canal de voz",
   "voice.invite": "Convidar para a chamada",

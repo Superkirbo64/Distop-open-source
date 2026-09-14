@@ -136,10 +136,14 @@ export function seedCommunity(opts: {
 
   const visibility = opts.visibility ?? (opts.isPublic ? "public" : "private");
   const joinPolicy = opts.joinPolicy ?? "invite";
+  /* Decisión de Kirbo (14-09): en una VPS las fotos, vídeos y archivos viajan
+     entre miembros; en el PC de quien hospeda se guardan en su disco. El admin
+     puede cambiarlo después en Gestionar. */
+  const media = meta("deployment_profile", () => process.env.DEPLOYMENT_PROFILE === "vps_cloud" ? "vps_cloud" : "personal_pc") === "vps_cloud" ? "p2p" : "server";
   db.prepare(
     `INSERT INTO communities
-       (id, name, slug, accent_color, is_public, visibility, join_policy, category, owner_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, name, slug, accent_color, is_public, visibility, join_policy, category, owner_id, created_at, media_images, media_videos, media_files)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     communityId,
     opts.name,
@@ -151,6 +155,9 @@ export function seedCommunity(opts: {
     opts.category ?? "other",
     opts.ownerId,
     now,
+    media,
+    media,
+    media,
   );
 
   db.prepare(

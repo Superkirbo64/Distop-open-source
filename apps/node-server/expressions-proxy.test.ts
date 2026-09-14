@@ -17,8 +17,14 @@ import { join } from "node:path";
 const pedidas: string[] = [];
 let apagado = false;
 const directorio = createServer((req, res) => {
-  pedidas.push(req.url ?? "");
   res.setHeader("content-type", "application/json");
+  if (req.url === "/v1/expressions/status") {
+    // Deno con clave de Giphy pero sin la de Klipy: hay GIF, no stickers.
+    res.writeHead(200);
+    res.end(JSON.stringify({ gifs: true, stickers: false }));
+    return;
+  }
+  pedidas.push(req.url ?? "");
   if (apagado) {
     res.writeHead(404);
     res.end(JSON.stringify({ error: "EXPRESSIONS_DISABLED" }));
@@ -69,10 +75,13 @@ after(async () => {
 
 const pedir = (path: string) => fetch(`${base}${path}`, { headers: { authorization: `Bearer ${token}` } });
 
-test("sin claves propias la instancia ofrece GIF y stickers porque hay directorio", async () => {
-  const info = await fetch(`${base}/api/v1/info`).then((r) => r.json() as Promise<Record<string, unknown>>);
-  assert.equal(info.gif_enabled, true);
-  assert.equal(info.sticker_gallery_enabled, true);
+test("sin claves propias la instancia ofrece lo que el directorio dice tener", async () => {
+  const info = () => fetch(`${base}/api/v1/info`).then((r) => r.json() as Promise<Record<string, unknown>>);
+  await info(); // la primera dispara la consulta al directorio
+  await new Promise((r) => setTimeout(r, 200));
+  const despues = await info();
+  assert.equal(despues.gif_enabled, true);
+  assert.equal(despues.sticker_gallery_enabled, false, "sin clave de Klipy en Deno no se anuncia la galería de stickers");
 });
 
 test("los GIF y los stickers se piden al directorio y solo pasa lo que es HTTPS", async () => {

@@ -38,6 +38,7 @@ import { notify, setSoundsEnabled, type NotifyLevel } from "./lib/notify.ts";
 import { addNotice, loadNotices, saveNotices, type Notice, type NoticeKind } from "./lib/notices.ts";
 import { configureVoice, currentChannel, handleSignal, leaveVoice, rejectVoiceJoin, resumeVoice, setSoundError, setVideoMode, setVoiceMode, syncPeers } from "./lib/voice.ts";
 import { playClip } from "./lib/relay.ts";
+import { announceHeld, configureP2PFiles, handleP2PRequest, handleP2PSignal } from "./lib/p2pFiles.ts";
 import { onRecordingUpdate } from "./lib/record.ts";
 import { CENTRAL_DIRECTORY_URL, appWithoutInstance, clearPendingPublicJoin, forgetCommunity, instanceBase, isLocalInstance, isPackaged, peekPendingInvite, peekPendingPublicJoin, rememberCommunities, setActiveInstance, setDesktopAvailabilityStatus, takePendingInvite, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
 import { localUser, portableAuthPayload, syncPortableMedia } from "./lib/portable.ts";
@@ -1070,6 +1071,8 @@ onEvent((event: ServerEvent) => {
       if (instanceBase) rememberCommunities(instanceBase, event.d.communities);
       void setDesktopAvailabilityStatus(true);
       configureVoice(event.d.user.id, iceServers);
+      configureP2PFiles(iceServers);
+      void announceHeld();
 
       /* A TODAS las comunidades, no solo a la abierta: si solo llegaran los
          mensajes de la que estás mirando, el resto de la barra jamás se
@@ -1386,6 +1389,16 @@ onEvent((event: ServerEvent) => {
 
     case "VOICE_SIGNAL": {
       void handleSignal(event.d.from_user_id, event.d.payload);
+      return;
+    }
+
+    case "P2P_FILE_REQUEST": {
+      void handleP2PRequest(event.d);
+      return;
+    }
+
+    case "P2P_FILE_SIGNAL": {
+      handleP2PSignal(event.d);
       return;
     }
 
