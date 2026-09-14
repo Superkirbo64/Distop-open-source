@@ -1166,6 +1166,12 @@ export const es = {
 
 "common.saving": "Guardando…",
 
+  "community.mediaImages": "Fotos",
+  "community.mediaImagesHint": "Deja adjuntar imágenes en los canales. Apágalo si tu servidor es una VPS pequeña: cada foto ocupa disco y tráfico.",
+  "community.mediaVideos": "Vídeos",
+  "community.mediaVideosHint": "Deja adjuntar vídeos. Son lo que más gasta: en una VPS conviene tenerlos apagados.",
+  "community.mediaFiles": "Otros archivos",
+  "community.mediaFilesHint": "Deja adjuntar documentos y cualquier otro archivo que no sea foto, vídeo ni audio.",
   "community.voiceMessages": "Mensajes de voz",
   "community.voiceMessagesHint":
     "Deja que la gente grabe audio y lo mande en los canales. Ocupa sitio en tu servidor y hay que moderarlo como cualquier otro archivo.",

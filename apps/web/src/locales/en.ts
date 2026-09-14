@@ -1152,6 +1152,12 @@ export const en: Record<keyof typeof es, string> = {
 
 "common.saving": "Saving…",
 
+  "community.mediaImages": "Photos",
+  "community.mediaImagesHint": "Let people attach images in channels. Turn it off if your server is a small VPS: every photo uses disk and bandwidth.",
+  "community.mediaVideos": "Videos",
+  "community.mediaVideosHint": "Let people attach videos. They cost the most: on a VPS it is best to keep them off.",
+  "community.mediaFiles": "Other files",
+  "community.mediaFilesHint": "Let people attach documents and any other file that is not a photo, video or audio.",
   "community.voiceMessages": "Voice messages",
   "community.voiceMessagesHint":
     "Let people record audio and send it in channels. It takes up space on your server and needs moderating like any other file.",

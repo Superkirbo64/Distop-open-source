@@ -174,6 +174,9 @@ function Overview({ community }: { community: Community }) {
     rules: community.rules ?? "",
     category: community.category ?? "other",
     voice_messages: community.voice_messages !== false,
+    media_images: community.media_images !== false,
+    media_videos: community.media_videos !== false,
+    media_files: community.media_files !== false,
   });
   const [state, setState] = useState<"idle" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -271,6 +274,25 @@ function Overview({ community }: { community: Community }) {
         onChange={(voice_messages) => setForm({ ...form, voice_messages })}
         label={t("community.voiceMessages")}
         hint={t("community.voiceMessagesHint")}
+      />
+      {/* Lo mismo para lo que más gasta en una VPS: fotos, vídeos y archivos. */}
+      <Toggle
+        checked={form.media_images}
+        onChange={(media_images) => setForm({ ...form, media_images })}
+        label={t("community.mediaImages")}
+        hint={t("community.mediaImagesHint")}
+      />
+      <Toggle
+        checked={form.media_videos}
+        onChange={(media_videos) => setForm({ ...form, media_videos })}
+        label={t("community.mediaVideos")}
+        hint={t("community.mediaVideosHint")}
+      />
+      <Toggle
+        checked={form.media_files}
+        onChange={(media_files) => setForm({ ...form, media_files })}
+        label={t("community.mediaFiles")}
+        hint={t("community.mediaFilesHint")}
       />
 
       {error ? <ErrorNote>{error}</ErrorNote> : null}

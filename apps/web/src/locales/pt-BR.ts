@@ -1161,6 +1161,12 @@ export const ptBR: Record<keyof typeof es, string> = {
 
 "common.saving": "Salvando…",
 
+  "community.mediaImages": "Fotos",
+  "community.mediaImagesHint": "Deixa anexar imagens nos canais. Desligue se o seu servidor for uma VPS pequena: cada foto ocupa disco e tráfego.",
+  "community.mediaVideos": "Vídeos",
+  "community.mediaVideosHint": "Deixa anexar vídeos. São o que mais gasta: numa VPS é melhor deixá-los desligados.",
+  "community.mediaFiles": "Outros arquivos",
+  "community.mediaFilesHint": "Deixa anexar documentos e qualquer outro arquivo que não seja foto, vídeo ou áudio.",
   "community.voiceMessages": "Mensagens de voz",
   "community.voiceMessagesHint":
     "Deixa as pessoas gravarem áudio e mandarem nos canais. Ocupa espaço no seu servidor e precisa de moderação como qualquer outro arquivo.",

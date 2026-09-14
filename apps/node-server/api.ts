@@ -937,7 +937,9 @@ route("PATCH", "/api/v1/communities/:id", async (ctx) => {
   }
   if (body.join_policy !== undefined) fields.push(["join_policy", v.oneOf(body, "join_policy", COMMUNITY_JOIN_POLICIES)]);
   if (body.category !== undefined) fields.push(["category", v.oneOf(body, "category", COMMUNITY_CATEGORIES)]);
-  if (body.voice_messages !== undefined) fields.push(["voice_messages", v.bool(body, "voice_messages", true) ? 1 : 0]);
+  for (const key of ["voice_messages", "media_images", "media_videos", "media_files"] as const) {
+    if (body[key] !== undefined) fields.push([key, v.bool(body, key, true) ? 1 : 0]);
+  }
   if (fields.length === 0) return getCommunity(communityId);
 
   db.prepare(`UPDATE communities SET ${fields.map(([k]) => `${k} = ?`).join(", ")} WHERE id = ?`).run(
@@ -1845,14 +1847,21 @@ route("POST", "/api/v1/channels/:id/messages", async (ctx) => {
   const replyTo = v.optionalString(body, "reply_to_id", { max: 64 }) ?? null;
 
   if (attachmentIds.length > 0) requireChannelPerm(channel.id, user.id, PERMISSIONS.ATTACH_FILES, "adjuntar archivos");
-  /* Audios suspendidos: se comprueba aquí y no solo en la interfaz, porque
-     esconder el botón no impide subir el fichero y adjuntarlo a mano. */
-  if (attachmentIds.length > 0 && getCommunity(channel.community_id)?.voice_messages === false) {
+  /* Tipos suspendidos (audios, fotos, vídeos, archivos): se comprueba aquí y no
+     solo en la interfaz, porque esconder el botón no impide subir el fichero y
+     adjuntarlo a mano. */
+  if (attachmentIds.length > 0) {
+    const comunidad = getCommunity(channel.community_id);
     const marcas = attachmentIds.map(() => "?").join(",");
-    const audio = db
-      .prepare(`SELECT 1 FROM attachments WHERE id IN (${marcas}) AND owner_id = ? AND content_type LIKE 'audio/%' LIMIT 1`)
-      .get(...attachmentIds, user.id);
-    if (audio) throw badRequest("Esta comunidad tiene los audios suspendidos.");
+    const tipos = (db
+      .prepare(`SELECT content_type FROM attachments WHERE id IN (${marcas}) AND owner_id = ?`)
+      .all(...attachmentIds, user.id) as Array<{ content_type: string }>).map((row) => row.content_type);
+    const hay = (prefijo: string) => tipos.some((tipo) => tipo.startsWith(prefijo));
+    if (comunidad?.voice_messages === false && hay("audio/")) throw badRequest("Esta comunidad tiene los audios suspendidos.");
+    if (comunidad?.media_images === false && hay("image/")) throw badRequest("Esta comunidad no admite fotos.");
+    if (comunidad?.media_videos === false && hay("video/")) throw badRequest("Esta comunidad no admite vídeos.");
+    if (comunidad?.media_files === false && tipos.some((tipo) => !/^(audio|image|video)\//.test(tipo)))
+      throw badRequest("Esta comunidad no admite archivos.");
   }
   if (replyTo && !db.prepare("SELECT 1 FROM messages WHERE id = ? AND channel_id = ?").get(replyTo, channel.id))
     throw badRequest("El mensaje al que respondes no está en este canal.");

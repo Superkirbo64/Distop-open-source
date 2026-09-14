@@ -23,12 +23,22 @@ interface CommunityRow {
   join_policy: CommunityJoinPolicy;
   category: CommunityCategory;
   voice_messages: number;
+  media_images: number;
+  media_videos: number;
+  media_files: number;
   owner_id: string;
   created_at: number;
 }
 
 export function toCommunity(row: CommunityRow): Community {
-  return { ...row, is_public: row.visibility === "public", voice_messages: row.voice_messages === 1 };
+  return {
+    ...row,
+    is_public: row.visibility === "public",
+    voice_messages: row.voice_messages === 1,
+    media_images: row.media_images === 1,
+    media_videos: row.media_videos === 1,
+    media_files: row.media_files === 1,
+  };
 }
 
 export function getCommunity(id: string): Community | null {

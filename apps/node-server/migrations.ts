@@ -720,6 +720,16 @@ export const MIGRATIONS: string[] = [
     FROM host_authority
    WHERE id = 1 AND user_id IS NOT NULL;
   `,
+
+  /* Qué se puede adjuntar en el chat, por tipo, como los audios. En una VPS lo
+     que gasta disco y tráfico son las fotos, los vídeos y los archivos: quien
+     hospeda puede apagarlos sin tocar permisos de nadie. Encendidos de fábrica:
+     actualizar Distop no quita nada que ya se usaba. */
+  `
+  ALTER TABLE communities ADD COLUMN media_images INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE communities ADD COLUMN media_videos INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE communities ADD COLUMN media_files INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

@@ -373,6 +373,12 @@ export interface Community {
   /** Si se pueden mandar audios aquí. Apagarlo rechaza el adjunto en el
       servidor, no solo esconde el botón. */
   voice_messages: boolean;
+  /** Si se pueden adjuntar fotos, vídeos y otros archivos. Igual que los audios:
+      apagarlo rechaza el adjunto en el servidor. Pensado para una VPS, donde es
+      lo que gasta disco y tráfico. */
+  media_images: boolean;
+  media_videos: boolean;
+  media_files: boolean;
   owner_id: Snowflake;
   created_at: number;
 }
