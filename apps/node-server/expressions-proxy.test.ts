@@ -29,6 +29,7 @@ const directorio = createServer((req, res) => {
     results: [
       { id: "g1", url: "https://static.klipy.com/a.webp", preview: "https://static.klipy.com/a-xs.webp", title: "Gato", width: 200, height: 180 },
       { id: "malo", url: "http://inseguro.example/a.gif", preview: "http://inseguro.example/b.gif", title: "", width: 0, height: 0 },
+      { id: "tipos", url: "https://static.klipy.com/t.webp", preview: "https://static.klipy.com/t-xs.webp", title: { no: "texto" }, width: "enorme", height: -4 },
     ],
   }));
 });
@@ -77,7 +78,9 @@ test("sin claves propias la instancia ofrece GIF y stickers porque hay directori
 test("los GIF y los stickers se piden al directorio y solo pasa lo que es HTTPS", async () => {
   const gifs = await pedir("/api/v1/gifs?q=gato&limit=10");
   assert.equal(gifs.status, 200);
-  assert.deepEqual((await gifs.json() as Array<{ id: string }>).map((g) => g.id), ["g1"], "lo que no es HTTPS no llega al cliente");
+  const lista = await gifs.json() as Array<{ id: string; title: string; width: number; height: number }>;
+  assert.deepEqual(lista.map((g) => g.id), ["g1", "tipos"], "lo que no es HTTPS no llega al cliente");
+  assert.deepEqual(lista[1], { id: "tipos", url: "https://static.klipy.com/t.webp", preview: "https://static.klipy.com/t-xs.webp", title: "", width: 0, height: 0 }, "los demás campos se normalizan y no atraviesan tipos arbitrarios");
   const pedidaGifs = new URL(pedidas.at(-1)!, "http://x");
   assert.equal(pedidaGifs.pathname, "/v1/expressions");
   assert.equal(pedidaGifs.searchParams.get("kind"), "gifs");

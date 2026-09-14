@@ -495,6 +495,27 @@ export function linkDirectAttachments(messageId: string, ids: string[], ownerId:
  */
 export const CDN_REENVIABLE = /^(media[0-9]?\.giphy\.com|i\.giphy\.com|static[0-9]?\.klipy\.com)$/;
 
+async function readRemoteFile(res: Response): Promise<Buffer> {
+  const limit = config.maxUploadMb * 1024 * 1024;
+  const announced = Number(res.headers.get("content-length")) || 0;
+  if (announced > limit)
+    throw new HttpError(413, "PAYLOAD_TOO_LARGE", `El archivo pasa del límite de ${config.maxUploadMb} MB de esta instancia.`);
+  if (!res.body) throw new HttpError(502, "UPSTREAM_ERROR", "El archivo no se pudo traer.");
+
+  const chunks: Buffer[] = [];
+  let received = 0;
+  for await (const chunk of res.body) {
+    const part = Buffer.from(chunk);
+    received += part.length;
+    if (received > limit) {
+      await res.body.cancel().catch(() => undefined);
+      throw new HttpError(413, "PAYLOAD_TOO_LARGE", `El archivo pasa del límite de ${config.maxUploadMb} MB de esta instancia.`);
+    }
+    chunks.push(part);
+  }
+  return Buffer.concat(chunks, received);
+}
+
 export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
   const row = db
     .prepare("SELECT filename, content_type, size, path, source_url FROM attachments WHERE id = ?")
@@ -516,8 +537,12 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
     }
     if (origen.protocol !== "https:" || !CDN_REENVIABLE.test(origen.hostname)) throw notFound("Archivo no encontrado.");
 
-    const res = await fetch(origen, { signal: AbortSignal.timeout(8000) }).catch(() => null);
+    /* No seguir redirecciones: una URL permitida no puede usarse como trampolín
+       hacia otro host. El cuerpo se corta aunque el CDN omita o falsee
+       Content-Length, evitando reservar memoria sin límite. */
+    const res = await fetch(origen, { redirect: "error", signal: AbortSignal.timeout(8000) }).catch(() => null);
     if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "El archivo no se pudo traer.");
+    const data = await readRemoteFile(res);
 
     ctx.res.writeHead(200, {
       ...corsHeaders(ctx.req.headers.origin),
@@ -526,7 +551,7 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
       "x-content-type-options": "nosniff",
       "content-security-policy": "default-src 'none'; sandbox",
     });
-    ctx.res.end(Buffer.from(await res.arrayBuffer()));
+    ctx.res.end(data);
     return HANDLED;
   }
 

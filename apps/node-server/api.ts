@@ -2879,10 +2879,24 @@ async function askDirectory(kind: "gifs" | "stickers", consulta: string, limite:
   if (res?.status === 404) throw notFound("Las galerías del proyecto todavía no están activadas.");
   if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "La galería no respondió. Prueba otra vez en un momento.");
   const json = (await res.json()) as { results?: unknown[] };
-  // Solo HTTPS: lo que se pinta y lo que se guarda después tiene que ser de un CDN real.
-  return (Array.isArray(json.results) ? json.results : []).filter((raw): raw is Gif => {
+  /* La respuesta del directorio cruza una frontera de confianza. Validar solo
+     `id` y las URL dejaba pasar títulos/medidas con tipos arbitrarios bajo un
+     type guard engañoso. Normalizamos los seis campos y respetamos el mismo
+     tope que la API pública antes de entregarlos al cliente. */
+  return (Array.isArray(json.results) ? json.results : []).slice(0, 50).flatMap((raw): Gif[] => {
+    if (!raw || typeof raw !== "object") return [];
     const gif = raw as Partial<Gif>;
-    return typeof gif.id === "string" && /^https:\/\//.test(gif.url ?? "") && /^https:\/\//.test(gif.preview ?? "");
+    if (typeof gif.id !== "string" || gif.id.length === 0 || gif.id.length > 200) return [];
+    if (typeof gif.url !== "string" || typeof gif.preview !== "string") return [];
+    if (!/^https:\/\//.test(gif.url) || !/^https:\/\//.test(gif.preview)) return [];
+    return [{
+      id: gif.id,
+      url: gif.url,
+      preview: gif.preview,
+      title: typeof gif.title === "string" ? gif.title.slice(0, 120) : "",
+      width: Number.isFinite(gif.width) && Number(gif.width) >= 0 ? Math.trunc(Number(gif.width)) : 0,
+      height: Number.isFinite(gif.height) && Number(gif.height) >= 0 ? Math.trunc(Number(gif.height)) : 0,
+    }];
   });
 }
 
@@ -3150,10 +3164,12 @@ route("POST", "/api/v1/gifs/save", async (ctx) => {
   if (destino.protocol !== "https:" || !CDN_REENVIABLE.test(destino.hostname))
     throw badRequest("Solo se aceptan archivos de las galerias de la instancia.");
 
-  const head = await fetch(destino, { method: "HEAD", signal: AbortSignal.timeout(8000) }).catch(() => null);
+  const head = await fetch(destino, { method: "HEAD", redirect: "error", signal: AbortSignal.timeout(8000) }).catch(() => null);
   if (!head?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "No se pudo comprobar el archivo.");
 
   const tipo = head.headers.get("content-type")?.split(";")[0]?.trim() ?? "image/gif";
+  if (!tipo.startsWith("image/") || tipo === "image/svg+xml")
+    throw badRequest("La galería respondió con un formato que no es una imagen segura.");
   const tamano = Number(head.headers.get("content-length")) || 0;
   if (tamano > MAX_UPLOAD_BYTES)
     throw new HttpError(413, "PAYLOAD_TOO_LARGE", `El GIF pasa del límite de ${config.maxUploadMb} MB de esta instancia.`);
