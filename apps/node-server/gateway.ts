@@ -570,10 +570,14 @@ function handleCommand(client: Client, raw: string): void {
       const { attachment_id: attachmentId, channel_id: channelId } = cmd.d ?? {};
       if (typeof attachmentId !== "string" || typeof channelId !== "string") return;
       if (!dentroDeLimite(client, "p2p-announce", 30)) return;
+      /* También sin enlazar todavía: quien envía se anuncia al adjuntar, porque
+         quien recibe pide el archivo en cuanto le llega el mensaje. Pedirlo sí
+         exige el mensaje en ese canal (P2P_FILE_REQUEST). */
       const owned = db.prepare(
         `SELECT 1 FROM attachments a
-         JOIN messages m ON m.id = a.message_id
-         WHERE a.id = ? AND a.owner_id = ? AND a.delivery = 'p2p' AND m.channel_id = ?`,
+         LEFT JOIN messages m ON m.id = a.message_id
+         WHERE a.id = ? AND a.owner_id = ? AND a.delivery = 'p2p'
+           AND a.direct_message_id IS NULL AND (a.message_id IS NULL OR m.channel_id = ?)`,
       ).get(attachmentId, client.userId, channelId);
       if (!owned || !has(channelPermissions(channelId, client.userId), PERMISSIONS.VIEW_CHANNEL)) return;
       const sources = p2pSources.get(attachmentId) ?? new Set<Client>();

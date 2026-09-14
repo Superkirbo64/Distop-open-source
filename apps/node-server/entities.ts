@@ -31,13 +31,12 @@ interface CommunityRow {
 }
 
 export function toCommunity(row: CommunityRow): Community {
+  // Las columnas *_enabled son las booleanas viejas que dejó la migración: no salen.
+  const { media_images_enabled: _i, media_videos_enabled: _v, media_files_enabled: _f, ...rest } = row as CommunityRow & Record<string, unknown>;
   return {
-    ...row,
+    ...rest,
     is_public: row.visibility === "public",
     voice_messages: row.voice_messages === 1,
-    media_images: row.media_images,
-    media_videos: row.media_videos,
-    media_files: row.media_files,
   };
 }
 

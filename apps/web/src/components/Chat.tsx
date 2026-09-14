@@ -1361,7 +1361,6 @@ function Composer({
     setError(null);
     try {
       await send(channelId, content, pending.map((file) => file.id), replyTo?.id ?? null);
-      for (const item of pending) if (item.file) void rememberSent(item.id, channelId, item.file);
       setText("");
       setPending([]);
       setToken(null);
@@ -1422,7 +1421,11 @@ function Composer({
             size: file.size,
             content_hash: await sha256(file),
           });
-          setPending((prev) => [...prev, { id: ficha.id, filename: ficha.filename, size: ficha.size, url: URL.createObjectURL(file), content_type: ficha.content_type, file }]);
+          /* Anunciarse ya, antes de enviar: quien reciba el mensaje lo pide en el
+             mismo instante en que llega, y la fuente tiene que estar lista. */
+          // ponytail: si se quita de la bandeja sin enviar, queda en IndexedDB sin uso.
+          void rememberSent(ficha.id, channelId, file);
+          setPending((prev) => [...prev, { id: ficha.id, filename: ficha.filename, size: ficha.size, url: URL.createObjectURL(file), content_type: ficha.content_type }]);
           continue;
         }
         const uploaded = await upload(file, communityId ?? undefined);

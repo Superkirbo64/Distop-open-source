@@ -11,6 +11,7 @@ import { sendCommand } from "./gateway";
 
 const CHUNK = 64 * 1024;
 const WAIT_MS = 15_000;
+const RETRY_MS = 5_000;
 
 let iceServers: RTCIceServer[] = [];
 export function configureP2PFiles(servers: RTCIceServer[]): void {
@@ -45,7 +46,7 @@ export async function sha256(blob: Blob): Promise<string> {
   return `sha256:${Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
-/** Tras enviar el mensaje: desde aquí esta pestaña es fuente del archivo. */
+/** Desde aquí esta pestaña es fuente del archivo. */
 export async function rememberSent(id: Snowflake, channelId: Snowflake, blob: Blob): Promise<void> {
   const item = { id, channelId, blob };
   held.set(id, item);
@@ -77,7 +78,10 @@ interface Wanted {
   onProgress: (fraction: number) => void;
   resolve: (blob: Blob) => void;
   reject: (reason: P2PFailure) => void;
-  timer: ReturnType<typeof setTimeout>;
+  /** Deja de volver a preguntar (ya contestó una fuente). */
+  stopAsking: () => void;
+  /** Quita también el plazo (ya llegan datos). */
+  stopWaiting: () => void;
 }
 const wanted = new Map<Snowflake, Wanted>();
 
@@ -96,7 +100,7 @@ function connection(key: string, attachmentId: Snowflake, channelId: Snowflake, 
   pc.onconnectionstatechange = () => {
     if (["failed", "closed", "disconnected"].includes(pc.connectionState)) {
       pc.close();
-      peers.delete(key);
+      if (peers.get(key) === pc) peers.delete(key);
     }
   };
   return pc;
@@ -107,7 +111,7 @@ export async function handleP2PRequest(d: { attachment_id: Snowflake; channel_id
   const item = held.get(d.attachment_id);
   if (!item) return;
   const key = `${d.attachment_id}:${d.requester_id}`;
-  peers.get(key)?.close();
+  if (peers.has(key)) return; // ya en marcha con esa persona
   const pc = connection(key, d.attachment_id, d.channel_id, d.requester_id);
   const channel = pc.createDataChannel("file", { ordered: true });
   channel.binaryType = "arraybuffer";
@@ -122,7 +126,10 @@ export async function handleP2PRequest(d: { attachment_id: Snowflake; channel_id
     }
   };
   // Quien recibe cierra al verificar; entonces se suelta la conexión.
-  channel.onclose = () => pc.close();
+  channel.onclose = () => {
+    pc.close();
+    if (peers.get(key) === pc) peers.delete(key);
+  };
   await pc.setLocalDescription(await pc.createOffer());
   signal(d.attachment_id, d.channel_id, d.requester_id, { sdp: pc.localDescription });
 }
@@ -131,14 +138,24 @@ export async function handleP2PRequest(d: { attachment_id: Snowflake; channel_id
 export function fetchP2PFile(file: Attachment, channelId: Snowflake, onProgress: (fraction: number) => void): Promise<Blob> {
   wanted.get(file.id)?.reject("offline");
   return new Promise<Blob>((resolve, reject) => {
-    const fail = (reason: P2PFailure) => {
-      clearTimeout(entry.timer);
-      if (wanted.get(file.id) === entry) wanted.delete(file.id);
-      reject(reason);
+    const ask = () => sendCommand({ t: "P2P_FILE_REQUEST", d: { attachment_id: file.id, channel_id: channelId } });
+    // Si nadie contesta (la fuente aún conectándose), se vuelve a preguntar.
+    const retry = setInterval(ask, RETRY_MS);
+    const timer = setTimeout(() => entry.reject("offline"), WAIT_MS);
+    const entry: Wanted = {
+      file,
+      onProgress,
+      stopAsking: () => clearInterval(retry),
+      stopWaiting: () => { clearInterval(retry); clearTimeout(timer); },
+      resolve: (blob) => { entry.stopWaiting(); wanted.delete(file.id); resolve(blob); },
+      reject: (reason) => {
+        entry.stopWaiting();
+        if (wanted.get(file.id) === entry) wanted.delete(file.id);
+        reject(reason);
+      },
     };
-    const entry: Wanted = { file, onProgress, resolve, reject: fail, timer: setTimeout(() => fail("offline"), WAIT_MS) };
     wanted.set(file.id, entry);
-    sendCommand({ t: "P2P_FILE_REQUEST", d: { attachment_id: file.id, channel_id: channelId } });
+    ask();
   });
 }
 
@@ -163,31 +180,32 @@ async function applySignal(key: string, d: { attachment_id: Snowflake; channel_i
   if (payload?.sdp?.type !== "offer") return;
 
   const want = wanted.get(d.attachment_id);
-  if (!want) return; // otra pestaña mía es la que lo pidió
-  peers.get(key)?.close();
+  if (!want || peers.has(key)) return; // otra pestaña mía lo pidió, o ya en marcha
+  want.stopAsking();
   const pc = connection(key, d.attachment_id, d.channel_id, d.from_user_id);
   pc.ondatachannel = ({ channel }) => {
     channel.binaryType = "arraybuffer";
-    clearTimeout(want.timer);
+    want.stopWaiting();
     const parts: ArrayBuffer[] = [];
     let received = 0;
+    let done = false;
     channel.onmessage = async (e) => {
-      if (!(e.data instanceof ArrayBuffer)) return;
+      if (done || !(e.data instanceof ArrayBuffer)) return;
       parts.push(e.data);
       received += e.data.byteLength;
       want.onProgress(Math.min(received / want.file.size, 1));
       if (received < want.file.size) return;
+      done = true;
       channel.close();
-      pc.close();
-      peers.delete(key);
-      wanted.delete(d.attachment_id);
       const blob = new Blob(parts, { type: want.file.content_type });
       if (received === want.file.size && (await sha256(blob)) === want.file.content_hash) want.resolve(blob);
       else want.reject("corrupt");
     };
     // Si la fuente se va a mitad, no esperar para siempre.
     channel.onclose = () => {
-      if (received < want.file.size) want.reject("offline");
+      pc.close();
+      if (peers.get(key) === pc) peers.delete(key);
+      if (!done) want.reject("offline");
     };
   };
   await pc.setRemoteDescription(payload.sdp);
