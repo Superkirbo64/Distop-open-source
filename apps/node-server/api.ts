@@ -230,8 +230,8 @@ function refreshDirectoryGalleries(): void {
   if (!config.directoryUrl || Date.now() - directoryGalleries.checkedAt < 5 * 60_000) return;
   directoryGalleries.checkedAt = Date.now();
   void fetch(`${config.directoryUrl}/v1/expressions/status`, { signal: AbortSignal.timeout(5000) })
-    .then((res) => (res.ok ? res.json() : null))
-    .then((status: { gifs?: unknown; stickers?: unknown } | null) => {
+    .then((res) => (res.ok ? (res.json() as Promise<{ gifs?: unknown; stickers?: unknown }>) : null))
+    .then((status) => {
       if (!status) return;
       directoryGalleries.gifs = status.gifs === true;
       directoryGalleries.stickers = status.stickers === true;
