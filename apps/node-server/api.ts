@@ -88,6 +88,7 @@ import { inspectBackup } from "./restore.ts";
 import { successionRecord } from "./succession.ts";
 import { normalizeProofOrigin } from "./identity.ts";
 import { buildIcs } from "./ics.ts";
+import { deploymentProfile, serverUsage, setDeploymentProfile } from "./usage.ts";
 import {
   PushError,
   dropSubscription,
@@ -3779,6 +3780,28 @@ route("POST", "/api/v1/channels/:id/p2p-files", async (ctx) => {
     : "Este tipo se guarda en el servidor de la comunidad.");
 
   return saveP2PAttachment({ ownerId: user.id, filename, contentType, size, contentHash });
+});
+
+route("GET", "/api/v1/instance/server", (ctx) => {
+  requireHost(ctx);
+  return {
+    health: instanceHealth(onlineCount()),
+    deployment_profile: deploymentProfile(),
+    runtime: { node: process.version, platform: process.platform, arch: process.arch },
+    public_url: publicUrl(),
+    tunnel: tunnelState(),
+    backups: backupSchedule(),
+    usage: serverUsage(),
+  };
+});
+
+route("PATCH", "/api/v1/instance/server", async (ctx) => {
+  const auth = requireHost(ctx);
+  rateLimit(`server-settings:${auth.user.id}`, 10, 60_000);
+  const body = await readJson(ctx);
+  const profile = v.oneOf(body, "deployment_profile", ["personal_pc", "vps_cloud"] as const);
+  setDeploymentProfile(profile);
+  return { deployment_profile: deploymentProfile() };
 });
 
 route("POST", "/api/v1/uploads", async (ctx) => {

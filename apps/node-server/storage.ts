@@ -14,6 +14,7 @@ import type { Attachment } from "@distop/protocol";
 import { config } from "./config.ts";
 import { db } from "./db.ts";
 import { HttpError, badRequest, notFound, rateLimit, type Ctx, HANDLED } from "./http.ts";
+import { recordTraffic } from "./usage.ts";
 
 export const ROOT = resolve(config.storagePath);
 mkdirSync(ROOT, { recursive: true });
@@ -560,7 +561,9 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
       "x-content-type-options": "nosniff",
       "content-security-policy": "default-src 'none'; sandbox",
     });
-    ctx.res.end(Buffer.from(await res.arrayBuffer()));
+    const data = Buffer.from(await res.arrayBuffer());
+    recordTraffic("file", data.length);
+    ctx.res.end(data);
     return HANDLED;
   }
 
@@ -582,6 +585,7 @@ export async function serveFile(ctx: Ctx, id: string): Promise<typeof HANDLED> {
     "x-content-type-options": "nosniff",
     "content-security-policy": "default-src 'none'; sandbox",
   });
+  recordTraffic("file", row.size);
   createReadStream(full).pipe(ctx.res);
   return HANDLED;
 }

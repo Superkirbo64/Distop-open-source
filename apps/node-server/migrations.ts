@@ -750,6 +750,11 @@ export const MIGRATIONS: string[] = [
     media_files = CASE media_files_enabled WHEN 1 THEN 'server' ELSE 'off' END;
   ALTER TABLE attachments ADD COLUMN delivery TEXT NOT NULL DEFAULT 'server'
     CHECK (delivery IN ('server','p2p'));
+  CREATE TABLE instance_daily_usage (
+    day TEXT PRIMARY KEY,
+    file_bytes INTEGER NOT NULL DEFAULT 0,
+    relay_bytes INTEGER NOT NULL DEFAULT 0
+  );
   `,
 ];
 

@@ -23,6 +23,7 @@ import * as race from "./race.ts";
 import { getEmoji } from "./expressions.ts";
 import { freezeReason, writesAccepted } from "./lifecycle.ts";
 import { db } from "./db.ts";
+import { recordTraffic } from "./usage.ts";
 
 interface Client {
   ws: WebSocket;
@@ -702,6 +703,7 @@ function relayMedia(client: Client | VideoClient, packet: Buffer): void {
     for (const other of targets) {
       if (other.ws.bufferedAmount > limit.buffered) continue;
       other.ws.send(out, { binary: true });
+      recordTraffic("relay", out.length);
     }
   }
 }
