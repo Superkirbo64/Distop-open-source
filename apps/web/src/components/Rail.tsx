@@ -825,6 +825,8 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
           ))}
         </dl>
 
+        <ServerUsage />
+
         <ShareInstance />
 
         <BackupsStatus />
@@ -834,6 +836,83 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
         <p className="text-xs text-muted">{t("instance.offlineHelp")}</p>
       </div>
     </Modal>
+  );
+}
+
+interface ServerView {
+  deployment_profile: "personal_pc" | "vps_cloud";
+  runtime: { node: string; platform: string; arch: string };
+  public_url: string;
+  usage: {
+    storage: { image_bytes: number; video_bytes: number; audio_bytes: number; file_bytes: number };
+    traffic_days: Array<{ day: string; file_bytes: number; relay_bytes: number }>;
+    projection_30d_bytes: number;
+  };
+  health: { storage_free_mb: number };
+}
+
+function ServerUsage() {
+  const t = useT();
+  const locale = useLocale();
+  const errorText = useErrorText();
+  const [view, setView] = useState<ServerView | null>(null);
+  const [visible, setVisible] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void api<ServerView>("GET", "/api/v1/instance/server")
+      .then((data) => { setView(data); setVisible(true); })
+      .catch(() => setVisible(false));
+  }, []);
+
+  async function setProfile(deployment_profile: ServerView["deployment_profile"]) {
+    if (!view) return;
+    const previous = view.deployment_profile;
+    setView({ ...view, deployment_profile });
+    setError(null);
+    try {
+      await api("PATCH", "/api/v1/instance/server", { deployment_profile });
+    } catch (reason) {
+      setView({ ...view, deployment_profile: previous });
+      setError(errorText(reason));
+    }
+  }
+
+  if (!visible) return null;
+  if (!view) return <Spinner label={t("common.loading")} />;
+  const traffic7d = view.usage.traffic_days.reduce((sum, day) => sum + day.file_bytes + day.relay_bytes, 0);
+  const projectedMb = view.usage.projection_30d_bytes / 1024 / 1024;
+  const risk = projectedMb > view.health.storage_free_mb;
+  const storage = [
+    [t("serverUsage.images"), view.usage.storage.image_bytes],
+    [t("serverUsage.videos"), view.usage.storage.video_bytes],
+    [t("serverUsage.audio"), view.usage.storage.audio_bytes],
+    [t("serverUsage.files"), view.usage.storage.file_bytes],
+  ] as const;
+
+  return (
+    <section className="flex flex-col gap-3 rounded-[10px] border border-line p-3" aria-labelledby="server-usage-title">
+      <div>
+        <h3 id="server-usage-title" className="display text-sm font-bold">{t("serverUsage.title")}</h3>
+        <p className="text-xs text-muted">{t("serverUsage.hint")}</p>
+      </div>
+      <Field label={t("serverUsage.profile")} hint={t("serverUsage.profileHint")}>
+        {(id) => <Select id={id} value={view.deployment_profile} onChange={(value) => void setProfile(value as ServerView["deployment_profile"])} options={[
+          { value: "personal_pc", label: t("serverUsage.personalPc") },
+          { value: "vps_cloud", label: t("serverUsage.vpsCloud") },
+        ]} />}
+      </Field>
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        {storage.map(([label, bytes]) => <div key={label} className="rounded-[8px] bg-sunken p-2"><span className="block text-muted">{label}</span><strong>{formatBytes(locale, bytes)}</strong></div>)}
+      </div>
+      <dl className="grid gap-2 text-xs sm:grid-cols-2">
+        <div><dt className="text-muted">{t("serverUsage.traffic7d")}</dt><dd className="font-semibold">{formatBytes(locale, traffic7d)}</dd></div>
+        <div><dt className="text-muted">{t("serverUsage.projection")}</dt><dd className="font-semibold">{formatBytes(locale, view.usage.projection_30d_bytes)}</dd></div>
+        <div className="sm:col-span-2"><dt className="text-muted">{t("serverUsage.stack")}</dt><dd className="font-mono">Node {view.runtime.node} · {view.runtime.platform}/{view.runtime.arch}</dd></div>
+      </dl>
+      {risk ? <p className="text-xs text-warn">{t("serverUsage.risk")}</p> : <p className="text-xs text-ok">{t("serverUsage.ok")}</p>}
+      {error ? <ErrorNote>{error}</ErrorNote> : null}
+    </section>
   );
 }
 

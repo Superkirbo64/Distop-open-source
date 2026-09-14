@@ -137,3 +137,20 @@ test("el cliente declara la comunidad antes de subir y el servidor corta antes d
   });
   assert.equal(response.status, 400);
 });
+
+test("Tu servidor separa consumo y conserva el perfil explícito PC o VPS", async () => {
+  const initial = await call("GET", "/api/v1/instance/server");
+  assert.equal(initial.status, 200);
+  assert.equal(initial.json.deployment_profile, "personal_pc");
+  assert.equal(typeof initial.json.usage.storage.image_bytes, "number");
+  assert.equal(typeof initial.json.usage.projection_30d_bytes, "number");
+  assert.match(initial.json.runtime.node, /^v\d+/);
+
+  const changed = await call("PATCH", "/api/v1/instance/server", { body: { deployment_profile: "vps_cloud" } });
+  assert.equal(changed.status, 200);
+  assert.equal(changed.json.deployment_profile, "vps_cloud");
+  assert.equal((await call("GET", "/api/v1/instance/server")).json.deployment_profile, "vps_cloud");
+
+  const invalid = await call("PATCH", "/api/v1/instance/server", { body: { deployment_profile: "lo-adivino" } });
+  assert.equal(invalid.status, 400);
+});
