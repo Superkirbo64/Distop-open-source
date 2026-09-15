@@ -19,6 +19,8 @@ process.env.DEFAULT_STORAGE_PATH = join(workdir, "uploads");
 process.env.AUTH_SECRET = "test-secret-mfa-no-usar";
 process.env.SETUP_CODE = "CODIGO-MFA";
 process.env.DIRECTORY_URL = "";
+// El autenticador solo se ofrece en VPS.
+process.env.DEPLOYMENT_PROFILE = "vps_cloud";
 
 const { server } = await import("./server.ts");
 const { deBase32, hotp, stepAt } = await import("./totp.ts");
@@ -99,7 +101,7 @@ test("el QR solo cuenta confirmado con un código real, y cierra las demás sesi
   assert.equal(recoveryCodes.length, 8);
 
   const estado = await call("GET", "/api/v1/instance/mfa", { token: hostToken });
-  assert.deepEqual(estado.json, { enabled: true, recovery_codes_left: 8 });
+  assert.deepEqual(estado.json, { available: true, enabled: true, recovery_codes_left: 8 });
   const vieja = await call("GET", "/api/v1/instance/mfa", { token: refreshFromRemote });
   assert.equal(vieja.status, 401, "la sesión abierta desde fuera antes de activarlo se cierra");
 });

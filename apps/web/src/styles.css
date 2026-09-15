@@ -208,6 +208,111 @@
     transition-duration: 0.01ms !important;
   }
 
+  /* Fondo de burbujas (BubbleBackground.tsx), portado de Animate UI a CSS.
+     Los colores son los del original; el interruptor de quietud de arriba lo
+     deja quieto sin regla propia. */
+  .bubble-bg {
+    --first-color: 18, 113, 255;
+    --second-color: 221, 74, 255;
+    --third-color: 0, 220, 255;
+    --fourth-color: 200, 50, 50;
+    --fifth-color: 180, 180, 50;
+    --sixth-color: 140, 100, 255;
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background-image: linear-gradient(to bottom right, #4c1d95, #1e3a8a);
+  }
+  .bubble-goo {
+    position: absolute;
+    inset: 0;
+    filter: url(#bubble-goo) blur(40px);
+  }
+  .bubble {
+    position: absolute;
+    border-radius: 9999px;
+    mix-blend-mode: hard-light;
+    will-change: transform;
+  }
+  .bubble-orbit {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    will-change: transform;
+  }
+  .bubble-1 {
+    width: 80%;
+    height: 80%;
+    top: 10%;
+    left: 10%;
+    background: radial-gradient(circle at center, rgba(var(--first-color), 0.8) 0%, rgba(var(--first-color), 0) 50%);
+    animation: bubble-rise 30s ease-in-out infinite;
+  }
+  .bubble-orbit-2 {
+    transform-origin: calc(50% - 400px);
+    animation: bubble-spin 20s linear infinite;
+  }
+  .bubble-2 {
+    position: relative;
+    width: 80%;
+    height: 80%;
+    background: radial-gradient(circle at center, rgba(var(--second-color), 0.8) 0%, rgba(var(--second-color), 0) 50%);
+  }
+  .bubble-orbit-3 {
+    transform-origin: calc(50% + 400px);
+    animation: bubble-spin 40s linear infinite;
+  }
+  .bubble-3 {
+    width: 80%;
+    height: 80%;
+    top: calc(50% + 200px);
+    left: calc(50% - 500px);
+    background: radial-gradient(circle at center, rgba(var(--third-color), 0.8) 0%, rgba(var(--third-color), 0) 50%);
+  }
+  .bubble-4 {
+    width: 80%;
+    height: 80%;
+    top: 10%;
+    left: 10%;
+    opacity: 0.7;
+    background: radial-gradient(circle at center, rgba(var(--fourth-color), 0.8) 0%, rgba(var(--fourth-color), 0) 50%);
+    animation: bubble-sway 40s ease-in-out infinite;
+  }
+  .bubble-orbit-5 {
+    transform-origin: calc(50% - 800px) calc(50% + 200px);
+    animation: bubble-spin 20s linear infinite;
+  }
+  .bubble-5 {
+    width: 160%;
+    height: 160%;
+    top: calc(50% - 80%);
+    left: calc(50% - 80%);
+    background: radial-gradient(circle at center, rgba(var(--fifth-color), 0.8) 0%, rgba(var(--fifth-color), 0) 50%);
+  }
+  .bubble-6 {
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    opacity: 0.7;
+    background: radial-gradient(circle at center, rgba(var(--sixth-color), 0.8) 0%, rgba(var(--sixth-color), 0) 50%);
+    transform: translate(var(--bubble-x, 0px), var(--bubble-y, 0px));
+    transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes bubble-rise {
+    0%, 100% { transform: translateY(-50px); }
+    50% { transform: translateY(50px); }
+  }
+  @keyframes bubble-sway {
+    0%, 100% { transform: translateX(-50px); }
+    50% { transform: translateX(50px); }
+  }
+  @keyframes bubble-spin {
+    to { transform: rotate(360deg); }
+  }
+
   /* Fondo del área de conversación: decoración que no estorba a la lectura. */
   :root[data-backdrop="soft"] [data-pane="main"] {
     background-image:

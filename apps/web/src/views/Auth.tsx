@@ -8,6 +8,7 @@ import { peekPendingInvite, peekPendingPublicJoin } from "../lib/instance.ts";
 import { localUser, portableAuthPayload } from "../lib/portable.ts";
 import { MfaRequired, useStore } from "../store.ts";
 import { Avatar, Button, ErrorNote, Field, PasswordInput, Spinner, useErrorText, useT } from "../components/ui.tsx";
+import { BubbleBackground } from "../components/BubbleBackground.tsx";
 
 interface LocalAccount {
   username: string;
@@ -31,14 +32,7 @@ export const ADMIN_ENTRY = "distop.adminEntry";
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
     <main className="relative min-h-dvh overflow-hidden bg-bg">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-70"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 50% -20%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 48%), radial-gradient(circle at 90% 110%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 38%)",
-        }}
-      />
+      <BubbleBackground interactive className="pointer-events-none" />
 
       <header className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-6 py-6 sm:px-10 sm:py-8">
         <p className="display text-2xl font-extrabold tracking-tight text-accent sm:text-3xl">{BRAND.name}</p>

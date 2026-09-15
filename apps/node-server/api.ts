@@ -578,14 +578,22 @@ route("POST", "/api/v1/auth/mfa", async (ctx) => {
   return issue(userId);
 });
 
+/* Solo en VPS (Kirbo, 14-09): en el PC quien arranca el servidor es quien lo
+   administra y vive con él; ahí basta la contraseña. */
 route("GET", "/api/v1/instance/mfa", (ctx) => {
   const { user } = requireHost(ctx);
-  return { enabled: mfaEnabled(user.id), recovery_codes_left: recoveryCodesLeft(user.id) };
+  return {
+    available: deploymentProfile() === "vps_cloud",
+    enabled: mfaEnabled(user.id),
+    recovery_codes_left: recoveryCodesLeft(user.id),
+  };
 });
 
 /** QR nuevo. Si ya había autenticador, el anterior sigue valiendo hasta confirmar este. */
 route("POST", "/api/v1/instance/mfa/setup", (ctx) => {
   const { user } = requireHost(ctx);
+  if (deploymentProfile() !== "vps_cloud")
+    throw badRequest("El autenticador es para servidores en VPS. Cambia el tipo de servidor en «Tu servidor» si lo es.");
   rateLimit(`mfa-setup:${user.id}`, 10, 60 * 60_000);
   return startMfaSetup(user.id, user.username);
 });
