@@ -1,9 +1,11 @@
 /**
  * Autenticador de quien hospeda (claudexcodex/plan-acceso-admin-2026-09-14.md).
  *
- * - Solo la cuenta anfitriona, y solo cuando entra desde fuera: decidirlo es
- *   cosa de api.ts con `isLocalRequest`, igual que el código de `bootstrap`.
+ * - Solo en VPS y solo cuando se entra desde fuera: decidirlo es cosa de
+ *   api.ts (`deploymentProfile`, `isLocalRequest`), igual que `bootstrap`.
  * - Una vez por dispositivo: se pide al entrar; renovar la sesión no lo pide.
+ * - Si se pierde el teléfono, la salida es el código de recuperación por SSH.
+ *   Sin códigos de respaldo (Kirbo, 14-09): quien administra una VPS tiene SSH.
  * - El secreto va sellado con la clave en reposo de `push.key`, que viaja en
  *   copias y relevos. `secret.key` no sirve: rota en un relevo y el secreto
  *   quedaría ilegible, dejando fuera a quien hospeda.
@@ -15,7 +17,6 @@ import { db } from "./db.ts";
 import { abrir, sellar } from "./push.ts";
 import { matchingStep, newTotpSecret, otpauthUri } from "./totp.ts";
 
-const RESPALDOS = 8;
 const RECUPERACION_SSH_MS = 10 * 60_000;
 const RETO_MS = 5 * 60_000;
 
@@ -24,7 +25,6 @@ interface MfaRow {
   secret_sealed: string | null;
   pending_sealed: string | null;
   last_step: number;
-  recovery_hashes: string;
   ssh_code_hash: string | null;
   ssh_code_expires_at: number | null;
 }
@@ -32,8 +32,8 @@ interface MfaRow {
 const fila = (userId: string) =>
   db.prepare("SELECT * FROM host_mfa WHERE user_id = ?").get(userId) as MfaRow | undefined;
 
-/* Los códigos de respaldo y el de SSH son aleatorios y largos: SHA-256 basta
-   (no son contraseñas elegidas por una persona). Guiones y espacios no cuentan. */
+/* El código de SSH es aleatorio y largo: SHA-256 basta (no es una contraseña
+   elegida por una persona). Guiones y espacios no cuentan. */
 const huella = (codigo: string) =>
   createHash("sha256").update(codigo.replace(/[\s-]/g, "").toUpperCase()).digest("hex");
 
@@ -41,11 +41,6 @@ const mismaHuella = (a: string, b: string) => a.length === b.length && timingSaf
 
 export function mfaEnabled(userId: string): boolean {
   return Boolean(fila(userId)?.secret_sealed);
-}
-
-export function recoveryCodesLeft(userId: string): number {
-  const actual = fila(userId);
-  return actual?.secret_sealed ? (JSON.parse(actual.recovery_hashes) as string[]).length : 0;
 }
 
 /** Secreto nuevo sin confirmar. Si ya había uno confirmado, sigue valiendo hasta confirmar este. */
@@ -58,34 +53,25 @@ export function startMfaSetup(userId: string, account: string): { secret: string
   return { secret, otpauth_uri: otpauthUri(secret, account, "Distop") };
 }
 
-function nuevosRespaldos(): { codes: string[]; hashes: string[] } {
-  const codes = Array.from({ length: RESPALDOS }, () => {
-    const crudo = randomBytes(5).toString("hex").toUpperCase();
-    return `${crudo.slice(0, 5)}-${crudo.slice(5)}`;
-  });
-  return { codes, hashes: codes.map(huella) };
-}
-
-/** Confirma el QR con un código real. Devuelve los códigos de respaldo (única vez que salen) o null. */
-export function confirmMfaSetup(userId: string, code: string, now = Date.now()): string[] | null {
+/** Confirma el QR con un código real de la app. */
+export function confirmMfaSetup(userId: string, code: string, now = Date.now()): boolean {
   const actual = fila(userId);
   const pendiente = actual?.pending_sealed ? abrir<string>(actual.pending_sealed) : null;
-  if (!actual || !pendiente) return null;
+  if (!actual || !pendiente) return false;
   const paso = matchingStep(pendiente, code.trim(), now, -1);
-  if (paso === null) return null;
+  if (paso === null) return false;
 
-  const { codes, hashes } = nuevosRespaldos();
   db.prepare(
     `UPDATE host_mfa SET secret_sealed = pending_sealed, pending_sealed = NULL, last_step = ?,
-       recovery_hashes = ?, ssh_code_hash = NULL, ssh_code_expires_at = NULL, confirmed_at = ?
+       ssh_code_hash = NULL, ssh_code_expires_at = NULL, confirmed_at = ?
      WHERE user_id = ?`,
-  ).run(paso, JSON.stringify(hashes), now, userId);
-  return codes;
+  ).run(paso, now, userId);
+  return true;
 }
 
 /**
- * "ok": código de la app o de respaldo válido. "reset": código de recuperación
- * por SSH; el autenticador queda borrado y hay que configurar uno nuevo.
+ * "ok": código de la app válido. "reset": código de recuperación por SSH; el
+ * autenticador queda borrado y hay que configurar uno nuevo.
  */
 export function verifyMfa(userId: string, input: string, now = Date.now()): "ok" | "reset" | null {
   const actual = fila(userId);
@@ -101,26 +87,11 @@ export function verifyMfa(userId: string, input: string, now = Date.now()): "ok"
     return cambio.changes === 1 ? "ok" : null;
   }
 
-  const buscada = huella(texto);
-  if (actual.ssh_code_hash && (actual.ssh_code_expires_at ?? 0) > now && mismaHuella(buscada, actual.ssh_code_hash)) {
+  if (actual.ssh_code_hash && (actual.ssh_code_expires_at ?? 0) > now && mismaHuella(huella(texto), actual.ssh_code_hash)) {
     db.prepare("DELETE FROM host_mfa WHERE user_id = ?").run(userId);
     return "reset";
   }
-
-  const huellas = JSON.parse(actual.recovery_hashes) as string[];
-  const indice = huellas.findIndex((guardada) => mismaHuella(guardada, buscada));
-  if (indice < 0) return null;
-  huellas.splice(indice, 1);
-  db.prepare("UPDATE host_mfa SET recovery_hashes = ? WHERE user_id = ?").run(JSON.stringify(huellas), userId);
-  return "ok";
-}
-
-/** Tanda nueva de códigos de respaldo; los anteriores dejan de valer. */
-export function regenerateRecoveryCodes(userId: string): string[] | null {
-  if (!mfaEnabled(userId)) return null;
-  const { codes, hashes } = nuevosRespaldos();
-  db.prepare("UPDATE host_mfa SET recovery_hashes = ? WHERE user_id = ?").run(JSON.stringify(hashes), userId);
-  return codes;
+  return null;
 }
 
 /** Recuperación por SSH: un solo uso y 10 minutos. null si no hay autenticador que recuperar. */

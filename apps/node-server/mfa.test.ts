@@ -31,7 +31,6 @@ let base = "";
 let hostId = "";
 let hostToken = "";
 let secret = "";
-let recoveryCodes: string[] = [];
 let refreshFromRemote = "";
 const PASSWORD = "contrasena-larga-de-kirbo";
 
@@ -97,11 +96,10 @@ test("el QR solo cuenta confirmado con un código real, y cierra las demás sesi
 
   const bien = await call("POST", "/api/v1/instance/mfa/confirm", { token: hostToken, body: { code: codeAt(stepAt(Date.now())) } });
   assert.equal(bien.status, 200, JSON.stringify(bien.json));
-  recoveryCodes = bien.json.recovery_codes;
-  assert.equal(recoveryCodes.length, 8);
+  assert.deepEqual(bien.json, { ok: true });
 
   const estado = await call("GET", "/api/v1/instance/mfa", { token: hostToken });
-  assert.deepEqual(estado.json, { available: true, enabled: true, recovery_codes_left: 8 });
+  assert.deepEqual(estado.json, { available: true, enabled: true });
   const vieja = await call("GET", "/api/v1/instance/mfa", { token: refreshFromRemote });
   assert.equal(vieja.status, 401, "la sesión abierta desde fuera antes de activarlo se cierra");
 });
@@ -134,18 +132,6 @@ test("renovar la sesión no vuelve a pedir el código: una vez por dispositivo",
   const renovada = await call("POST", "/api/v1/auth/refresh", { remote: true, body: { refresh_token: refreshFromRemote } });
   assert.equal(renovada.status, 200);
   assert.ok(renovada.json.access_token);
-});
-
-test("un código de respaldo sirve una sola vez", async () => {
-  resetRateLimits();
-  const uno = await login(true);
-  const usado = await call("POST", "/api/v1/auth/mfa", { body: { mfa_token: uno.json.mfa_token, code: recoveryCodes[0] } });
-  assert.equal(usado.status, 200);
-
-  const dos = await login(true);
-  const repetido = await call("POST", "/api/v1/auth/mfa", { body: { mfa_token: dos.json.mfa_token, code: recoveryCodes[0] } });
-  assert.equal(repetido.status, 401);
-  assert.equal((await call("GET", "/api/v1/instance/mfa", { token: hostToken })).json.recovery_codes_left, 7);
 });
 
 test("quien prueba códigos a ciegas choca con el límite", async () => {

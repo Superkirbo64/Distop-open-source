@@ -95,8 +95,6 @@ import {
   consumeChallenge,
   createMfaChallenge,
   mfaEnabled,
-  recoveryCodesLeft,
-  regenerateRecoveryCodes,
   startMfaSetup,
   verifyMfa,
 } from "./mfa.ts";
@@ -556,7 +554,7 @@ route("POST", "/api/v1/auth/login", async (ctx) => {
   return issueOrChallenge(ctx, user.id);
 });
 
-/** Segundo paso de /auth/login: el código de la app, uno de respaldo o el de SSH. */
+/** Segundo paso de /auth/login: el código de la app o el de recuperación por SSH. */
 route("POST", "/api/v1/auth/mfa", async (ctx) => {
   rateLimit(`mfa-ip:${ctx.ip}`, 20, 60_000);
   const body = await readJson(ctx);
@@ -585,7 +583,6 @@ route("GET", "/api/v1/instance/mfa", (ctx) => {
   return {
     available: deploymentProfile() === "vps_cloud",
     enabled: mfaEnabled(user.id),
-    recovery_codes_left: recoveryCodesLeft(user.id),
   };
 });
 
@@ -602,23 +599,13 @@ route("POST", "/api/v1/instance/mfa/confirm", async (ctx) => {
   const auth = requireHost(ctx);
   rateLimit(`mfa-confirm:${auth.user.id}`, 5, 60_000);
   const body = await readJson(ctx);
-  const codes = confirmMfaSetup(auth.user.id, v.string(body, "code", { min: 6, max: 6, pattern: /^\d{6}$/ }));
-  if (!codes) throw badRequest("Ese código no coincide. Comprueba que la hora del teléfono sea automática y prueba con el siguiente.");
+  const ok = confirmMfaSetup(auth.user.id, v.string(body, "code", { min: 6, max: 6, pattern: /^\d{6}$/ }));
+  if (!ok) throw badRequest("Ese código no coincide. Comprueba que la hora del teléfono sea automática y prueba con el siguiente.");
   /* Las demás sesiones de quien hospeda se cierran: si alguien entró con la
      contraseña antes de activar el autenticador, no se queda dentro. */
   db.prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?").run(auth.user.id, auth.sessionId);
   auditHostEvent(auth.user.id, "INSTANCE_MFA_ENABLED");
-  return { recovery_codes: codes };
-});
-
-/** Tanda nueva de códigos de respaldo; exige un código de la app, no uno de respaldo. */
-route("POST", "/api/v1/instance/mfa/recovery-codes", async (ctx) => {
-  const auth = requireHost(ctx);
-  rateLimit(`mfa-codes:${auth.user.id}`, 5, 60_000);
-  const body = await readJson(ctx);
-  if (verifyMfa(auth.user.id, v.string(body, "code", { min: 6, max: 6, pattern: /^\d{6}$/ })) !== "ok")
-    throw unauthorized("Código incorrecto.");
-  return { recovery_codes: regenerateRecoveryCodes(auth.user.id) };
+  return { ok: true };
 });
 
 route("POST", "/api/v1/auth/guest", async (ctx) => {
