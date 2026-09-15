@@ -6,7 +6,7 @@ import { api, RequestError } from "../lib/api.ts";
 import { entryMode, type EntryMode } from "../lib/entry.ts";
 import { peekPendingInvite, peekPendingPublicJoin } from "../lib/instance.ts";
 import { localUser, portableAuthPayload } from "../lib/portable.ts";
-import { useStore } from "../store.ts";
+import { MfaRequired, useStore } from "../store.ts";
 import { Avatar, Button, ErrorNote, Field, PasswordInput, Spinner, useErrorText, useT } from "../components/ui.tsx";
 
 interface LocalAccount {
@@ -60,6 +60,9 @@ export function Auth({ onDone }: { onDone?: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [entering, setEntering] = useState<string | null>(null);
+  /* Paso del autenticador: la contraseña ya fue buena y falta el código. */
+  const [mfaToken, setMfaToken] = useState<string | null>(null);
+  const [mfaCode, setMfaCode] = useState("");
   /* El perfil que viaja con este dispositivo, si ya existe. No es una lista
      nueva: es la misma identidad portable que usa la app. */
   const [device] = useState(() => localUser());
@@ -130,8 +133,25 @@ export function Auth({ onDone }: { onDone?: () => void }) {
       await authenticate("/api/v1/auth/recover", { username: account.username });
       onDone?.();
     } catch (err) {
-      setError(errorText(err));
+      if (err instanceof MfaRequired) setMfaToken(err.token);
+      else setError(errorText(err));
       setEntering(null);
+    }
+  }
+
+  async function submitMfa(event: React.FormEvent): Promise<void> {
+    event.preventDefault();
+    if (!mfaToken) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await authenticate("/api/v1/auth/mfa", { mfa_token: mfaToken, code: mfaCode.trim() });
+      onDone?.();
+    } catch (err) {
+      setError(errorText(err));
+      setBusy(false);
+      // El paso caduca a los 5 minutos: entonces toca volver a la contraseña.
+      if (err instanceof RequestError && err.status === 401 && /caduc/i.test(err.message)) setMfaToken(null);
     }
   }
 
@@ -169,7 +189,10 @@ export function Auth({ onDone }: { onDone?: () => void }) {
       }
       onDone?.();
     } catch (err) {
-      setError(errorText(err));
+      if (err instanceof MfaRequired) {
+        setMfaToken(err.token);
+        setMfaCode("");
+      } else setError(errorText(err));
       setBusy(false);
     }
   }
@@ -184,6 +207,40 @@ export function Auth({ onDone }: { onDone?: () => void }) {
     <AuthShell>
       {info === undefined ? (
         <Spinner label={t("common.loading")} />
+      ) : mfaToken ? (
+        <div className="w-full max-w-md rounded-card border border-line bg-surface/95 p-7 shadow-[var(--shadow)] backdrop-blur-sm sm:p-9">
+          <header className="mb-7 flex flex-col gap-2">
+            <h1 className="display text-2xl font-bold">{t("auth.mfaTitle")}</h1>
+            <p className="text-sm text-muted">{t("auth.mfaHint")}</p>
+          </header>
+          <form onSubmit={submitMfa} className="flex flex-col gap-4">
+            <Field label={t("auth.mfaCode")}>
+              {(id) => (
+                <input
+                  id={id}
+                  className="field font-mono text-lg tracking-[0.3em]"
+                  value={mfaCode}
+                  onChange={(event) => setMfaCode(event.target.value)}
+                  required
+                  minLength={6}
+                  maxLength={40}
+                  inputMode="text"
+                  autoComplete="one-time-code"
+                  autoFocus
+                />
+              )}
+            </Field>
+            {error ? <ErrorNote>{error}</ErrorNote> : null}
+            <Button type="submit" variant="primary" disabled={busy || mfaCode.trim().length < 6}>
+              {busy ? t("common.loading") : t("auth.login")}
+            </Button>
+          </form>
+          <div className="mt-5 flex justify-center border-t border-line pt-5 text-sm">
+            <button type="button" className="text-muted hover:text-ink hover:underline" onClick={() => { setMfaToken(null); setError(null); }}>
+              {t("auth.mfaBack")}
+            </button>
+          </div>
+        </div>
       ) : mode === "profiles" && cards > 0 ? (
         <div className="flex w-full max-w-6xl flex-col items-center gap-10 text-center">
           <header className="flex flex-col gap-3">

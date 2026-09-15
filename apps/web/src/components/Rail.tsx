@@ -10,6 +10,7 @@ import { Bell, Compass, Cross, ServerCog } from "./icons.tsx";
 import { useStore } from "../store.ts";
 import { unreadNotices } from "../lib/notices.ts";
 import { Button, ErrorNote, ExternalLinkButton, Field, IconButton, Modal, Select, Spinner, Toggle, useT, useLocale, useErrorText } from "./ui.tsx";
+import { AdminSecurity } from "./AdminSecurity.tsx";
 import { Notices } from "./Notices.tsx";
 import { api } from "../lib/api.ts";
 import { CLOUD_GUIDE_URL, RASPBERRY_GUIDE_URL, VPS_INSTALL_GUIDE_URL, detectLane, hasStablePublicAddress } from "../lib/publish.ts";
@@ -826,6 +827,8 @@ function InstanceStatus({ open, onClose }: { open: boolean; onClose: () => void 
         </dl>
 
         <ServerUsage />
+
+        <AdminSecurity />
 
         <ShareInstance />
 

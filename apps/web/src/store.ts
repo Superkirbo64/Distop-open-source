@@ -43,6 +43,13 @@ import { onRecordingUpdate } from "./lib/record.ts";
 import { CENTRAL_DIRECTORY_URL, appWithoutInstance, clearPendingPublicJoin, forgetCommunity, instanceBase, isLocalInstance, isPackaged, peekPendingInvite, peekPendingPublicJoin, rememberCommunities, setActiveInstance, setDesktopAvailabilityStatus, takePendingInvite, trustInstanceIdentity, type InstanceIdentityInfo } from "./lib/instance.ts";
 import { localUser, portableAuthPayload, syncPortableMedia } from "./lib/portable.ts";
 
+/** /auth/login respondió con el paso del autenticador: el código va a /auth/mfa con este token. */
+export class MfaRequired extends Error {
+  constructor(readonly token: string) {
+    super("MFA_REQUIRED");
+  }
+}
+
 export type ThemeChoice = "light" | "dark" | "system";
 export type Density = "compact" | "cozy";
 export type DirectView = "friends" | "friend_requests" | "message_requests" | "chat";
@@ -561,7 +568,9 @@ export const useStore = create<State>()((set, get) => ({
   },
 
   async authenticate(path, body) {
-    const result = await api<Tokens & { user: SelfUser; backup_passphrase?: string }>("POST", path, body);
+    const result = await api<(Tokens & { user: SelfUser; backup_passphrase?: string }) | { mfa_required: true; mfa_token: string }>("POST", path, body);
+    // Quien hospeda, con autenticador y desde fuera: falta el código antes de tener sesión.
+    if ("mfa_required" in result) throw new MfaRequired(result.mfa_token);
     setTokens({ access_token: result.access_token, refresh_token: result.refresh_token });
     // Con alguien dentro, la instancia deja de estar sin dueño.
     set({ user: result.user, setup: { required: false, requiresCode: false } });
