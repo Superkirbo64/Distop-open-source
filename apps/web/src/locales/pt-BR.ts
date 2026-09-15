@@ -1190,13 +1190,10 @@ export const ptBR: Record<keyof typeof es, string> = {
   "emoji.telegramAnimatedYet": "Animado: ainda não pode ser importado.",
   "emoji.telegramAdd": "Importar",
 
-  "emoji.soundGallery": "Buscar na galeria de sons",
+  "emoji.soundGallery": "Baixar do MyInstants",
   "emoji.soundGalleryHint":
-    "Catálogo público do MyInstants. Escute antes de decidir: só o que você escolher é baixado, e a partir daí pertence à comunidade. Quem envia são usuários e não há filtro, então confira o que você adiciona.",
-  "emoji.soundPlaceholder": "Busque um som…",
-  "emoji.soundEmpty": "Nenhum som com esse nome.",
-  "emoji.soundMore": "Ver mais",
-  "emoji.soundAdd": "Adicionar à comunidade",
+    "Procure o som no MyInstants, baixe e envie acima escolhendo “Som”. Quem envia são usuários e não há filtro: confira se você pode usá-lo.",
+  "emoji.soundOpen": "Abrir MyInstants",
 
   "status.online": "Online",
   "status.offline": "Desconectado",

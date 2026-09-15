@@ -679,13 +679,6 @@ function DataTab({ community, onClose }: { community: Community; onClose: () => 
   );
 }
 
-/** Lo que devuelve /api/v1/sounds: tres campos, no el JSON de un tercero. */
-interface GallerySound {
-  id: string;
-  name: string;
-  url: string;
-}
-
 type SoundIconValue = {
   emoji: string;
   file: { id: string; url: string } | null;
@@ -931,159 +924,22 @@ function TelegramImport({ communityId }: { communityId: string }) {
 }
 
 /**
- * Galeria de sonidos (§10.3), contra la API publica de MyInstants.
- *
- * Se escucha antes de decidir y solo se baja el que se elige: la rejilla no
- * cuesta disco, el sonido elegido si — y pasa a ser de la comunidad, no un
- * enlace a un tercero que puede romperse.
- *
- * De 10 en 10 porque el catalogo no admite pedir mas por pagina; el boton de
- * "ver mas" pide la siguiente y la añade a lo que ya hay.
+ * Sonidos de MyInstants (§10.3): solo un enlace. Sus términos prohíben las
+ * consultas automáticas, así que la instancia no busca ni descarga nada: quien
+ * administra baja el mp3 en su navegador y lo sube arriba como «Sonido».
  */
-function SoundGallery({ communityId }: { communityId: string }) {
+function MyInstantsLink() {
   const t = useT();
-  const errorText = useErrorText();
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const [page, setPage] = useState(1);
-  const [results, setResults] = useState<GallerySound[] | null>(null);
-  const [picked, setPicked] = useState<GallerySound | null>(null);
-  const [name, setName] = useState("");
-  const [icon, setIcon] = useState<SoundIconValue>(EMPTY_SOUND_ICON);
-  const [iconBusy, setIconBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  // Nada de buscar en cada tecla: cada una es una peticion que sale de la instancia.
-  useEffect(() => {
-    if (!open) return;
-    setPage(1);
-    setResults(null);
-    setError(null);
-    const timer = setTimeout(() => {
-      api<GallerySound[]>("GET", `/api/v1/sounds?q=${encodeURIComponent(query.trim())}`)
-        .then(setResults)
-        .catch((err) => {
-          setResults([]);
-          setError(errorText(err));
-        });
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [query, open, errorText]);
-
-  async function more() {
-    const siguiente = page + 1;
-    setBusy(true);
-    try {
-      const extra = await api<GallerySound[]>(
-        "GET",
-        `/api/v1/sounds?q=${encodeURIComponent(query.trim())}&page=${siguiente}`,
-      );
-      setResults((prev) => [...(prev ?? []), ...extra]);
-      setPage(siguiente);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function importSound() {
-    if (!picked) return;
-    setError(null);
-    setBusy(true);
-    try {
-      await api("POST", `/api/v1/communities/${communityId}/emojis/import-sound`, {
-        url: picked.url,
-        name: name.trim(),
-        icon_emoji: icon.emoji || undefined,
-        icon_attachment_id: icon.file?.id,
-      });
-      setPicked(null);
-      setName("");
-      setIcon(EMPTY_SOUND_ICON);
-    } catch (err) {
-      setError(errorText(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <section className="flex flex-col gap-3 rounded-[10px] border border-line p-3">
-      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex items-center gap-2 text-sm font-medium">
+    <section className="flex flex-col gap-2 rounded-[10px] border border-line p-3">
+      <p className="flex items-center gap-2 text-sm font-medium">
         <Music size={15} />
         {t("emoji.soundGallery")}
-      </button>
-
-      {open ? (
-        <div className="flex flex-col gap-3">
-          <p className="text-xs text-muted">{t("emoji.soundGalleryHint")}</p>
-
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t("emoji.soundPlaceholder")}
-            aria-label={t("emoji.soundPlaceholder")}
-            className="field"
-          />
-
-          {results === null ? (
-            <Spinner label={t("common.loading")} />
-          ) : results.length === 0 ? (
-            <p className="text-sm text-muted">{t("emoji.soundEmpty")}</p>
-          ) : (
-            <>
-              <ul className="flex max-h-64 flex-col gap-1 overflow-y-auto">
-                {results.map((sound) => (
-                  <li key={sound.id} className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        setPicked(sound);
-                        setIcon(EMPTY_SOUND_ICON);
-                        // El nombre del sonido es el mejor primer intento; se puede corregir.
-                        setName(sound.name.replace(/[^a-zA-Z0-9_]/g, "_").replace(/_+/g, "_").slice(0, 32));
-                      }}
-                      aria-pressed={picked?.id === sound.id}
-                      className={`min-w-0 flex-1 truncate rounded-[10px] border px-2 py-1 text-left text-sm ${
-                        picked?.id === sound.id ? "border-accent" : "border-line hover:border-accent"
-                      }`}
-                    >
-                      {sound.name}
-                    </button>
-                    {/* Escuchar antes de decidir. Suena desde MyInstants: hasta
-                        que no se elige, el disco del anfitrion no se toca. */}
-                    <audio src={sound.url} controls preload="none" className="h-8 w-44 shrink-0" />
-                  </li>
-                ))}
-              </ul>
-              <Button onClick={() => void more()} disabled={busy}>
-                {t("emoji.soundMore")}
-              </Button>
-            </>
-          )}
-
-          {picked ? (
-            <div className="flex flex-col gap-3 rounded-[10px] border border-line p-3">
-              <div className="flex flex-wrap items-end gap-2">
-                <div className="min-w-40 flex-1">
-                  <Field label={t("emoji.name")} hint={t("emoji.nameHintSound")}>
-                    {(id) => (
-                      <input id={id} className="field" value={name} onChange={(e) => setName(e.target.value)} maxLength={32} placeholder="mi_sonido" />
-                    )}
-                  </Field>
-                </div>
-                <Button variant="primary" onClick={() => void importSound()} disabled={busy || iconBusy || name.trim().length < 2}>
-                  {t("emoji.soundAdd")}
-                </Button>
-              </div>
-              <SoundIconPicker value={icon} onChange={setIcon} onBusyChange={setIconBusy} />
-            </div>
-          ) : null}
-
-          {error ? <ErrorNote>{error}</ErrorNote> : null}
-        </div>
-      ) : null}
+      </p>
+      <p className="text-xs text-muted">{t("emoji.soundGalleryHint")}</p>
+      <a href="https://www.myinstants.com" target="_blank" rel="noreferrer" className="btn btn-ghost self-start">
+        {t("emoji.soundOpen")}
+      </a>
     </section>
   );
 }
@@ -1228,7 +1084,7 @@ function Expressions({ communityId, emojis }: { communityId: string; emojis: Cus
       </section>
 
       <TelegramImport communityId={communityId} />
-      <SoundGallery communityId={communityId} />
+      <MyInstantsLink />
 
       {listas.map(([value, label]) => {
         const grupo = emojis.filter((e) => e.kind === value);

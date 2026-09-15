@@ -80,9 +80,8 @@ import {
 /**
  * Tabla de sonidos de la sala de voz (§9.4).
  *
- * Solo lista lo que ya es de ESTA comunidad: la galeria de MyInstants se
- * rebusca en los ajustes, y aqui dentro solo aparece lo que alguien decidio
- * anadir. Asi el sonido esta en el disco del anfitrion antes de que nadie lo
+ * Solo lista lo que ya es de ESTA comunidad: lo que alguien subio en los
+ * ajustes. Asi el sonido esta en el disco del anfitrion antes de que nadie lo
  * dispare, y no hay una descarga a un tercero en mitad de una llamada.
  *
  * El menu NO se cierra al pulsar: una tabla de sonidos es para encadenar

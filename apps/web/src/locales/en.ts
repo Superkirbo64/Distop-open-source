@@ -1182,13 +1182,10 @@ export const en: Record<keyof typeof es, string> = {
   "emoji.telegramAnimatedYet": "Animated: can't be imported yet.",
   "emoji.telegramAdd": "Import",
 
-  "emoji.soundGallery": "Search the sound gallery",
+  "emoji.soundGallery": "Download from MyInstants",
   "emoji.soundGalleryHint":
-    "MyInstants' public catalogue. Listen before you decide: only the one you pick gets downloaded, and from then on it belongs to the community. Users upload it and it is not filtered, so check what you add.",
-  "emoji.soundPlaceholder": "Search for a sound…",
-  "emoji.soundEmpty": "No sound by that name.",
-  "emoji.soundMore": "Show more",
-  "emoji.soundAdd": "Add to the community",
+    "Find the sound on MyInstants, download it and upload it above choosing “Sound”. Users upload it and it is not filtered: check you can use it.",
+  "emoji.soundOpen": "Open MyInstants",
 
   "status.online": "Online",
   "status.offline": "Offline",
