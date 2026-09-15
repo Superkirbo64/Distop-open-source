@@ -756,6 +756,24 @@ export const MIGRATIONS: string[] = [
     relay_bytes INTEGER NOT NULL DEFAULT 0
   );
   `,
+
+  /* Autenticador de quien hospeda (mfa.ts). El secreto va sellado con la clave
+     en reposo de push.key; pending_sealed es un QR aún sin confirmar, que no
+     sustituye al bueno hasta que alguien escribe un código real con él. Los
+     códigos de respaldo y el de recuperación por SSH solo se guardan como huella. */
+  `
+  CREATE TABLE host_mfa (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    secret_sealed TEXT,
+    pending_sealed TEXT,
+    last_step INTEGER NOT NULL DEFAULT -1,
+    recovery_hashes TEXT NOT NULL DEFAULT '[]',
+    ssh_code_hash TEXT,
+    ssh_code_expires_at INTEGER,
+    confirmed_at INTEGER,
+    created_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 /** Hasta qué versión de esquema sabe leer este programa. Una copia con un

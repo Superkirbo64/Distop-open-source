@@ -1183,6 +1183,11 @@ export const CAPABILITIES = [
   /** Web Push propio de la instancia (RFC 8291/8292), opcional y sin terceros. */
   "web_push_v1",
   /**
+   * Autenticador (TOTP) de quien hospeda al entrar desde fuera: `/auth/login`
+   * puede responder `{ mfa_required, mfa_token }` y el código va a `/auth/mfa`.
+   */
+  "host_mfa_v1",
+  /**
    * Reuniones: sala de espera, roles efímeros, manos y asistencia.
    *
    * Es el núcleo, y por eso las piezas que se construyeron encima se declaran
