@@ -14,7 +14,7 @@ import { connectToInstance } from "../lib/instance.ts";
 import { createLocalIdentity, localUser } from "../lib/portable.ts";
 import { useStore } from "../store.ts";
 import { Button, ErrorNote, Field, useT } from "../components/ui.tsx";
-import { AuthShell } from "./Auth.tsx";
+import { ADMIN_ENTRY, AuthShell } from "./Auth.tsx";
 
 type Path = "choose" | "user" | "admin";
 
@@ -43,7 +43,10 @@ export function CreateProfile() {
     }
     setBusy(true);
     setError(null);
+    // Al recargar sobre esa instancia se abre «Entrar», no «Añadir perfil».
+    sessionStorage.setItem(ADMIN_ENTRY, "1");
     const result = await connectToInstance(url);
+    if (result !== "ok") sessionStorage.removeItem(ADMIN_ENTRY);
     // "ok" recarga la app sobre esa instancia; los demás se explican aquí.
     if (result === "ok") return;
     setBusy(false);

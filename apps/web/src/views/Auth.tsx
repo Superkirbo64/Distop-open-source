@@ -24,6 +24,9 @@ interface InstanceInfo {
 /* Los nombres de usuario solo llevan [a-z0-9._-]: esta clave no choca con ninguno. */
 const DISPOSITIVO = ":dispositivo";
 
+/** Marca que deja «Entrar como admin de mi servidor»: se llega a entrar, no a crear un perfil nuevo. */
+export const ADMIN_ENTRY = "distop.adminEntry";
+
 /** La carcasa común de la entrada: la misma en el navegador, el PC y el teléfono. */
 export function AuthShell({ children }: { children: ReactNode }) {
   return (
@@ -76,12 +79,16 @@ export function Auth({ onDone }: { onDone?: () => void }) {
       .then((next) => {
         if (cancelled) return;
         setInfo(next);
+        const comoAdmin = sessionStorage.getItem(ADMIN_ENTRY) !== null;
+        sessionStorage.removeItem(ADMIN_ENTRY);
         setMode(
-          entryMode({
-            localAccounts: next.local_accounts.length,
-            hasDeviceProfile: Boolean(device),
-            registrationEnabled: next.registration_enabled,
-          }),
+          comoAdmin
+            ? "login"
+            : entryMode({
+                localAccounts: next.local_accounts.length,
+                hasDeviceProfile: Boolean(device),
+                registrationEnabled: next.registration_enabled,
+              }),
         );
       })
       .catch(() => {
