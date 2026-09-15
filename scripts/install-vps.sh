@@ -238,6 +238,17 @@ echo "PUBLIC_URL guardada. Distop se reinició."
 EOF
 chmod 0755 /usr/local/sbin/distop-set-public-url
 
+# Recuperar el acceso de quien hospeda si perdió el teléfono del autenticador y
+# los códigos de respaldo. Quien puede ejecutar esto ya manda en la máquina, así
+# que no abre nada nuevo: solo evita tener que reinstalar para volver a entrar.
+cat > /usr/local/sbin/distop-admin-recovery <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[ "${EUID:-$(id -u)}" -eq 0 ] || { echo "Ejecuta con sudo." >&2; exit 1; }
+docker exec distop node mfa-recovery.ts
+EOF
+chmod 0755 /usr/local/sbin/distop-admin-recovery
+
 cat > /usr/local/sbin/distop-import-community <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -346,3 +357,4 @@ if $INSTALL_TAILSCALE; then
 fi
 echo "Estado: sudo systemctl status distop"
 echo "Logs:   sudo journalctl -u distop -f"
+echo "Perdiste el autenticador del admin: sudo distop-admin-recovery"
