@@ -51,7 +51,6 @@ import {
   unreadOf,
 } from "./entities.ts";
 import {
-  MAX_SOUND_BYTES,
   createEmoji,
   deleteEmoji,
   deleteExpressionAttachmentsOfCommunity,
@@ -59,7 +58,6 @@ import {
   emojisOf,
   getEmoji,
   unusableEmojis,
-  validateSoundIcon,
 } from "./expressions.ts";
 import { canActOn, channelPermissions, communityPermissions, highestRolePosition, memberState } from "./permissions.ts";
 import {
@@ -2709,90 +2707,6 @@ route("GET", "/api/v1/stickers/image", async (ctx) => {
   return HANDLED;
 });
 
-/* ── traer un sonido de la galeria (§10.3) ─────────────────────────────
-   Aqui es donde por fin se baja algo, y solo lo que alguien eligio: la rejilla
-   de /api/v1/sounds no gasta ni un byte de disco. El mp3 pasa a ser de la
-   comunidad —igual que un sticker de Telegram— asi que si MyInstants cierra
-   manana el sonido sigue sonando (§21).
-
-   No se usa saveRemoteAttachment (reenviar en cada escucha) sino saveUpload
-   (bajar una vez): un sonido de tabla se dispara muchisimas mas veces que un
-   sticker se mira, y son ~100 KB. Reenviarlo seria pagar la descarga entera
-   cada vez que alguien pulsa el boton. */
-
-async function readSoundBody(response: Response): Promise<Buffer> {
-  if (!response.body) return Buffer.alloc(0);
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    total += value.byteLength;
-    if (total > MAX_SOUND_BYTES) {
-      await reader.cancel();
-      throw new HttpError(413, "PAYLOAD_TOO_LARGE", "El sonido pasa del límite de 5 MB.");
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks, total);
-}
-
-route("POST", "/api/v1/communities/:id/emojis/import-sound", async (ctx) => {
-  const { user } = requireAuth(ctx);
-  const communityId = ctx.params.id!;
-  requireMembership(communityId, user.id);
-  requirePerm(communityId, user.id, PERMISSIONS.MANAGE_COMMUNITY, "añadir sonidos");
-  rateLimit(`soundimport:${user.id}`, 30, 60_000);
-
-  const body = await readJson(ctx);
-  const origen = v.string(body, "url", { max: 300 });
-  const name = v.string(body, "name", { max: 32 });
-  const iconEmoji = v.optionalString(body, "icon_emoji", { max: 16 });
-  const iconAttachmentId = v.optionalString(body, "icon_attachment_id", { max: 64 });
-
-  // El icono se valida antes de descargar el MP3: una elección inválida no debe
-  // dejar un audio huérfano ocupando el disco de quien hospeda.
-  validateSoundIcon({ iconEmoji, iconAttachmentId, creatorId: user.id });
-
-  // El nombre se valida ANTES de bajar: si no, un nombre invalido deja el
-  // archivo ya escrito en disco y createEmoji reventando despues.
-  if (!EMOJI_NAME.test(name))
-    throw badRequest("El nombre admite letras, números y guion bajo, entre 2 y 32 caracteres.", { field: "name" });
-  if (!MYINSTANTS_MEDIA.test(origen)) throw badRequest("Ese sonido no viene de la galería.");
-
-  const res = await fetch(origen, { signal: AbortSignal.timeout(8000) }).catch(() => null);
-  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "No se pudo traer el sonido.");
-
-  // Antes de leer el cuerpo: lo que se anuncia grande no se llega a cargar en memoria.
-  const anunciado = Number(res.headers.get("content-length") ?? 0);
-  if (anunciado > MAX_SOUND_BYTES)
-    throw new HttpError(413, "PAYLOAD_TOO_LARGE", "El sonido pasa del límite de 5 MB.");
-
-  const contentType = (res.headers.get("content-type") ?? "").split(";")[0]!.trim();
-  if (!contentType.startsWith("audio/"))
-    throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "Eso no es un archivo de audio.");
-
-  const data = await readSoundBody(res);
-  if (data.length === 0) throw new HttpError(415, "UNSUPPORTED_MEDIA_TYPE", "El sonido está vacío.");
-
-  const attachment = saveUpload({ ownerId: user.id, filename: `${name}.mp3`, contentType, data });
-  const emoji = createEmoji({
-    communityId,
-    name,
-    kind: "sound",
-    attachmentId: attachment.id,
-    iconEmoji,
-    iconAttachmentId,
-    creatorId: user.id,
-  });
-
-  audit(communityId, user.id, "EMOJI_CREATE", emoji.id, { name: emoji.name, kind: emoji.kind, source: "myinstants" });
-  publish(communityId, { t: "EMOJI_UPDATE", d: { community_id: communityId, emojis: emojisOf(communityId) } });
-  return emoji;
-});
-
 route("POST", "/api/v1/communities/:id/emojis/import-telegram", async (ctx) => {
   const { user } = requireAuth(ctx);
   const communityId = ctx.params.id!;
@@ -3065,61 +2979,6 @@ route("GET", "/api/v1/wallpapers", async (ctx) => {
     const item = raw as { id?: string; path?: string; resolution?: string; thumbs?: { small?: string } };
     if (!item.id || !item.path || !item.thumbs?.small) return [];
     return [{ id: item.id, url: item.path, preview: item.thumbs.small, resolution: item.resolution ?? "" }];
-  });
-});
-
-/* ── galeria de sonidos (§10.3) ────────────────────────────────────────
-   Mismo trato que los fondos, y el proxy vuelve a ser obligatorio: la API de
-   MyInstants no manda cabeceras CORS. Es API propia del sitio, publica y sin
-   clave — no hay nada que configurar para que funcione en cualquier instancia.
-
-   Solo se BUSCA aqui. El mp3 no se toca hasta que alguien elige uno, y
-   entonces baja ese y solo ese (/emojis/import-sound). Una rejilla de 20
-   resultados no puede costarle 20 descargas al disco del anfitrion.
-
-   OJO: el catalogo lo suben usuarios y no tiene filtro de contenido, al
-   contrario que Wallhaven con `purity`. Quien administra la comunidad es quien
-   decide que sonido entra, que es justo lo que pide el flujo de abajo. */
-
-interface GallerySound {
-  /** El slug de MyInstants: identifica la fila en la rejilla. */
-  id: string;
-  name: string;
-  /** mp3 directo, para escucharlo antes de decidir y para bajarlo al elegir. */
-  url: string;
-}
-
-/** De donde se acepta bajar un sonido. Sin esta lista la ruta de importar seria
-    un SSRF de manual: "bajame esta URL" apuntando a la red interna (§22).
-    El `(?!.*\.\.)` deja pasar nombres con punto —los hay, `evillaugh.swf.mp3`—
-    sin dejar pasar un `..` que se saliera de /media/sounds/. */
-export const MYINSTANTS_MEDIA = /^https:\/\/(?:www\.)?myinstants\.com\/media\/sounds\/(?!.*\.\.)[\w.-]+\.mp3$/;
-
-route("GET", "/api/v1/sounds", async (ctx) => {
-  const { user } = requireAuth(ctx);
-  rateLimit(`sounds:${user.id}`, 20, 60_000);
-
-  const consulta = ctx.url.searchParams.get("q")?.trim().slice(0, 100) ?? "";
-  // MyInstants sirve de 10 en 10 y no admite page_size, asi que el "ver mas"
-  // de la rejilla se traduce en pedir la pagina siguiente.
-  const pagina = Math.min(Math.max(Number(ctx.url.searchParams.get("page") ?? 1) || 1, 1), 50);
-
-  const url = new URL("https://www.myinstants.com/api/v1/instants/");
-  // Sin `name` devuelve los mas sonados, que es mejor primera pantalla que un vacio.
-  if (consulta) url.searchParams.set("name", consulta);
-  url.searchParams.set("page", String(pagina));
-
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) }).catch(() => null);
-  if (!res?.ok) throw new HttpError(502, "UPSTREAM_ERROR", "MyInstants no respondió. Prueba otra vez en un momento.");
-
-  const json = (await res.json().catch(() => null)) as { results?: unknown[] } | null;
-  const lista = Array.isArray(json?.results) ? json.results : [];
-
-  return lista.flatMap((raw): GallerySound[] => {
-    const item = raw as { name?: string; slug?: string; sound?: string };
-    // El mismo filtro que la ruta de importar: lo que no se podria bajar no se enseña.
-    if (!item.slug || !item.name || !item.sound || !MYINSTANTS_MEDIA.test(item.sound)) return [];
-    return [{ id: item.slug, name: item.name, url: item.sound }];
   });
 });
 

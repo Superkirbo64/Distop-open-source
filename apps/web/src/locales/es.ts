@@ -1195,13 +1195,10 @@ export const es = {
   "emoji.telegramAnimatedYet": "Animado: todavía no se puede importar.",
   "emoji.telegramAdd": "Importar",
 
-  "emoji.soundGallery": "Buscar en la galería de sonidos",
+  "emoji.soundGallery": "Descargar desde MyInstants",
   "emoji.soundGalleryHint":
-    "Catálogo público de MyInstants. Escúchalo antes de decidir: solo se descarga el que elijas, y a partir de ahí es de la comunidad. Lo suben usuarios y no está filtrado, así que revisa lo que añades.",
-  "emoji.soundPlaceholder": "Busca un sonido…",
-  "emoji.soundEmpty": "Ningún sonido con ese nombre.",
-  "emoji.soundMore": "Ver más",
-  "emoji.soundAdd": "Añadir a la comunidad",
+    "Busca el sonido en MyInstants, descárgalo y súbelo arriba eligiendo «Sonido». Lo suben usuarios y no está filtrado: revisa que puedas usarlo.",
+  "emoji.soundOpen": "Abrir MyInstants",
 
   "status.online": "En línea",
   "status.offline": "Desconectado",
