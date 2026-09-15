@@ -140,7 +140,7 @@ export function pushSecretFile(): string {
  * `secret.key` de sesiones tiene su motivo: ese rota en un relevo (§5.5), y
  * las suscripciones tienen que sobrevivirlo.
  */
-function sellar(valor: unknown): string {
+export function sellar(valor: unknown): string {
   const clave = deB64u(cargar().at_rest);
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", clave, iv);
@@ -148,7 +148,7 @@ function sellar(valor: unknown): string {
   return b64u(Buffer.concat([iv, cipher.getAuthTag(), cuerpo]));
 }
 
-function abrir<T>(sellado: string): T | null {
+export function abrir<T>(sellado: string): T | null {
   try {
     const bruto = deB64u(sellado);
     const clave = deB64u(cargar().at_rest);

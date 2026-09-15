@@ -4,6 +4,8 @@
 
 Parts of `apps/web/src/components/icons.tsx` adapt icon geometry and animation
 choreography from [Animate UI](https://github.com/imskyleen/animate-ui).
+`apps/web/src/components/BubbleBackground.tsx` (with its CSS in
+`apps/web/src/styles.css`) ports Animate UI's BubbleBackground to plain CSS.
 
 MIT + Commons Clause License Condition
 

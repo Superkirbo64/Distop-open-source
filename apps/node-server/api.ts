@@ -90,6 +90,15 @@ import { normalizeProofOrigin } from "./identity.ts";
 import { buildIcs } from "./ics.ts";
 import { deploymentProfile, serverUsage, setDeploymentProfile } from "./usage.ts";
 import {
+  challengeUser,
+  confirmMfaSetup,
+  consumeChallenge,
+  createMfaChallenge,
+  mfaEnabled,
+  startMfaSetup,
+  verifyMfa,
+} from "./mfa.ts";
+import {
   PushError,
   dropSubscription,
   pushMention,
@@ -408,7 +417,8 @@ route("POST", "/api/v1/auth/recover", async (ctx) => {
   const user = findUserByUsername(username);
   if (!user || user.password_hash) throw unauthorized("No hay ninguna cuenta sin contraseña con ese nombre.");
   if (isLocalRequest(ctx)) rememberDeviceProfile(user.id);
-  return issue(user.id);
+  // El código del terminal no se salta el autenticador: quien lo vea no se lleva la instancia.
+  return issueOrChallenge(ctx, user.id);
 });
 
 /**
@@ -487,6 +497,24 @@ function issue(userId: Snowflake) {
   };
 }
 
+/**
+ * Entrar en una cuenta que ya existe. Quien hospeda, con autenticador y desde
+ * fuera, todavía no recibe sesión: recibe un paso intermedio y el código va a
+ * /auth/mfa. Desde el propio equipo no se pide, igual que `bootstrap`; y renovar
+ * la sesión (/auth/refresh) nunca lo pide: una vez por dispositivo.
+ */
+function issueOrChallenge(ctx: Ctx, userId: Snowflake) {
+  if (isInstanceOwner(userId) && !isLocalRequest(ctx) && mfaEnabled(userId))
+    return { mfa_required: true, mfa_token: createMfaChallenge(userId) };
+  return issue(userId);
+}
+
+function auditHostEvent(userId: Snowflake, action: string): void {
+  for (const row of db.prepare("SELECT id FROM communities").all() as Array<{ id: string }>) {
+    audit(row.id, userId, action, userId, {});
+  }
+}
+
 route("POST", "/api/v1/auth/register", async (ctx) => {
   if (!config.registrationEnabled) throw forbidden("Esta instancia tiene el registro cerrado.");
   rateLimit(`register:${ctx.ip}`, config.maxRegistrationsPerHour, 60 * 60_000);
@@ -523,7 +551,61 @@ route("POST", "/api/v1/auth/login", async (ctx) => {
      entrada local válida. Así una actualización no pierde perfiles legítimos,
      pero tampoco adivina que todos los miembros de la instancia son locales. */
   if (isLocalRequest(ctx)) rememberDeviceProfile(user.id);
-  return issue(user.id);
+  return issueOrChallenge(ctx, user.id);
+});
+
+/** Segundo paso de /auth/login: el código de la app o el de recuperación por SSH. */
+route("POST", "/api/v1/auth/mfa", async (ctx) => {
+  rateLimit(`mfa-ip:${ctx.ip}`, 20, 60_000);
+  const body = await readJson(ctx);
+  const token = v.string(body, "mfa_token", { min: 10, max: 100, trim: false });
+  const code = v.string(body, "code", { min: 6, max: 40 });
+
+  const userId = challengeUser(token);
+  if (!userId) throw unauthorized("El paso del código caducó. Vuelve a poner tu contraseña.");
+  // Por cuenta y no solo por IP: rotar de dirección no da más intentos.
+  rateLimit(`mfa:${userId}`, 5, 60_000);
+
+  const result = verifyMfa(userId, code);
+  if (!result) throw unauthorized("Código incorrecto.");
+  consumeChallenge(token);
+  if (result === "reset") {
+    auditHostEvent(userId, "INSTANCE_MFA_RECOVERED");
+    return { ...issue(userId), mfa_reset: true };
+  }
+  return issue(userId);
+});
+
+/* Solo en VPS (Kirbo, 14-09): en el PC quien arranca el servidor es quien lo
+   administra y vive con él; ahí basta la contraseña. */
+route("GET", "/api/v1/instance/mfa", (ctx) => {
+  const { user } = requireHost(ctx);
+  return {
+    available: deploymentProfile() === "vps_cloud",
+    enabled: mfaEnabled(user.id),
+  };
+});
+
+/** QR nuevo. Si ya había autenticador, el anterior sigue valiendo hasta confirmar este. */
+route("POST", "/api/v1/instance/mfa/setup", (ctx) => {
+  const { user } = requireHost(ctx);
+  if (deploymentProfile() !== "vps_cloud")
+    throw badRequest("El autenticador es para servidores en VPS. Cambia el tipo de servidor en «Tu servidor» si lo es.");
+  rateLimit(`mfa-setup:${user.id}`, 10, 60 * 60_000);
+  return startMfaSetup(user.id, user.username);
+});
+
+route("POST", "/api/v1/instance/mfa/confirm", async (ctx) => {
+  const auth = requireHost(ctx);
+  rateLimit(`mfa-confirm:${auth.user.id}`, 5, 60_000);
+  const body = await readJson(ctx);
+  const ok = confirmMfaSetup(auth.user.id, v.string(body, "code", { min: 6, max: 6, pattern: /^\d{6}$/ }));
+  if (!ok) throw badRequest("Ese código no coincide. Comprueba que la hora del teléfono sea automática y prueba con el siguiente.");
+  /* Las demás sesiones de quien hospeda se cierran: si alguien entró con la
+     contraseña antes de activar el autenticador, no se queda dentro. */
+  db.prepare("DELETE FROM sessions WHERE user_id = ? AND id != ?").run(auth.user.id, auth.sessionId);
+  auditHostEvent(auth.user.id, "INSTANCE_MFA_ENABLED");
+  return { ok: true };
 });
 
 route("POST", "/api/v1/auth/guest", async (ctx) => {

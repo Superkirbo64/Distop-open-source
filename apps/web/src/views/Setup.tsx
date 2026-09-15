@@ -10,6 +10,7 @@ import { useState } from "react";
 import { BRAND } from "../brand.ts";
 import { useStore } from "../store.ts";
 import { Button, ErrorNote, Field, PasswordInput, useErrorText, useT } from "../components/ui.tsx";
+import { BubbleBackground } from "../components/BubbleBackground.tsx";
 
 export function Setup({ requiresCode }: { requiresCode: boolean }) {
   const t = useT();
@@ -43,14 +44,7 @@ export function Setup({ requiresCode }: { requiresCode: boolean }) {
 
   return (
     <main className="relative grid min-h-dvh place-items-center overflow-hidden bg-bg p-4 pt-24 sm:p-8 sm:pt-28">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-70"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 50% -20%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 48%)",
-        }}
-      />
+      <BubbleBackground interactive className="pointer-events-none" />
       <p className="display absolute top-6 left-6 text-2xl font-extrabold text-accent sm:top-8 sm:left-10 sm:text-3xl">
         {BRAND.name}
       </p>
@@ -81,7 +75,7 @@ export function Setup({ requiresCode }: { requiresCode: boolean }) {
           <Field label={`${t("setup.password")} (${t("common.optional")})`} hint={t("setup.passwordHint")}>
             {(id) => (
               <PasswordInput
-                id={id}
+                id={id}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 maxLength={200}
