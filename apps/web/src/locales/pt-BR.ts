@@ -107,6 +107,7 @@ export const ptBR: Record<keyof typeof es, string> = {
   "security.reconfigure": "Configurar outro celular",
   "security.step1": "1. Instale o Google Authenticator",
   "security.download": "Baixar o app no meu celular",
+  "security.installed": "Já instalei",
   "security.downloadHint": "Escaneie com a câmera do celular o QR do seu aparelho.",
   "security.android": "Android",
   "security.iphone": "iPhone",

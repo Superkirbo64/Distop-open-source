@@ -105,6 +105,7 @@ export const en: Record<keyof typeof es, string> = {
   "security.reconfigure": "Set up another phone",
   "security.step1": "1. Install Google Authenticator",
   "security.download": "Download the app on my phone",
+  "security.installed": "I already installed it",
   "security.downloadHint": "Scan the QR for your phone with its camera.",
   "security.android": "Android",
   "security.iphone": "iPhone",

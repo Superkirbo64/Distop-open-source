@@ -96,6 +96,7 @@ export function AdminSecurity() {
   const [status, setStatus] = useState<MfaStatus | null>(null);
   const [step, setStep] = useState<Step>({ kind: "idle" });
   const [showStores, setShowStores] = useState(false);
+  const [installed, setInstalled] = useState(false);
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -122,6 +123,7 @@ export function AdminSecurity() {
       const result = await api<{ secret: string; otpauth_uri: string }>("POST", "/api/v1/instance/mfa/setup");
       setCode("");
       setShowStores(false);
+      setInstalled(false);
       setStep({ kind: "setup", secret: result.secret, uri: result.otpauth_uri });
     });
 
@@ -148,10 +150,15 @@ export function AdminSecurity() {
             <GoogleAuthenticatorLogo />
             {t("security.step1")}
           </p>
-          <div>
+          <div className="flex flex-wrap gap-2">
             <Button onClick={() => setShowStores((open) => !open)} aria-expanded={showStores}>
               {t("security.download")}
             </Button>
+            {installed ? null : (
+              <Button variant="primary" onClick={() => { setInstalled(true); setShowStores(false); }}>
+                {t("security.installed")}
+              </Button>
+            )}
           </div>
           {showStores ? (
             <>
@@ -164,6 +171,8 @@ export function AdminSecurity() {
           ) : null}
         </div>
 
+        {/* Pasos 2 y 3 solo tras "Ya la instalé": sin la app, el QR de Distop no sirve de nada. */}
+        {installed ? (<>
         <div className="flex flex-col gap-2">
           <p className="text-sm font-semibold">{t("security.step2")}</p>
           <div className="flex flex-wrap items-center gap-3">
@@ -200,6 +209,11 @@ export function AdminSecurity() {
             <Button onClick={() => { setStep({ kind: "idle" }); setError(null); }}>{t("start.back")}</Button>
           </div>
         </div>
+        </>) : (
+          <div>
+            <Button onClick={() => { setStep({ kind: "idle" }); setError(null); }}>{t("start.back")}</Button>
+          </div>
+        )}
       </section>
     );
   }

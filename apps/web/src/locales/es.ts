@@ -106,6 +106,7 @@ export const es = {
   "security.reconfigure": "Configurar otro teléfono",
   "security.step1": "1. Instala Google Authenticator",
   "security.download": "Descargar la app en mi teléfono",
+  "security.installed": "Ya la instalé",
   "security.downloadHint": "Escanea con la cámara del teléfono el QR que te toque.",
   "security.android": "Android",
   "security.iphone": "iPhone",
